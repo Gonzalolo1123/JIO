@@ -1,0 +1,348 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script id="clientes-data" type="application/json">{{ clientes|safe }}</script>
+    <script id="forma_pago-data" type="application/json">{{ forma_pago|safe }}</script>
+    <script src="{% static 'js/voucher.js' %}"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <title>Voucher de Compra</title>
+    <style>
+        body {
+        font-family: 'Arial', sans-serif;
+        line-height: 1.6;
+        color: #333;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+        background-color: #f9f9f9;
+        }
+
+        .voucher-container {
+        background-color: white;
+        border-radius: 8px;
+        box-shadow: 0 0 15px rgba(0, 0, 0, 0.1);
+        padding: 30px;
+        }
+
+        .header {
+        text-align: center;
+        margin-bottom: 30px;
+        border-bottom: 2px solid #eee;
+        padding-bottom: 20px;
+        }
+
+        .header h1 {
+        color: #2c3e50;
+        margin-bottom: 5px;
+        }
+
+        .company-info {
+        font-size: 0.9em;
+        color: #7f8c8d;
+        margin-bottom: 20px;
+        }
+
+        .voucher-details {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+        }
+
+        .detail-box {
+        flex: 1;
+        min-width: 200px;
+        margin-bottom: 15px;
+        }
+
+        .detail-box h3 {
+        border-bottom: 1px solid #eee;
+        padding-bottom: 5px;
+        color: #2c3e50;
+        font-size: 1.1em;
+        }
+
+        .products-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 25px 0;
+        }
+
+        .products-table th {
+        background-color: #3498db;
+        color: white;
+        text-align: left;
+        padding: 12px;
+        }
+
+        .products-table td {
+        padding: 12px;
+        border-bottom: 1px solid #ddd;
+        }
+
+        .products-table tr:nth-child(even) {
+        background-color: #f2f2f2;
+        }
+
+        .total-section {
+        text-align: right;
+        margin-top: 30px;
+        font-size: 1.2em;
+        }
+
+        .total-amount {
+        font-weight: bold;
+        color: #e74c3c;
+        font-size: 1.4em;
+        }
+
+        .footer {
+        margin-top: 40px;
+        text-align: center;
+        font-size: 0.8em;
+        color: #7f8c8d;
+        border-top: 1px solid #eee;
+        padding-top: 20px;
+        }
+
+        .print-button {
+        display: block;
+        width: 100%;
+        padding: 12px;
+        background-color: #3498db;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        font-size: 1em;
+        cursor: pointer;
+        margin-top: 20px;
+        text-align: center;
+        }
+
+        .print-button:hover {
+        background-color: #2980b9;
+        }
+
+        .btn-seleccionar-cliente {
+        background-color: #3498db;
+        color: white;
+        border: none;
+        padding: 10px 15px;
+        border-radius: 4px;
+        cursor: pointer;
+        margin-bottom: 15px;
+        font-size: 0.9em;
+        }
+
+        .btn-seleccionar-cliente:hover {
+        background-color: #2980b9;
+        }
+
+        @media print {
+        body {
+        background-color: white;
+        padding: 0;
+        }
+
+        .voucher-container {
+        box-shadow: none;
+        padding: 0;
+        }
+
+        .print-button {
+        display: none;
+        }
+        }
+
+        /* Estilos para SweetAlert */
+        .swal2-cliente-container {
+        max-height: 60vh;
+        overflow-y: auto;
+        }
+
+        .swal2-filter-container {
+        margin-bottom: 15px;
+        }
+
+        .swal2-table-container {
+        max-height: 45vh;
+        overflow-y: auto;
+        margin-bottom: 20px;
+        }
+
+        .swal2-table {
+        width: 100%;
+        border-collapse: collapse;
+        }
+
+        .swal2-table th, .swal2-table td {
+        padding: 10px;
+        border: 1px solid #ddd;
+        text-align: left;
+        }
+
+        .swal2-table th {
+        background-color: #f2f2f2;
+        }
+
+        .swal2-select-btn {
+        background-color: #2ecc71;
+        color: white;
+        border: none;
+        padding: 5px 10px;
+        border-radius: 3px;
+        cursor: pointer;
+        }
+
+        .swal2-select-btn:hover {
+        background-color: #27ae60;
+        }
+
+        .swal2-select-btn.selected {
+        background-color: #e74c3c;
+        }
+
+        .swal2-no-reg-btn {
+        width: 100%;
+        padding: 8px;
+        background-color: #f39c12;
+        }
+
+        .swal2-no-reg-btn:hover {
+        background-color: #d35400;
+        }
+
+        .swal2-no-reg-btn.selected {
+        background-color: #e74c3c;
+        }
+
+        .swal2-payment-container {
+        margin-top: 20px;
+        padding-top: 15px;
+        border-top: 1px solid #eee;
+        }
+
+        .swal2-select {
+        width: 100%;
+        padding: 8px;
+        border-radius: 4px;
+        border: 1px solid #ddd;
+        }
+        </style>
+</head>
+
+<body>
+    <div class="voucher-container">
+        <div class="header">
+            <h1>🧾 COMPROBANTE DE COMPRA</h1>
+            <div class="company-info">
+                <p>Tienda XYZ • Av. Principal 1234 • Tel: (123) 456-7890</p>
+                <p>NIT: 123456789-0 • www.tienda-xyz.com</p>
+            </div>
+        </div>
+
+        <div class="voucher-details">
+            <div class="detail-box">
+                <h3>Información de la Compra</h3>
+                <p><strong>N° Transacción:</strong> {{ voucher.numero_transaccion }}</p>
+                <p><strong>Fecha:</strong> {{ voucher.fecha }}</p>
+                <p><strong>Hora:</strong> {{ voucher.hora }}</p>
+                <p>
+                    <strong>Método de Pago:</strong>
+                    <span id="metodo_pago_mostrado" style="font-weight: bold;">-</span>
+                </p>
+            </div>
+
+            <div class="detail-box">
+                <h3>Información del Cliente</h3>
+                <button type="button" id="btnSeleccionarCliente" class="btn-seleccionar-cliente">
+                    Seleccionar Cliente
+                </button>
+
+                <div id="cliente-info-display">
+                    <p><strong>Nombre:</strong> <span id="nombre_mostrado">-</span></p>
+                    <p><strong>Documento:</strong> <span id="documento_mostrado">-</span></p>
+                    <p><strong>Teléfono:</strong> <span id="telefono_mostrado">-</span></p>
+                    <p><strong>Email:</strong> <span id="email_mostrado">-</span></p>
+                </div>
+
+                <input type="hidden" id="nombre">
+                <input type="hidden" id="documento">
+                <input type="hidden" id="telefono">
+                <input type="hidden" id="email">
+                <input type="hidden" id="metodo_pago">
+            </div>
+        </div>
+
+        <h3>Detalle de Productos</h3>
+        <table class="products-table">
+            <thead>
+                <tr>
+                    <th>Producto</th>
+                    <th>Cantidad</th>
+                    <th>Precio Unitario</th>
+                    <th>Subtotal</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in voucher.productos %}
+                <tr>
+                    <td>{{ p.nombre }} ({{ p.codigo }})</td>
+                    <td>{{ p.cantidad }}</td>
+                    <td>${{ p.precio_unitario }}</td>
+                    <td>${{ p.total_producto }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <div class="total-section">
+            <p><strong>Subtotal:</strong> ${{ voucher.subtotal }}</p>
+            {% if voucher.descuento > 0 %}
+            <p><strong>Descuento:</strong> -${{ voucher.descuento }}</p>
+            {% endif %}
+            <p><strong>IVA ({{ voucher.porcentaje_iva }}%):</strong> ${{ voucher.valor_iva }}</p>
+            <p><strong>Total General:</strong> <span class="total-amount">${{ voucher.total_general }}</span></p>
+        </div>
+
+        <div class="footer">
+            <p>¡Gracias por su compra!</p>
+            <p>Este comprobante es válido como factura de venta conforme a la normativa vigente</p>
+            <p>Para reclamos o devoluciones, presentar este comprobante dentro de los 10 días hábiles</p>
+            <p>Autorización DIAN: {{ voucher.autorizacion_dian }}</p>
+        </div>
+        <form id="formVenta" method="POST" action="{% url 'venta_confirmada' %}">
+            {% csrf_token %}
+            <input type="hidden" name="cliente_id" id="form_cliente_id">
+            <input type="hidden" name="nombre" id="form_nombre">
+            <input type="hidden" name="documento" id="form_documento">
+            <input type="hidden" name="telefono" id="form_telefono">
+            <input type="hidden" name="email" id="form_email">
+            <input type="hidden" name="metodo_pago" id="form_metodo_pago">
+
+            <!-- Datos del voucher -->
+            <input type="hidden" name="numero_transaccion" value="{{ voucher.numero_transaccion }}">
+            <input type="hidden" name="fecha" value="{{ voucher.fecha }}">
+            <input type="hidden" name="hora" value="{{ voucher.hora }}">
+            <input type="hidden" name="subtotal" value="{{ voucher.subtotal }}">
+            <input type="hidden" name="descuento" value="{{ voucher.descuento }}">
+            <input type="hidden" name="porcentaje_iva" value="{{ voucher.porcentaje_iva }}">
+            <input type="hidden" name="valor_iva" value="{{ voucher.valor_iva }}">
+            <input type="hidden" name="total_general" value="{{ voucher.total_general }}">
+            <input type="hidden" name="autorizacion_dian" value="{{ voucher.autorizacion_dian }}">
+            <input type="hidden" name="total_general" value="{{ voucher.total_general }}">
+            <!-- Productos (serializados en JSON) -->
+            <input type="hidden" name="productos_json" id="form_productos_json">
+        </form>
+        <button type="button" class="print-button" onclick="confirmarDatos(this)"
+            data-url="{% url 'venta_confirmada' %}">✅ Confirmar Datos de Venta</button>
+        <button class="print-button" id="btnImprimir" onclick="window.print()" disabled>🖨️ Imprimir Comprobante</button>
+        <button class="print-button" id="btnVolverTienda" onclick="window.location.href='/venta_producto/'">Volver a la tienda</button>
+    </div>
+</body>
+
+</html>

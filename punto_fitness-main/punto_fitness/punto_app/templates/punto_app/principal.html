@@ -1,0 +1,95 @@
+{% extends "punto_app/base.html" %}
+{% load static %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{% static 'css/index.css' %}">
+<link rel="stylesheet" href="{% static 'css/signIn-Up.css' %}">
+<link rel="stylesheet" href="{% static 'css/cuenta.css' %}">
+<link rel="stylesheet" href="{% static 'css/alert.css' %}?v=2">
+{% endblock %}
+
+{% block content %}
+<section id="historia">
+  <div class="contenedor-historia">
+    <h2>Nuestra historia</h2>
+    <p>Desde nuestros humildes comienzos, Punto Fitness ha crecido...</p>
+
+    <div class="carrusel-videos-historia">
+      <div class="video-slider">
+        <div class="video-slide" id="video0">
+          <video src="{% static 'videos/gym1.mp4' %}" muted onclick="cambiarSlide(0)"></video>
+        </div>
+        <div class="video-slide central" id="video1">
+          <video src="{% static 'videos/gym2.mp4' %}" controls onclick="cambiarSlide(1)"></video>
+        </div>
+        <div class="video-slide" id="video2">
+          <video src="{% static 'videos/gym3.mp4' %}" muted onclick="cambiarSlide(2)"></video>
+        </div>
+      </div>
+      <div class="puntos-indicadores">
+        <span class="punto" onclick="cambiarSlide(0)"></span>
+        <span class="punto activo" onclick="cambiarSlide(1)"></span>
+        <span class="punto" onclick="cambiarSlide(2)"></span>
+      </div>
+    </div>
+  </div>
+</section>
+<section id="servicios">
+  <div class="contenedor-servicio">
+    <h2 class="titulo-seccion">Nuestros servicios</h2>
+
+    <div class="servicios-grid">
+
+      <div class="servicio-box">
+        <h3>Busca el plan para ti</h3>
+        <a href="{% url 'planes' %}" class="btn-servicio">Ver planes</a>
+      </div>
+
+      <div class="servicio-box">
+        <h3>Elige tu forma de ejercitar</h3>
+        <a href="{% url 'maquinas' %}" class="btn-servicio">Ver rutinas</a>
+      </div>
+
+      <div class="servicio-box">
+        <h3>Compra lo que necesites</h3>
+        <a href="{% url 'maquinas' %}" class="btn-servicio">Ver productos</a>
+      </div>
+
+    </div>
+  </div>
+</section>
+<section id="equipo">
+  <div class="contenedor-equipo">
+    <h2>Nuestro equipo</h2>
+    <div class="equipo">
+      <div class="persona">
+        <img src="{% static 'images/trabajadores/persona.jpg' %}" alt="Entrenador">
+        <h3>Entrenador</h3>
+        <p>Especialista en fitness funcional</p>
+      </div>
+      <div class="persona">
+        <img src="{% static 'images/trabajadores/persona.jpg' %}" alt="Dueño">
+        <h3>Dueño</h3>
+        <p>Fundador de Punto Fitness</p>
+      </div>
+      <div class="persona">
+        <img src="{% static 'images/trabajadores/persona.jpg' %}" alt="Administrador">
+        <h3>Administrador</h3>
+        <p>Encargado de operaciones y atención al cliente</p>
+      </div>
+    </div>
+  </div>
+</section>
+<section id="opinio">
+  <div class="contenedor-opiniones">
+    <h2>Danos tu opinón</h2>
+    <h6>Escribe como ha sido tu experiencia como usuario de
+      nuestras dependencias
+    </h6>
+  </div>
+</section>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{% static 'js/index.js' %}"></script>
+{% endblock %}

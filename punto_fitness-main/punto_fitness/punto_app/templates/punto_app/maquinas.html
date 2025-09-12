@@ -1,0 +1,77 @@
+{% extends "punto_app/base.html" %}
+{% load static %}
+
+{% block extra_head %}
+  <link rel="stylesheet" href="{% static 'css/maquinas.css' %}">
+  
+{% endblock %}
+
+{% block content %}
+<section id="Nuestras-Maquinas">
+  <div class="contenedor-blanco">
+    <h2 class="titulo-seccion">Nuestras máquinas</h2>
+    <div class="carrusel-container">
+      <button class="flecha izquierda" id="prevMaquina">&#10094;</button>
+      <div class="carrusel-maquinas-viewport">
+        <div class="carrusel-maquinas" id="maquinasCarrusel">
+          {% for i in maquinas %}
+          <div class="maquina-card">
+            <img src="{% static i.imagen %}" alt="{{ i.nombre }}" class="maquina-img">
+            <div class="maquina-nombre">{{ i.nombre }}</div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      <button class="flecha derecha" id="nextMaquina">&#10095;</button>
+    </div>
+  </div>
+</section>
+
+<section id="ayuda">
+  <div class="contenedor-blanco texto-ayuda">
+    <h3><strong>¿Necesitas ayuda con tus rutinas?</strong></h3>
+    <p>En Punto Fitness te ofrecemos múltiples tipos de rutinas para que puedas seleccionar la que mejor se ajuste a ti</p>
+  </div>
+</section>
+
+<section id="Rutinas">
+  <div class="contenedor-blanco">
+    <h2 class="titulo-seccion">Rutinas básicas</h2>
+    <div class="filtros-rutinas">
+      <button class="filtro-rutina activo" data-zona="fullbody">Full body</button>
+      <button class="filtro-rutina" data-zona="pectoral">Pectoral</button>
+      <button class="filtro-rutina" data-zona="espalda">Espalda</button>
+      <button class="filtro-rutina" data-zona="cuadriceps">Cuádriceps</button>
+      <button class="filtro-rutina" data-zona="gluteos">Glúteos</button>
+    </div>
+
+    <div class="zona-cuerpo">
+      <img src="{% static 'images/cuerpo.jpg' %}" class="imagen-cuerpo" alt="Cuerpo humano">
+      <div class="highlight" id="zona-fullbody"></div>
+      <div class="highlight" id="zona-pectoral"></div>
+      <div class="highlight" id="zona-espalda"></div>
+      <div class="highlight" id="zona-cuadriceps"></div>
+      <div class="highlight" id="zona-gluteos"></div>
+    </div>
+
+    <table class="tabla-rutina">
+      <thead>
+        <tr>
+          <th>Nombre</th>
+          <th>Cantidad de series</th>
+          <th>Cantidad de repeticiones</th>
+          <th>Descanso entre series</th>
+          <th>Ejercicio</th>
+        </tr>
+      </thead>
+      <tbody id="tabla-ejercicios">
+        <!-- JS llenará aquí -->
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
+
+{% block extra_scripts %}
+  <script src="{% static 'js/maquinas.js' %}"></script>
+{% endblock %}

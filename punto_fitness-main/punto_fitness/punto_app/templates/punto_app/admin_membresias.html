@@ -1,0 +1,475 @@
+{% extends 'punto_app/base_admin.html' %}
+{% load static %}
+
+{% block title %}Membresías - Punto Fitness{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<link rel="stylesheet" href="{% static 'css/inventario.css' %}">
+<script>
+// Pasar datos de membresías al JavaScript
+window.membresiasData = [
+    {% for membresia in membresias %}
+    {
+        id: {{ membresia.id }},
+        nombre: "{{ membresia.nombre }}",
+        duracion: "{{ membresia.duracion }}"
+    }{% if not forloop.last %},{% endif %}
+    {% endfor %}
+];
+
+// Debug: Verificar que los datos se cargaron correctamente
+console.log('Datos de membresías cargados:', window.membresiasData);
+</script>
+{% endblock %}
+
+{% block content %}
+<div class="content">
+  <h1>Administración de membresías</h1>
+
+  <section name="seccion-membresias">
+    <div class="header-content">
+      <h2>Membresías</h2>
+      <button id="abrir-form-membresia" class="filtro-btn" data-estado="cerrado">+</button>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Nombre</th>
+          <th>Descripción</th>
+          <th>Precio</th>
+          <th>Duración</th>
+          <th>Días por Semana</th>
+          <th>Establecimiento</th>
+          <th>Imagen</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for membresia in membresias %}
+        <tr data-id="{{ membresia.id }}">
+          <td>{{ membresia.nombre }}</td>
+          <td>{{ membresia.descripcion }}</td>
+          <td>${{ membresia.precio }}</td>
+          <td>{{ membresia.duracion }}</td>
+          <td>{{ membresia.dias_por_semana }}</td>
+          <td>{{ membresia.establecimiento__nombre }}</td>
+          <td>
+            {% if membresia.imagen %}
+              <img src="{% static membresia.imagen %}" alt="{{ membresia.nombre }}" style="max-width: 80px; max-height: 80px;">
+            {% else %}
+              <span style="color: #aaa;">Sin imagen</span>
+            {% endif %}
+          </td>
+          <td>
+            <div class="action-buttons-container">
+              <button class="filtro-btn" name="btn-editar-membresia" data-id="{{ membresia.id }}">Actualizar</button>
+              <button class="filtro-btn" name="btn-eliminar-membresia" data-id="{{ membresia.id }}">Eliminar</button>
+            </div>
+          </td>
+        </tr>
+
+        <!-- Modal para editar membresía -->
+        <div id="modal-fondo-editar-membresia-{{ membresia.id }}" class="modal-fondo" style="display:none;">
+          <div id="modal-form-editar-membresia-{{ membresia.id }}" class="modal-form">
+            <div class="modal-header">
+              <h3>Actualizar membresía</h3>
+              <button class="cerrar-modal" onclick="cerrarModalEdicion('membresia', '{{ membresia.id }}')">×</button>
+            </div>
+            <div class="modal-body">
+              <form class="formulario" name="form-editar-membresia" data-id="{{ membresia.id }}">
+                {% csrf_token %}
+                
+                <div class="form-fila">
+                  <label for="membresia-nombre-editar-{{ membresia.id }}">Nombre:</label>
+                  <input type="text" 
+                         id="membresia-nombre-editar-{{ membresia.id }}" 
+                         name="membresia-nombre-editar-{{ membresia.id }}" 
+                         value="{{ membresia.nombre }}" 
+                         maxlength="100"
+                         required>
+                </div>
+              
+                <div class="form-fila">
+                  <label for="membresia-descripcion-editar-{{ membresia.id }}">Descripción:</label>
+                  <input type="text" 
+                         id="membresia-descripcion-editar-{{ membresia.id }}" 
+                         name="membresia-descripcion-editar-{{ membresia.id }}" 
+                         value="{{ membresia.descripcion }}" 
+                         maxlength="100"
+                         required>
+                </div>
+              
+                <div class="form-fila">
+                  <label for="membresia-precio-editar-{{ membresia.id }}">Precio:</label>
+                  <input type="number" 
+                         id="membresia-precio-editar-{{ membresia.id }}" 
+                         name="membresia-precio-editar-{{ membresia.id }}" 
+                         value="{{ membresia.precio }}" 
+                         min="0"
+                         required>
+                </div>
+
+                <div class="form-fila">
+                  <label for="membresia-duracion-editar-{{ membresia.id }}">Duración:</label>
+                  <select id="membresia-duracion-editar-{{ membresia.id }}" 
+                          name="membresia-duracion-editar-{{ membresia.id }}" 
+                          required>
+                    <option value="semanal" {% if membresia.duracion == 'semanal' %}selected{% endif %}>Semanal</option>
+                    <option value="mensual" {% if membresia.duracion == 'mensual' %}selected{% endif %}>Mensual</option>
+                    <option value="anual" {% if membresia.duracion == 'anual' %}selected{% endif %}>Anual</option>
+                    <option value="personalizada" {% if membresia.duracion == 'personalizada' %}selected{% endif %}>Personalizada</option>
+                  </select>
+                </div>
+
+                <div class="form-fila">
+                  <label for="membresia-dias-por-semana-editar-{{ membresia.id }}">Días por Semana:</label>
+                  <input type="number" 
+                         id="membresia-dias-por-semana-editar-{{ membresia.id }}" 
+                         name="membresia-dias-por-semana-editar-{{ membresia.id }}" 
+                         value="{{ membresia.dias_por_semana }}"
+                         min="1"
+                         max="7">
+                </div>
+
+                <div class="form-fila">
+                  <label for="membresia-establecimiento-editar-{{ membresia.id }}">Establecimiento:</label>
+                  <select id="membresia-establecimiento-editar-{{ membresia.id }}" 
+                          name="membresia-establecimiento-editar-{{ membresia.id }}" 
+                          required>
+                    {% for establecimiento in establecimientos %}
+                    <option value="">Seleccione</option>
+                      <option value="{{ establecimiento.id }}" 
+                              {% if establecimiento.id == membresia.establecimiento_id %}selected{% endif %}>
+                        {{ establecimiento.nombre }}
+                      </option>
+                    {% endfor %}
+                  </select>
+                </div>
+                
+                <div class="form-fila">
+                  <label for="membresia-imagen-editar-{{ membresia.id }}">Imagen:</label>
+                  <div class="imagen-selector">
+                    <input type="hidden" id="membresia-imagen-editar-{{ membresia.id }}" name="membresia-imagen-editar-{{ membresia.id }}" value="{{ membresia.imagen }}" required>
+                    <button type="button" class="filtro-btn" id="btn-seleccionar-imagen-editar-{{ membresia.id }}">Seleccionar Imagen</button>
+                  </div>
+                  <div id="vista-previa-imagen-editar-{{ membresia.id }}" class="vista-previa-imagen{% if not membresia.imagen %} d-none{% endif %}">
+                    <img src="{% if membresia.imagen %}{% static membresia.imagen %}{% endif %}" alt="Vista previa" style="max-width: 200px; max-height: 200px;">
+                  </div>
+                </div>
+                
+                <div class="modal-actions">
+                  <button class="filtro-btn" type="submit">Guardar</button>
+                  <button class="filtro-btn btn-cancelar" type="button" onclick="cerrarModalEdicion('membresia', '{{ membresia.id }}')">Cancelar</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+
+        {% empty %}
+        <tr>
+          <td colspan="7">No hay membresías</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <!-- Modal para crear membresía -->
+  <div id="modal-fondo-membresia" class="modal-fondo" style="display:none;">
+    <div id="modal-form-membresia" class="modal-form">
+      <div class="modal-header">
+        <h3>Crear membresía</h3>
+        <button class="cerrar-modal" onclick="cerrarModal('membresia')">×</button>
+      </div>
+      <div class="modal-body">
+        <form class="formulario" id="form-crear-membresia">
+          {% csrf_token %}
+          
+          <div class="form-fila">
+            <label for="membresia-nombre">Nombre:</label>
+            <input type="text" 
+                   id="membresia-nombre" 
+                   name="membresia-nombre" 
+                   maxlength="100"
+                   required>
+          </div>
+        
+          <div class="form-fila">
+            <label for="membresia-descripcion">Descripción:</label>
+            <input type="text" 
+                   id="membresia-descripcion" 
+                   name="membresia-descripcion" 
+                   maxlength="100"
+                   required>
+          </div>
+          
+          <div class="form-fila">
+            <label for="membresia-precio">Precio:</label>
+            <input type="number" 
+                   id="membresia-precio" 
+                   name="membresia-precio" 
+                   min="0"
+                   required>
+          </div>
+
+          <div class="form-fila">
+            <label for="membresia-duracion">Duración:</label>
+            <select id="membresia-duracion" name="membresia-duracion" required>
+              <option value="semanal">Semanal</option>
+              <option value="mensual">Mensual</option>
+              <option value="anual">Anual</option>
+              <option value="personalizada">Personalizada</option>
+            </select>
+          </div>
+
+          <div class="form-fila">
+            <label for="membresia-dias-por-semana">Días por Semana:</label>
+            <input type="number" 
+                   id="membresia-dias-por-semana" 
+                   name="membresia-dias-por-semana" 
+                   min="1"
+                   max="7">
+          </div>
+
+          <div class="form-fila">
+            <label for="membresia-establecimiento">Establecimiento:</label>
+            <select id="membresia-establecimiento" name="membresia-establecimiento" required>
+              <option value="">Seleccione</option>
+              {% for establecimiento in establecimientos %}
+                <option value="{{ establecimiento.id }}">{{ establecimiento.nombre }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="form-fila">
+            <label for="membresia-imagen">Imagen:</label>
+            <div class="imagen-selector">
+              <input type="hidden" id="membresia-imagen" name="membresia-imagen" required>
+              <button type="button" class="filtro-btn" id="btn-seleccionar-imagen">Seleccionar Imagen</button>
+            </div>
+            <div id="vista-previa-imagen" class="vista-previa-imagen" style="display: none;">
+              <img src="" alt="Vista previa" style="max-width: 200px; max-height: 200px;">
+            </div>
+          </div>
+
+          <div class="modal-actions">
+            <button class="filtro-btn" type="submit">Crear membresía</button>
+            <button class="filtro-btn btn-cancelar" type="button" onclick="cerrarModal('membresia')">Cancelar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sección para ClienteMembresia -->
+  <section name="seccion-cliente-membresias">
+    <div class="header-content">
+      <h2>Membresías de Clientes</h2>
+      <button id="abrir-form-cliente-membresia" class="filtro-btn" data-estado="cerrado">+</button>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Cliente</th>
+          <th>Membresía</th>
+          <th>Fecha Inicio</th>
+          <th>Fecha Fin</th>
+          <th>Estado</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for cliente_membresia in cliente_membresias %}
+        <tr data-id="{{ cliente_membresia.id }}">
+          <td>{{ cliente_membresia.usuario__nombre }} {{ cliente_membresia.usuario__apellido }}</td>
+          <td>{{ cliente_membresia.membresia__nombre }}</td>
+          <td>{{ cliente_membresia.fecha_inicio|date:'d/m/Y' }}</td>
+          <td>{{ cliente_membresia.fecha_fin|date:'d/m/Y' }}</td>
+          <td>{{ cliente_membresia.estado|yesno:"Activa,Inactiva" }}</td>
+          <td>
+            <div class="action-buttons-container">
+              <button class="filtro-btn" name="btn-editar-cliente-membresia" data-id="{{ cliente_membresia.id }}">Actualizar</button>
+              <button class="filtro-btn" name="btn-eliminar-cliente-membresia" data-id="{{ cliente_membresia.id }}">Eliminar</button>
+            </div>
+          </td>
+        </tr>
+
+        <!-- Modal para editar cliente membresía -->
+        <div id="modal-fondo-editar-cliente-membresia-{{ cliente_membresia.id }}" class="modal-fondo" style="display:none;">
+          <div id="modal-form-editar-cliente-membresia-{{ cliente_membresia.id }}" class="modal-form">
+            <div class="modal-header">
+              <h3>Actualizar membresía de cliente</h3>
+              <button class="cerrar-modal" onclick="cerrarModalEdicion('cliente-membresia', '{{ cliente_membresia.id }}')">×</button>
+            </div>
+            <div class="modal-body">
+              <form class="formulario" name="form-editar-cliente-membresia" data-id="{{ cliente_membresia.id }}">
+                {% csrf_token %}
+                
+                <div class="form-fila">
+                  <label for="cliente-membresia-usuario-editar-{{ cliente_membresia.id }}">Cliente:</label>
+                  <select id="cliente-membresia-usuario-editar-{{ cliente_membresia.id }}" 
+                          name="cliente-membresia-usuario-editar-{{ cliente_membresia.id }}" 
+                          required>
+                    <option value="">Seleccione</option>
+                    {% for cliente in clientes %}
+                      <option value="{{ cliente.id }}" 
+                              {% if cliente.id == cliente_membresia.usuario_id %}selected{% endif %}>
+                        {{ cliente.nombre }} {{ cliente.apellido }}
+                      </option>
+                    {% endfor %}
+                  </select>
+                </div>
+              
+                <div class="form-fila">
+                  <label for="cliente-membresia-membresia-editar-{{ cliente_membresia.id }}">Membresía:</label>
+                  <select id="cliente-membresia-membresia-editar-{{ cliente_membresia.id }}" 
+                          name="cliente-membresia-membresia-editar-{{ cliente_membresia.id }}" 
+                          required>
+                    <option value="">Seleccione</option>
+                    {% for membresia in membresias %}
+                      <option value="{{ membresia.id }}" 
+                              {% if membresia.id == cliente_membresia.membresia_id %}selected{% endif %}>
+                        {{ membresia.nombre }}
+                      </option>
+                    {% endfor %}
+                  </select>
+                </div>
+              
+                <div class="form-fila">
+                  <label for="cliente-membresia-fecha-inicio-editar-{{ cliente_membresia.id }}">Fecha Inicio:</label>
+                  <input type="date" 
+                         id="cliente-membresia-fecha-inicio-editar-{{ cliente_membresia.id }}" 
+                         name="cliente-membresia-fecha-inicio-editar-{{ cliente_membresia.id }}" 
+                         value="{{ cliente_membresia.fecha_inicio_formatted }}"
+                         required>
+                </div>
+
+                <div class="form-fila" id="duracion-personalizada-container-editar-{{ cliente_membresia.id }}" style="display: none;">
+                  <label for="cliente-membresia-dias-personalizados-editar-{{ cliente_membresia.id }}">Duración Personalizada (días):</label>
+                  <input type="number" 
+                         id="cliente-membresia-dias-personalizados-editar-{{ cliente_membresia.id }}" 
+                         name="cliente-membresia-dias-personalizados-editar-{{ cliente_membresia.id }}" 
+                         min="1"
+                         max="365"
+                         value="30"
+                         placeholder="Ingrese número de días">
+                </div>
+
+                <div class="form-fila">
+                  <label for="cliente-membresia-estado-editar-{{ cliente_membresia.id }}">Estado:</label>
+                  <select id="cliente-membresia-estado-editar-{{ cliente_membresia.id }}" 
+                          name="cliente-membresia-estado-editar-{{ cliente_membresia.id }}" 
+                          required>
+                    <option value="True" {% if cliente_membresia.estado %}selected{% endif %}>Activa</option>
+                    <option value="False" {% if not cliente_membresia.estado %}selected{% endif %}>Inactiva</option>
+                  </select>
+                </div>
+                
+                <div class="modal-actions">
+                  <button class="filtro-btn" type="submit">Guardar</button>
+                  <button class="filtro-btn btn-cancelar" type="button" onclick="cerrarModalEdicion('cliente-membresia', '{{ cliente_membresia.id }}')">Cancelar</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+
+        {% empty %}
+        <tr>
+          <td colspan="7">No hay membresías de clientes</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <!-- Modal para crear cliente membresía -->
+  <div id="modal-fondo-cliente-membresia" class="modal-fondo" style="display:none;">
+    <div id="modal-form-cliente-membresia" class="modal-form">
+      <div class="modal-header">
+        <h3>Crear membresía de cliente</h3>
+        <button class="cerrar-modal" onclick="cerrarModal('cliente-membresia')">×</button>
+      </div>
+      <div class="modal-body">
+        <form class="formulario" id="form-crear-cliente-membresia">
+          {% csrf_token %}
+          
+          <div class="form-fila">
+            <label for="cliente-membresia-usuario">Cliente:</label>
+            <select id="cliente-membresia-usuario" name="cliente-membresia-usuario" required>
+              <option value="">Seleccione</option>
+              {% for cliente in clientes %}
+                <option value="{{ cliente.id }}">{{ cliente.nombre }} {{ cliente.apellido }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        
+          <div class="form-fila">
+            <label for="cliente-membresia-membresia">Membresía:</label>
+            <select id="cliente-membresia-membresia" name="cliente-membresia-membresia" required>
+              <option value="">Seleccione</option>
+              {% for membresia in membresias %}
+                <option value="{{ membresia.id }}">{{ membresia.nombre }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          
+          <div class="form-fila">
+            <label for="cliente-membresia-fecha-inicio">Fecha Inicio:</label>
+            <input type="date" 
+                   id="cliente-membresia-fecha-inicio" 
+                   name="cliente-membresia-fecha-inicio" 
+                   required>
+          </div>
+
+          <div class="form-fila" id="duracion-personalizada-container" style="display: none;">
+            <label for="cliente-membresia-dias-personalizados">Duración Personalizada (días):</label>
+            <input type="number" 
+                   id="cliente-membresia-dias-personalizados" 
+                   name="cliente-membresia-dias-personalizados" 
+                   min="1"
+                   max="365"
+                   value="30"
+                   placeholder="Ingrese número de días">
+          </div>
+
+          <div class="form-fila">
+            <label for="cliente-membresia-estado">Estado:</label>
+            <select id="cliente-membresia-estado" name="cliente-membresia-estado" required>
+              <option value="True">Activa</option>
+              <option value="False">Inactiva</option>
+            </select>
+          </div>
+
+          <div class="modal-actions">
+            <button class="filtro-btn" type="submit">Crear membresía de cliente</button>
+            <button class="filtro-btn btn-cancelar" type="button" onclick="cerrarModal('cliente-membresia')">Cancelar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal para selección de imágenes de membresía -->
+  <div id="modal-imagenes-membresia" class="modal-imagenes">
+    <div class="modal-imagenes-contenido">
+      <span class="cerrar-modal-imagenes">&times;</span>
+      <h3>Seleccionar Imagen</h3>
+      <div class="acciones-imagen">
+        <button type="button" class="filtro-btn" id="btn-subir-imagen-membresia">Subir Nueva Imagen</button>
+        <input type="file" id="input-subir-imagen-membresia" accept="image/*" style="display: none;">
+      </div>
+      <div class="galeria-imagenes" id="galeria-imagenes-membresia">
+        <!-- Las imágenes se cargarán dinámicamente con JavaScript -->
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{% static 'js/membresias.js' %}"></script>
+<script src="{% static 'js/validaciones.js' %}"></script>
+{% endblock %}

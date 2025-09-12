@@ -1,0 +1,107 @@
+ /* Elimina margen del body y del header */
+body {
+    margin: 0;
+    padding: 0;
+    font-family: Arial, sans-serif;
+    background-color: #483D8B;
+}
+
+/* Header */
+.encabezado {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  z-index: 999;
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    background-color: #000000;
+    padding: 10px 50px;
+    color: white;
+    margin: 0;
+    /* sin margen */
+}
+
+/* Logo */
+.logo-img {
+    height: 115px;
+    width: auto;
+}
+
+/* Menú */
+.menu ul {
+    list-style: none;
+    display: flex;
+    gap: 30px;
+    margin: 0;
+    padding: 0;
+}
+
+.menu ul li {
+  display: flex;
+  align-items: center; /* Alinea verticalmente el contenido dentro de cada li */
+}
+
+.menu ul li a {
+    color: white;
+    text-decoration: none;
+    font-weight: 800;
+    font-size: 16px;
+    transition: color 0.3s ease;
+}
+
+.menu ul li a:hover {
+    color: red;
+}
+
+/* Main con márgenes */
+main {
+    margin: 150px auto;
+    max-width: 1200px;
+    padding: 0 20px;
+}
+/*--------------footer app ---------------*/
+.footer-app {
+  background: linear-gradient(to right, #f55353, #ffffff);
+  padding: 20px;
+  font-family: sans-serif;
+}
+
+.contenido-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.texto-footer {
+  color: #000;
+  max-width: 70%;
+}
+
+.icono-footer img {
+  height: 50px;
+}
+/*-------FOOTER--------*/
+.footer-negro {
+  background-color: #000;
+  color: white;
+  margin-top: 5px;
+  padding: 20px 0;
+  width: 100%;
+  text-align: center;
+}
+
+.footer-negro a {
+  color: white; /* Rojo, puedes personalizar */
+  text-decoration: none;
+}
+
+.footer-negro a:hover {
+  text-decoration: underline;
+}
+
+.footer-negro, .footer-negro * {
+  color: white !important;
+}
+

@@ -1,0 +1,476 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gestión de administradores - Punto Fitness</title>
+  <link rel="stylesheet" href="{% static 'css/inventario.css' %}">
+  <link rel="stylesheet" href="{% static 'css/base_admin.css' %}">
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+</head>
+
+<body>
+
+  <header>
+    <div class="logo">Punto Fitness</div>
+    <nav>
+      <ul>
+        <li><a href="{% url 'estadisticas' %}">Pagina Admin</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <div class="content">
+    <div class="header-content">
+      <h2>Gestión de administradores</h2>
+      <!-- Botón para agregar nuevo administrador -->
+      <button id="abrir-form-admin" class="filtro-btn agregar-btn" data-estado="cerrado">+</button>
+      <!-- Botón para transferir superadmin (solo visible para superadmin actual) -->
+      <button id="transferir-superadmin-btn" class="filtro-btn btn-transferir" style="background: linear-gradient(90deg, #22c55e 0%, #16a34a 100%); color: #fff; font-weight: 700; border-radius: 25px; padding: 0 32px; height: 48px; font-size: 1.1rem; box-shadow: 0 4px 16px rgba(34,197,94,0.15); display: flex; align-items: center; gap: 10px; letter-spacing: 0.5px; border: none; transition: background 0.3s;">
+        <span>🔄</span> TRANSFERIR SUPER ADMIN
+      </button>
+    </div>
+    <!-- Tabla de administradores -->
+    <table>
+      <thead>
+        <tr>
+          <th>Nombre</th>
+          <th>Apellido</th>
+          <th>Correo electrónico</th>
+          <th>Teléfono</th>
+          <th>Nivel de acceso</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for admin in administradores %}
+        <tr data-id="{{ admin.id }}">
+          <td>{{ admin.cliente.nombre }}</td>
+          <td>{{ admin.cliente.apellido }}</td>
+          <td>{{ admin.cliente.email }}</td>
+          <td>{{ admin.cliente.telefono }}</td>
+          <td>{{ admin.nivel_acceso }}</td>
+          <td>
+            <div class="action-buttons-container">
+              <button class="filtro-btn" name="btn-editar-admin" data-id="{{ admin.id }}">Actualizar</button>
+              <button class="filtro-btn" name="btn-eliminar-admin" data-id="{{ admin.id }}">Eliminar</button>
+            </div>
+          </td>
+        </tr>
+
+        <!-- Modal para editar administrador -->
+        <div id="modal-fondo-editar-admin-{{ admin.id }}" class="modal-fondo" style="display:none;">
+          <div id="modal-form-editar-admin-{{ admin.id }}" class="modal-form">
+            <div class="modal-header">
+              <h3>Actualizar administrador</h3>
+              <button class="cerrar-modal" onclick="cerrarModalEdicion('admin', '{{ admin.id }}')">×</button>
+            </div>
+            <div class="modal-body">
+              <form class="formulario" name="form-editar-admin" data-id="{{ admin.id }}">
+                {% csrf_token %}
+                
+                <div class="form-fila">
+                  <label for="admin-nombre-editar-{{ admin.id }}">Nombre:</label>
+                  <input type="text" id="admin-nombre-editar-{{ admin.id }}" name="admin-nombre-editar-{{ admin.id }}" value="{{ admin.cliente.nombre }}" required>
+                </div>
+              
+                <div class="form-fila">
+                  <label for="admin-apellido-editar-{{ admin.id }}">Apellido:</label>
+                  <input type="text" id="admin-apellido-editar-{{ admin.id }}" name="admin-apellido-editar-{{ admin.id }}" value="{{ admin.cliente.apellido }}" required>
+                </div>
+              
+                <div class="form-fila">
+                  <label for="admin-correo-editar-{{ admin.id }}">Correo electrónico:</label>
+                  <input type="email" id="admin-correo-editar-{{ admin.id }}" name="admin-correo-editar-{{ admin.id }}" value="{{ admin.cliente.email }}" required>
+                </div>
+              
+                <div class="form-fila">
+                  <label for="admin-telefono-editar-{{ admin.id }}">Teléfono:</label>
+                  <input type="tel" id="admin-telefono-editar-{{ admin.id }}" name="admin-telefono-editar-{{ admin.id }}" value="{{ admin.cliente.telefono }}" required>
+                </div>
+                <div class="modal-actions">
+                  <button class="filtro-btn" type="submit">Guardar</button>
+                  <button class="filtro-btn btn-cancelar" type="button" onclick="cerrarModalEdicion('admin', '{{ admin.id }}')">Cancelar</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+        {% empty %}
+        <tr>
+          <td colspan="6">No hay administradores registrados</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <!-- Tabla de establecimientos -->
+    <div class="header-content" style="margin-top: 40px;">
+      <h2>Gestión de establecimientos</h2>
+      <button id="abrir-form-establecimiento" class="filtro-btn" data-estado="cerrado" onclick="abrirModal('establecimiento')">+</button>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Nombre</th>
+          <th>Dirección</th>
+          <th>Teléfono</th>
+          <th>Correo electrónico</th>
+          <th>Horario de apertura</th>
+          <th>Horario de cierre</th>
+          <th>Proveedor</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for establecimiento in establecimientos %}
+        <tr data-id="{{ establecimiento.id }}" data-proveedor-id="{{ establecimiento.proveedor_id }}">
+          <td>{{ establecimiento.nombre }}</td>
+          <td>{{ establecimiento.direccion }}</td>
+          <td>{{ establecimiento.telefono }}</td>
+          <td>{{ establecimiento.email }}</td>
+          <td>{{ establecimiento.horario_apertura }}</td>
+          <td>{{ establecimiento.horario_cierre }}</td>
+          <td>{{ establecimiento.proveedor.nombre }}</td>
+          <td>
+            <div class="action-buttons-container">
+              <button class="filtro-btn" name="btn-editar-establecimiento" data-id="{{ establecimiento.id }}">Actualizar</button>
+              <button class="filtro-btn" name="btn-eliminar-establecimiento" data-id="{{ establecimiento.id }}">Eliminar</button>
+            </div>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="8">No hay establecimientos registrados</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <!-- Modal para otorgar rol de administrador -->
+    <div id="modal-fondo-admin" class="modal-fondo" style="display:none;">
+      <div id="modal-form-admin" class="modal-form">
+        <div class="modal-header">
+          <h3>Agregar administrador</h3>
+          <button class="cerrar-modal" onclick="cerrarModal('admin')">×</button>
+        </div>
+        <div class="modal-body">
+          <form class="formulario" id="form-crear-admin">
+            {% csrf_token %}
+            <div class="form-fila">
+              <label for="admin-cliente">Cliente:</label>
+              <select id="admin-cliente" name="admin-cliente" required>
+                <option value="" disabled selected>Selecciona un cliente</option>
+                {% for cliente in clientes %}
+                <option value="{{ cliente.id }}">{{ cliente.nombre }} {{ cliente.apellido }} - {{ cliente.email }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="form-fila">
+              <label for="admin-establecimiento">Establecimiento:</label>
+              <select id="admin-establecimiento" name="admin-establecimiento" required>
+                <option value="" disabled selected>Selecciona establecimiento</option>
+                {% for est in establecimientos %}
+                <option value="{{ est.id }}">{{ est.nombre }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="form-fila">
+              <label for="admin-nivel">Nivel de acceso:</label>
+              <select id="admin-nivel" name="admin-nivel" required>
+                <option value="admin">Administrador</option>
+                <option value="superadmin">Superadmin</option>
+              </select>
+            </div>
+            <div class="modal-actions">
+              <button class="filtro-btn" type="submit">Agregar Administrador</button>
+              <button class="filtro-btn btn-cancelar" type="button" onclick="cerrarModal('admin')">Cancelar</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal de confirmación -->
+    <div id="modal-fondo-confirmacion" class="modal-fondo" style="display:none;">
+      <div id="modal-form-confirmacion" class="modal-form">
+        <div class="modal-header">
+          <h3>Confirmar Acción</h3>
+          <button class="cerrar-modal" onclick="cerrarModal('confirmacion')">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="modal-content">
+            <p id="mensaje-confirmacion"></p>
+            <div class="modal-actions">
+              <button class="filtro-btn" id="confirmar-accion">Confirmar</button>
+              <button class="filtro-btn btn-cancelar" id="cancelar-accion">Cancelar</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal para transferir Super Admin -->
+    <div id="modal-fondo-transferir-superadmin" class="modal-fondo" style="display:none;">
+      <div id="modal-form-transferir-superadmin" class="modal-form" style="max-width: 800px;">
+        <div class="modal-header">
+          <h3>🔄 Transferir Rol de Super Administrador</h3>
+          <button class="cerrar-modal" onclick="cerrarModal('transferir-superadmin')">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="modal-content">
+            <div class="warning-box" style="background-color: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; margin-bottom: 20px; border-radius: 5px;">
+              <h4>⚠️ ADVERTENCIA DE SEGURIDAD</h4>
+              <p>Esta acción transferirá el control total del sistema a otro administrador. Esta operación es <strong>IRREVERSIBLE</strong> y requiere múltiples verificaciones de seguridad.</p>
+            </div>
+
+            <h4>Selecciona un administrador para transferir el rol de Super Admin:</h4>
+            
+            <div class="admins-lista" id="admins-lista-transferir">
+              <!-- Los admins se cargarán dinámicamente -->
+            </div>
+
+            <div id="form-transferir-superadmin" style="display:none;">
+              <h4>Verificaciones de Seguridad</h4>
+              
+              <div class="form-fila">
+                <label for="password-superadmin">Contraseña del Super Admin actual:</label>
+                <input type="password" id="password-superadmin" name="password-superadmin" required>
+              </div>
+
+              <div class="form-fila">
+                <label for="codigo-verificacion">Código de verificación del admin destino (enviado por email):</label>
+                <input type="text" id="codigo-verificacion" name="codigo-verificacion" placeholder="Ingresa el código de 6 dígitos">
+                <button type="button" id="enviar-codigo-btn" class="filtro-btn">Enviar Código</button>
+              </div>
+
+              <div class="form-fila">
+                <label for="codigo-superadmin-actual">Código de verificación del Super Admin actual (enviado por email):</label>
+                <input type="text" id="codigo-superadmin-actual" name="codigo-superadmin-actual" placeholder="Ingresa el código de 6 dígitos" required>
+                <button type="button" id="enviar-codigo-superadmin-actual-btn" class="filtro-btn">Enviar Código</button>
+              </div>
+
+              <div class="form-fila">
+                <label for="confirmacion-final">Escribe "TRANSFERIR" para confirmar:</label>
+                <input type="text" id="confirmacion-final" name="confirmacion-final" placeholder="TRANSFERIR" required>
+              </div>
+
+              <div class="modal-actions">
+                <button class="filtro-btn" id="confirmar-transferir-superadmin" style="background-color: #dc3545; color: white;">🔄 Confirmar Transferencia</button>
+                <button class="filtro-btn btn-cancelar" onclick="cerrarModal('transferir-superadmin')">Cancelar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal para agregar establecimientos -->
+    <div id="modal-fondo-establecimiento" class="modal-fondo" style="display:none;">
+      <div id="modal-form-establecimiento" class="modal-form">
+        <div class="modal-header">
+          <h3>Agregar establecimiento</h3>
+          <button class="cerrar-modal" onclick="cerrarModal('establecimiento')">×</button>
+        </div>
+        <div class="modal-body">
+          <form class="formulario" id="form-crear-establecimiento">
+            {% csrf_token %}
+            <div class="form-fila">
+              <label for="establecimiento-nombre">Nombre:</label>
+              <input type="text" 
+              id="establecimiento-nombre" 
+              name="establecimiento-nombre" 
+              minlength="3"
+              maxlength="30" 
+              required
+              pattern="[A-Za-zÑñÁÉÍÓÚáéíóú0-9\s\-'.,()&]+"
+              title="Solo letras, números, espacios y los caracteres especiales: -'.,()&"
+              placeholder="Ej: GYM Osorno">
+            </div>
+            <div class="form-fila">
+              <label for="establecimiento-direccion">Dirección:</label>
+              <input type="text" 
+                     id="establecimiento-direccion" 
+                     name="establecimiento-direccion" 
+                     maxlength="100"
+                     minlength="5"
+                     required
+                     pattern="[A-Za-zÑñÁÉÍÓÚáéíóú0-9\s\-\#\,\.]+"
+                     title="La dirección debe contener entre 5 y 100 caracteres (letras, números, espacios y los caracteres especiales: -#.,)"
+                     placeholder="Ej: Av. Principal 123">
+            </div>
+            
+            <div class="form-fila">
+              <label for="establecimiento-telefono">Teléfono:</label>
+              <input type="tel" 
+                     id="establecimiento-telefono" 
+                     name="establecimiento-telefono" 
+                     maxlength="20"
+                     minlength="7"
+                     required
+                     pattern="[\d\s\+\-\(\)]{7,20}"
+                     title="El teléfono debe tener entre 7 y 20 dígitos (puede incluir +, -, (, ) o espacios)"
+                     placeholder="Ej: +51 123 456 789">
+            </div>
+            
+            <div class="form-fila">
+              <label for="establecimiento-email">Correo electrónico:</label>
+              <input type="email" 
+                     id="establecimiento-email" 
+                     name="establecimiento-email" 
+                     maxlength="50"
+                     required
+                     title="Ingrese un correo electrónico válido"
+                     placeholder="ejemplo@dominio.com">
+            </div>
+            
+            <div class="form-fila">
+              <label for="establecimiento-horario_apertura">Horario de apertura:</label>
+              <input type="time" 
+                     id="establecimiento-horario_apertura" 
+                     name="establecimiento-horario_apertura"
+                     required
+                     min="06:00"
+                     max="12:00"
+                     title="El horario de apertura debe ser entre las 6:00 AM y 12:00 PM">
+            </div>
+            
+            <div class="form-fila">
+              <label for="establecimiento-horario_cierre">Horario de cierre:</label>
+              <input type="time" 
+                     id="establecimiento-horario_cierre" 
+                     name="establecimiento-horario_cierre" 
+                     required
+                     min="12:00"
+                     max="23:59"
+                     title="El horario de cierre debe ser entre las 12:00 PM y 11:59 PM">
+            </div>
+            
+            <div class="form-fila">
+              <label for="establecimiento-proveedor">Proveedor:</label>
+              <select id="establecimiento-proveedor" 
+                      name="establecimiento-proveedor" 
+                      required
+                      title="Debe seleccionar un proveedor">
+                <option value="">Seleccione</option>
+                {% for proveedor in proveedores %}
+                <option value="{{ proveedor.id }}">{{ proveedor.nombre }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            
+            <div class="modal-actions">
+              <button class="filtro-btn" type="submit">Agregar Establecimiento</button>
+              <button class="filtro-btn btn-cancelar" type="button" onclick="cerrarModal('establecimiento')">Cancelar</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal para editar establecimientos -->
+    <div id="modal-fondo-editar-establecimiento" class="modal-fondo" style="display:none;">
+      <div id="modal-form-editar-establecimiento" class="modal-form">
+        <div class="modal-header">
+          <h3>Actualizar establecimiento</h3>
+          <button class="cerrar-modal" onclick="cerrarModalEdicion('establecimiento')">×</button>
+        </div>
+        <div class="modal-body">
+          <form class="formulario" id="form-editar-establecimiento">
+            {% csrf_token %}
+            <input type="hidden" id="establecimiento-id-editar" name="establecimiento-id">
+            <div class="form-fila">
+              <label for="establecimiento-nombre-editar">Nombre:</label>
+              <input type="text" 
+                     id="establecimiento-nombre-editar" 
+                     name="establecimiento-nombre" 
+                     minlength="3"
+                     maxlength="30" 
+                     required
+                     pattern="[A-Za-zÑñÁÉÍÓÚáéíóú0-9\s\-'.,()&]+"
+                     title="Solo letras, números, espacios y los caracteres especiales: -'.,()&"
+                     placeholder="Ej: GYM Osorno">
+            </div>
+            <div class="form-fila">
+              <label for="establecimiento-direccion-editar">Dirección:</label>
+              <input type="text" 
+                     id="establecimiento-direccion-editar" 
+                     name="establecimiento-direccion" 
+                     maxlength="100"
+                     minlength="5"
+                     required
+                     pattern="[A-Za-zÑñÁÉÍÓÚáéíóú0-9\s\-\#\,\.]+"
+                     title="La dirección debe contener entre 5 y 100 caracteres (letras, números, espacios y los caracteres especiales: -#.,)"
+                     placeholder="Ej: Av. Principal 123">
+            </div>
+            <div class="form-fila">
+              <label for="establecimiento-telefono-editar">Teléfono:</label>
+              <input type="tel" 
+                     id="establecimiento-telefono-editar" 
+                     name="establecimiento-telefono" 
+                     maxlength="20"
+                     minlength="7"
+                     required
+                     pattern="[\d\s\+\-\(\)]{7,20}"
+                     title="El teléfono debe tener entre 7 y 20 dígitos (puede incluir +, -, (, ) o espacios)"
+                     placeholder="Ej: +51 123 456 789">
+            </div>
+            <div class="form-fila">
+              <label for="establecimiento-email-editar">Correo electrónico:</label>
+              <input type="email" 
+                     id="establecimiento-email-editar" 
+                     name="establecimiento-email" 
+                     maxlength="50"
+                     required
+                     title="Ingrese un correo electrónico válido"
+                     placeholder="ejemplo@dominio.com">
+            </div>
+            <div class="form-fila">
+              <label for="establecimiento-horario_apertura-editar">Horario de apertura:</label>
+              <input type="time" 
+                     id="establecimiento-horario_apertura-editar" 
+                     name="establecimiento-horario_apertura"
+                     required
+                     min="06:00"
+                     max="12:00"
+                     title="El horario de apertura debe ser entre las 6:00 AM y 12:00 PM">
+            </div>
+            <div class="form-fila">
+              <label for="establecimiento-horario_cierre-editar">Horario de cierre:</label>
+              <input type="time" 
+                     id="establecimiento-horario_cierre-editar" 
+                     name="establecimiento-horario_cierre" 
+                     required
+                     min="12:00"
+                     max="23:59"
+                     title="El horario de cierre debe ser entre las 12:00 PM y 11:59 PM">
+            </div>
+            <div class="form-fila">
+              <label for="establecimiento-proveedor-editar">Proveedor:</label>
+              <select id="establecimiento-proveedor-editar" 
+                      name="establecimiento-proveedor" 
+                      required
+                      title="Debe seleccionar un proveedor">
+                <option value="">Seleccione</option>
+                {% for proveedor in proveedores %}
+                <option value="{{ proveedor.id }}">{{ proveedor.nombre }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="modal-actions">
+              <button class="filtro-btn" type="submit">Actualizar Establecimiento</button>
+              <button class="filtro-btn btn-cancelar" type="button" onclick="cerrarModalEdicion('establecimiento')">Cancelar</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="{% static 'js/validaciones.js' %}"></script>
+  <script src="{% static 'js/super_admin.js' %}"></script>
+</body>
+
+</html>

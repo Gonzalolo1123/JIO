@@ -1,0 +1,63 @@
+.qr-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2rem;
+    padding: 2rem;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+    margin: 2rem 0;
+  }
+  
+  .qr-info {
+    text-align: center;
+  }
+  
+  .qr-display {
+    border: 2px solid #e74c3c;
+    border-radius: 12px;
+    padding: 1rem;
+    background: #fff;
+  }
+  
+  .qr-image {
+    width: 300px;
+    height: 300px;
+    display: block;
+  }
+  
+  .qr-actions {
+    display: flex;
+    gap: 1rem;
+  }
+  
+  .btn-generar-qr, .btn-refrescar {
+    background: #e74c3c;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 0.8rem 1.5rem;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  
+  .btn-generar-qr:hover, .btn-refrescar:hover {
+    background: #c0392b;
+  }
+  
+  .instrucciones {
+    background: #f8f9fa;
+    padding: 1.5rem;
+    border-radius: 8px;
+    margin-top: 2rem;
+  }
+  
+  .instrucciones ul {
+    margin-left: 1.5rem;
+  }
+  
+  .instrucciones li {
+    margin: 0.5rem 0;
+  }

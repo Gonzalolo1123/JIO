@@ -1,0 +1,142 @@
+{% extends "punto_app/base.html" %}
+{% load static %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <link rel="stylesheet" href="{% static 'css/planes.css' %}">
+{% endblock %}
+
+{% block content %}
+<section id="planes">
+  <div class="contenedor-planes">
+    <h2 class="titulo-seccion">Planes</h2>
+    <div class="carrusel-planes">
+      <button class="flecha-izquierda" id="prevPlan">&#9664;</button>
+      <div class="carrusel-viewport">
+        <div class="carrusel-inner" id="planesCarrusel">
+          {% for i in planes %}
+            <div class="plan-card">
+              <img src="{% static i.imagen %}" alt="{{ i.nombre }}" class="plan-img">
+              <div class="plan-info">
+                <h3 class="plan-nombre">{{ i.nombre }}</h3>
+                <p class="plan-precio"><span>Precio:</span> ${{ i.precio }}</p>
+                <p class="plan-duracion"><span>Duración:</span> {{ i.duracion }}</p>
+                <p class="plan-descripcion">{{ i.descripcion }}</p>
+                <button class="btn-inscribir">Inscribirme</button>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+      <button class="flecha-derecha" id="nextPlan">&#9654;</button>
+    </div>
+  </div>
+</section>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const carrusel = document.getElementById('planesCarrusel');
+  const prevBtn = document.getElementById('prevPlan');
+  const nextBtn = document.getElementById('nextPlan');
+  const cards = carrusel.querySelectorAll('.plan-card');
+  function getCardsPerView() {
+    if (window.innerWidth < 700) return 1;
+    if (window.innerWidth < 1000) return 2;
+    return 3;
+  }
+  let cardsPerView = getCardsPerView();
+  let currentIndex = 0;
+
+  function updateCarrusel() {
+    cardsPerView = getCardsPerView();
+    const cardWidth = cards[0].offsetWidth + 32; // 32px gap
+    carrusel.style.transform = `translateX(-${currentIndex * cardWidth}px)`;
+    // ¡No deshabilitamos los botones!
+  }
+
+  prevBtn.addEventListener('click', function() {
+    if (currentIndex > 0) {
+      currentIndex--;
+    } else {
+      currentIndex = cards.length - cardsPerView;
+    }
+    updateCarrusel();
+  });
+
+  nextBtn.addEventListener('click', function() {
+    if (currentIndex < cards.length - cardsPerView) {
+      currentIndex++;
+    } else {
+      currentIndex = 0;
+    }
+    updateCarrusel();
+  });
+
+  window.addEventListener('resize', function() {
+    updateCarrusel();
+  });
+
+  updateCarrusel();
+});
+</script>
+
+<section id="actividades-extras">
+  <div class="contenedor-actividades">
+    <h2 class="titulo-seccion">Actividades extra</h2>
+    <div class="grid-actividades">
+      <div class="actividad">
+        <img src="{% static 'images/grupales/box.jpg' %}" alt="Actividad 1">
+        <p>Yoga al aire libre</p>
+      </div>
+      <div class="actividad">
+        <img src="{% static 'images/grupales/box.jpg' %}" alt="Actividad 2">
+        <p>Clases de baile</p>
+      </div>
+      <div class="actividad">
+        <img src="{% static 'images/grupales/box.jpg' %}" alt="Actividad 3">
+        <p>Crossfit</p>
+      </div>
+    </div>
+    <button id="btnMostrarCursos">Inscribir curso</button>
+  </div>
+</section>
+
+<section id="productos-tienda">
+  <div class="contenedor-productos">
+    <h2 class="titulo-seccion">Productos en Tienda</h2>
+    <div class="filtros-productos">
+      <button class="filtro-producto-btn activo" data-categoria="todos">Todos</button>
+      {% for cat in categorias %}
+        <button class="filtro-producto-btn" data-categoria="{{ cat.id }}">{{ cat.nombre }}</button>
+      {% endfor %}
+    </div>
+    <div class="carrusel-productos">
+      <button class="flecha-izquierda" id="prevProducto">&#9664;</button>
+      <div class="carrusel-viewport-productos">
+        <div class="carrusel-inner-productos" id="productosCarrusel">
+          {% for p in productos %}
+            <div class="producto-card" data-categoria="{{ p.categoria_id }}">
+              <img src="{% static p.imagen %}" alt="{{ p.nombre }}" class="producto-img">
+              <div class="producto-info">
+                <h3 class="producto-nombre">{{ p.nombre }}</h3>
+                <p class="producto-precio"><span>Precio:</span> ${{ p.precio }}</p>
+                <p class="producto-descripcion">{{ p.descripcion }}</p>
+                <p class="producto-stock">Stock: {{ p.stock_actual }}</p>
+                <button class="btn-comprar">Comprar</button>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+      <button class="flecha-derecha" id="nextProducto">&#9654;</button>
+    </div>
+  </div>
+</section>
+
+{{ cursos|json_script:"cursos-json" }}
+{% endblock %}
+
+{% block extra_scripts %}
+
+  <script src="{% static 'js/planes.js' %}"></script>
+{% endblock %}

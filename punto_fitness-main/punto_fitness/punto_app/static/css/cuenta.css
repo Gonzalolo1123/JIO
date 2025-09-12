@@ -1,0 +1,302 @@
+/* Estilos específicos para el modal de cuenta (userModal) */
+
+/* Fondo oscuro difuminado para el modal de cuenta */
+#userModal.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+/* Ocultar el modal de cuenta por defecto */
+#userModal.hidden {
+    display: none;
+}
+
+/* Contenedor del contenido del modal de cuenta */
+#userModal .modal-content {
+    background: #ffffff;
+    border-radius: 40px;
+    padding: 20px 50px;
+    width: 100%;
+    max-width: 500px;
+    min-height: 500px;
+    max-height: 1000px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.18);
+    text-align: center;
+    font-family: Arial, sans-serif;
+    position: relative;
+    border: 2.5px solid #e0e0e0;
+    box-sizing: border-box;
+}
+
+/* Contenido dentro del modal de cuenta */
+#userModal .form-container {
+    display: flex;
+    flex-direction: column;
+    padding: 10px 20px;
+    gap: 8px;
+    align-items: center;
+    justify-content: flex-start;
+    width: 100%;
+    margin: 10px;
+    box-sizing: border-box;
+}
+
+/* Encabezado del modal de cuenta */
+#userModal .form-container h1 {
+    margin-bottom: 18px;
+    font-size: 2em;
+    font-weight: bold;
+    color: #222;
+}
+
+/* Información del usuario en el modal de cuenta */
+#userModal .form-container p {
+    margin: 0;
+    font-size: 14px;
+    color: #000;
+    padding: 6px 0;
+    border-bottom: 1px solid #e0e0e0;
+    width: 100%;
+    text-align: left;
+    font-weight: 100;
+    line-height: 20px;
+    letter-spacing: 0.5px;
+}
+
+#userModal .form-container p:last-of-type {
+    border-bottom: none;
+}
+
+#userModal .form-container p strong {
+    color: #000;
+    font-weight: bold;
+    min-width: 80px;
+    display: inline-block;
+}
+
+/* Estilo especial para el rol en el modal de cuenta */
+#userModal .form-container p:nth-child(5) {
+    background: #e0e0e0;
+    padding: 8px 15px;
+    border-radius: 50px;
+    margin: 8px 0;
+    border: none;
+    font-weight: bold;
+    color: #000;
+    text-align: center;
+    font-size: 12px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+}
+
+#userModal .form-container p:nth-child(5) strong {
+    color: #000;
+}
+
+/* Contenedor de botones de admin en el modal de cuenta */
+#userModal .admin-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 5px 0;
+    width: 100%;
+    padding: 0 15px;
+    animation: slideInUp 0.6s ease-in-out;
+}
+
+/* Estilos para los botones de admin en el modal de cuenta */
+#userModal .admin-btn {
+    padding: 12px 30px;
+    border: none;
+    border-radius: 50px;
+    text-decoration: none;
+    font-size: 12px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    transition: transform 80ms ease-in;
+    cursor: pointer;
+    display: inline-block;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+    min-width: 200px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+}
+
+#userModal .admin-btn::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+    transition: left 0.6s ease;
+}
+
+#userModal .admin-btn:hover::before {
+    left: 100%;
+}
+
+#userModal .superadmin-btn {
+    background: #000000;
+    color: #ffffff;
+    border: 2px solid #000000;
+}
+
+#userModal .superadmin-btn:hover {
+    background: #333333;
+    border-color: #333333;
+    transform: scale(1.02);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+}
+
+#userModal .admin-btn:not(.superadmin-btn) {
+    background: #000000;
+    color: #ffffff;
+    border: 2px solid #000000;
+}
+
+#userModal .admin-btn:not(.superadmin-btn):hover {
+    background: #333333;
+    border-color: #333333;
+    transform: scale(1.02);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+}
+
+#userModal .admin-btn:active {
+    transform: scale(0.98);
+}
+
+#userModal .admin-btn:focus {
+    outline: none;
+}
+
+/* Animación de entrada para los botones del modal de cuenta */
+@keyframes slideInUp {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Estilo especial para el botón de cerrar sesión en el modal de cuenta */
+#userModal #cerrarSesionBtn {
+    margin-top: 10px;
+    padding: 12px 30px;
+    border: none;
+    border-radius: 50px;
+    text-decoration: none;
+    font-size: 12px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    transition: transform 80ms ease-in;
+    cursor: pointer;
+    display: inline-block;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+    min-width: 200px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+    background: #ff4444;
+    color: #ffffff;
+    border: 2px solid #ff4444;
+}
+
+#userModal #cerrarSesionBtn::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+    transition: left 0.6s ease;
+}
+
+#userModal #cerrarSesionBtn:hover::before {
+    left: 100%;
+}
+
+#userModal #cerrarSesionBtn:hover {
+    background: #e63946;
+    transform: scale(1.02);
+    box-shadow: 0 6px 20px rgba(255, 65, 108, 0.4);
+}
+
+#userModal #cerrarSesionBtn:active {
+    transform: scale(0.98);
+}
+
+#userModal #cerrarSesionBtn:focus {
+    outline: none;
+}
+
+/* Botón de cerrar del modal de cuenta */
+#userModal .close {
+    position: absolute;
+    top: 18px;
+    right: 24px;
+    font-size: 2.2em;
+    color: #e10600;
+    cursor: pointer;
+    background: #fff;
+    border: 2px solid #eee;
+    border-radius: 50%;
+    width: 38px;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s, color 0.2s, border 0.2s;
+    z-index: 10;
+}
+
+#userModal .close:hover {
+    background: #ffeaea;
+    color: #b30000;
+    border-color: #e10600;
+}
+
+.admin-panel-btn {
+  background-color: #4CAF50;
+  color: white;
+  padding: 10px 15px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-right: 10px;
+  margin-bottom: 10px;
+}
+
+.admin-panel-btn:hover {
+  background-color: #45a049;
+}
+
+/* Puedes agregar esto a tu CSS para asegurar la posición del botón de cerrar */
+.close {
+  position: absolute;
+  top: 16px;
+  right: 24px;
+  font-size: 2rem;
+  cursor: pointer;
+  z-index: 2;
+}

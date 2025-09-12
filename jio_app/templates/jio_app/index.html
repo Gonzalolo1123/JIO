@@ -1,0 +1,178 @@
+{% extends "jio_app/base.html" %}
+{% load static %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{% static 'css/index.css' %}">
+{% endblock %}
+
+{% block content %}
+<!-- Sección Hero -->
+<section id="hero">
+  <div class="hero-content">
+    <h1>¡Diversión Garantizada!</h1>
+    <p>Arrienda los mejores juegos inflables para tus eventos</p>
+    <a href="#reservar" class="btn-hero">Reservar Ahora</a>
+  </div>
+</section>
+
+<!-- Sección Historia -->
+<section id="historia">
+  <div class="contenedor-historia">
+    <h2>Nuestra Historia</h2>
+    <p>Desde nuestros humildes comienzos, JIO ha crecido para convertirse en la empresa líder en arriendo de juegos inflables en la región. Con más de 10 años de experiencia, hemos llevado diversión y alegría a miles de eventos familiares, cumpleaños, fiestas corporativas y celebraciones especiales.</p>
+    
+    <p>Nuestra pasión por crear momentos inolvidables nos ha llevado a expandir nuestro catálogo constantemente, incorporando los juegos más modernos y seguros del mercado. Cada evento es único para nosotros, y nos esforzamos por superar las expectativas de nuestros clientes.</p>
+
+    <div class="carrusel-videos-historia">
+      <div class="video-slider">
+        <div class="video-slide" id="video0">
+          <video src="{% static 'videos/juego1.mp4' %}" muted onclick="cambiarSlide(0)"></video>
+        </div>
+        <div class="video-slide central" id="video1">
+          <video src="{% static 'videos/juego2.mp4' %}" controls onclick="cambiarSlide(1)"></video>
+        </div>
+        <div class="video-slide" id="video2">
+          <video src="{% static 'videos/juego3.mp4' %}" muted onclick="cambiarSlide(2)"></video>
+        </div>
+      </div>
+      <div class="puntos-indicadores">
+        <span class="punto" onclick="cambiarSlide(0)"></span>
+        <span class="punto activo" onclick="cambiarSlide(1)"></span>
+        <span class="punto" onclick="cambiarSlide(2)"></span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Sección Juegos Inflables -->
+<section id="juegos">
+  <div class="contenedor-juegos">
+    <h2 class="titulo-seccion">Nuestros Juegos Inflables</h2>
+    <p class="subtitulo-seccion">Descubre nuestra amplia variedad de juegos inflables para todas las edades</p>
+
+    <div class="juegos-grid">
+      <div class="juego-box">
+        <img src="{% static 'images/juegos_inflables/castillo.jpg' %}" alt="Castillo Inflable">
+        <h3>Castillos Inflables</h3>
+        <p>Perfectos para cumpleaños y eventos familiares. Diversión garantizada para los más pequeños.</p>
+        <div class="juego-info">
+          <span class="capacidad">Hasta 8 niños</span>
+          <span class="precio">Desde $25.000</span>
+        </div>
+      </div>
+
+      <div class="juego-box">
+        <img src="{% static 'images/juegos_inflables/tobogan.jpg' %}" alt="Tobogán Inflable">
+        <h3>Toboganes</h3>
+        <p>Emoción y adrenalina en cada deslizamiento. Los favoritos de los niños más aventureros.</p>
+        <div class="juego-info">
+          <span class="capacidad">Hasta 6 niños</span>
+          <span class="precio">Desde $30.000</span>
+        </div>
+      </div>
+
+      <div class="juego-box">
+        <img src="{% static 'images/juegos_inflables/obstaculos.jpg' %}" alt="Pista de Obstáculos">
+        <h3>Pistas de Obstáculos</h3>
+        <p>Desafíos y competencias para desarrollar habilidades motoras mientras se divierten.</p>
+        <div class="juego-info">
+          <span class="capacidad">Hasta 10 niños</span>
+          <span class="precio">Desde $35.000</span>
+        </div>
+      </div>
+
+      <div class="juego-box">
+        <img src="{% static 'images/juegos_inflables/combo.jpg' %}" alt="Combo Inflable">
+        <h3>Combos Especiales</h3>
+        <p>La combinación perfecta de diversión. Múltiples juegos en uno para eventos grandes.</p>
+        <div class="juego-info">
+          <span class="capacidad">Hasta 15 niños</span>
+          <span class="precio">Desde $50.000</span>
+        </div>
+      </div>
+
+      <div class="juego-box">
+        <img src="{% static 'images/juegos_inflables/deportivo.jpg' %}" alt="Juego Deportivo">
+        <h3>Juegos Deportivos</h3>
+        <p>Fútbol, básquetbol y más deportes en formato inflable. Ideal para eventos deportivos.</p>
+        <div class="juego-info">
+          <span class="capacidad">Hasta 12 niños</span>
+          <span class="precio">Desde $40.000</span>
+        </div>
+      </div>
+
+      <div class="juego-box">
+        <img src="{% static 'images/juegos_inflables/infantil.jpg' %}" alt="Juego Infantil">
+        <h3>Juegos Infantiles</h3>
+        <p>Diseñados especialmente para los más pequeños, con máxima seguridad y diversión.</p>
+        <div class="juego-info">
+          <span class="capacidad">Hasta 6 niños</span>
+          <span class="precio">Desde $20.000</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Sección Reservar -->
+<section id="reservar">
+  <div class="contenedor-reservar">
+    <h2>¡Reserva tu Juego Inflable!</h2>
+    <p>Haz que tu evento sea inolvidable con nuestros juegos inflables</p>
+    
+    <div class="reservar-content">
+      <div class="reservar-info">
+        <h3>¿Por qué elegir JIO?</h3>
+        <ul>
+          <li>✅ Juegos seguros y certificados</li>
+          <li>✅ Instalación y retiro incluido</li>
+          <li>✅ Personal capacitado</li>
+          <li>✅ Precios competitivos</li>
+          <li>✅ Disponibilidad 7 días a la semana</li>
+          <li>✅ Cobertura 30km a las afueras de Osorno </li>
+        </ul>
+      </div>
+      
+      <div class="reservar-form">
+        <h3>Inicia tu Reserva</h3>
+        <p>Completa el formulario y nos pondremos en contacto contigo</p>
+        <a href="#" class="btn-reservar" onclick="alert('Formulario de reserva próximamente disponible')">
+          Reservar Ahora
+        </a>
+        <p class="contacto-info">
+          O llámanos directamente:<br>
+          <strong>+56 9 1234 5678</strong>
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Sección Testimonios -->
+<section id="testimonios">
+  <div class="contenedor-testimonios">
+    <h2>Lo que dicen nuestros clientes</h2>
+    <div class="testimonios-grid">
+      <div class="testimonio">
+        <p>"Excelente servicio, llegaron puntuales y el castillo estaba impecable. Los niños se divirtieron muchísimo."</p>
+        <h4>- Patricia Silva</h4>
+        <span>Cumpleaños de su hijo</span>
+      </div>
+      <div class="testimonio">
+        <p>"Muy profesionales, nos ayudaron con todo el proceso de reserva y el evento fue un éxito total."</p>
+        <h4>- Roberto Pérez</h4>
+        <span>Fiesta de empresa</span>
+      </div>
+      <div class="testimonio">
+        <p>"Los precios son justos y la calidad de los juegos es excelente. Definitivamente los recomiendo."</p>
+        <h4>- Carmen López</h4>
+        <span>Evento escolar</span>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{% static 'js/index.js' %}"></script>
+{% endblock %}

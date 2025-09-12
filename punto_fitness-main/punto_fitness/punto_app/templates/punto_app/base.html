@@ -1,0 +1,205 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Punto Fitness</title>
+
+  <!-- Estilos base -->
+  <link rel="stylesheet" href="{% static 'css/base.css' %}">
+  <link rel="stylesheet" href="{% static 'css/signIn-Up.css' %}">
+  <link rel="stylesheet" href="{% static 'css/cuenta.css' %}">
+  
+  <!-- Fuente Playfair Display para concordancia con base_admin -->
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&display=swap" rel="stylesheet">
+
+  <!-- SweetAlert2 -->
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+  {% block extra_head %}{% endblock %}
+</head>
+
+<body data-user-id="{{ cliente_id|default:'' }}">
+  <!-- Menú Superior -->
+  <header class="encabezado">
+    <div class="logo">
+      <img src="{% static 'images/logo_gym2.png' %}" alt="Punto Fitness" class="logo-img">
+    </div>
+    <nav class="menu">
+      <ul>
+        <li><a href="{% url 'principal' %}">Inicio</a></li>
+        <li><a href="#historia">Historia</a></li>
+        <li><a href="#trabajadores">Trabajadores</a></li>
+        <li><a href="{% url 'maquinas' %}">Máquinas</a></li>
+        <li>
+          <a href="#" id="openUserModal">Hola, {{ cliente_nombre|default:"Usuario" }}</a>
+        </li>
+      </ul>
+    </nav>
+  </header>
+
+  <!-- Contenido dinámico -->
+  <main>
+    {% block content %}
+    {% endblock %}
+  </main>
+
+
+  <footer class="footer-negro">
+    <p>© 2025 Punto Fitness</p>
+    <p>Síguenos en:
+      <a href="#">Instagram</a> |
+      <a href="#">Facebook</a> |
+      <a href="#">WhatsApp</a>
+    </p>
+    <p>Contacto: +56 9 1234 5678 | contacto@puntofitness.cl</p>
+  </footer>
+
+
+
+  <!-- Modal de Login/Registro -->
+  <div id="authModal" class="modal hidden">
+    <div class="modal-content">
+      <span class="close" id="closeModal">&times;</span>
+      <section>
+        <div class="container" id="container">
+          <div class="form-container sign-up-container">
+            <form id="signUpForm" method="POST">
+              {% csrf_token %}
+              <h1>Crear Cuenta</h1>
+              <label><input type="text" id="nombre" placeholder="Nombre" required /></label>
+              <label><input type="text" id="apellido" placeholder="Apellido" required /></label>
+              <label><input type="email" id="correo" placeholder="Correo" required /></label>
+              <label><input type="tel" id="telefono" placeholder="Número de teléfono" required /></label>
+               <label>
+                <input type="password" id="contrasena" placeholder="Contraseña" required />
+                <div class="password-strength-wrapper">
+                  <div id="password-strength-bar">
+                    <div id="password-strength-fill"></div>
+                  </div>
+                  <span id="password-strength-text"></span>
+                </div>
+              </label>
+              <label>
+                <input type="password" id="Confirmcontrasena" placeholder="Repite Contraseña" required />
+              </label>
+              <button type="submit" style="margin-top: 9px">Crear cuenta</button>
+            </form>
+          </div>
+          <div class="form-container sign-in-container">
+            <form id="signInForm">
+              {% csrf_token %}
+              <h1>Iniciar sesión</h1>
+              <label><input type="email" id="correoi" placeholder="Correo" required /></label>
+              <label><input type="password" id="contrasenai" placeholder="Contraseña" required /></label>
+              <a href="#" id="forgotPasswordLink">¿Olvidaste tu contraseña?</a>
+              <button>Iniciar sesión</button>
+            </form>
+          </div>
+          
+          <div class="form-container forgot-password-container" style="display:none;">
+            <form id="forgotPasswordForm">
+              {% csrf_token %}
+              <h1>Recuperar Contraseña</h1>
+              <label>
+                <span style="font-size:0.98em; color:#555;">Escriba su correo para restablecer contraseña</span>
+                <input type="email" id="forgotCorreo" placeholder="Correo" required />
+              </label>
+              <button type="submit" style="margin-top: 9px">Enviar</button>
+              <a href="#" id="volverLogin" style="margin-top:10px; display:inline-block; font-size:0.95em;">Volver a iniciar sesión</a>
+            </form>
+          </div>
+          <div class="overlay-container">
+            <div class="overlay">
+              <div class="overlay-panel overlay-left">
+                <h1>Iniciar sesión</h1>
+                <p>Inicia sesión aquí si ya tienes una cuenta</p>
+                <button class="ghost mt-5" id="signIn">Iniciar sesión</button>
+              </div>
+              <div class="overlay-panel overlay-right">
+                <h1>¡Crear cuenta!</h1>
+                <p>Regístrate si aún no tienes una cuenta...</p>
+                <button class="ghost" id="signUp">Crear cuenta</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- Modal de Verificación de Correo -->
+  <div id="emailVerificationModal" class="modal hidden">
+    <div class="modal-content">
+      <span class="close" id="closeEmailVerificationModal">&times;</span>
+      <div class="form-container">
+        <h1>🔐 Verificar Correo Electrónico</h1>
+        <p>
+          Hemos enviado un código de verificación de 6 dígitos a: <br>
+          <strong id="verificationEmail">usuario@ejemplo.com</strong>
+        </p>
+        <p style="font-size: 14px; color: #7f8c8d; margin-top: 15px;">
+          Por favor, revisa tu bandeja de entrada y spam, e ingresa el código a continuación.
+        </p>
+        
+        <form id="emailVerificationForm">
+          {% csrf_token %}
+          <label>
+            <input type="text" 
+                   id="verificationCode" 
+                   placeholder="000000" 
+                   required 
+                   maxlength="6" 
+                   pattern="[0-9]{6}"
+                   autocomplete="one-time-code" />
+          </label>
+          <button type="submit">
+            ✅ Verificar y Crear Cuenta
+          </button>
+        </form>
+        
+        <div class="links-container">
+          <p style="font-size: 14px; color: #7f8c8d; margin-bottom: 15px;">
+            ¿No recibiste el código? 
+            <a href="#" id="resendCode">🔄 Reenviar código</a>
+          </p>
+          <a href="#" id="backToSignUp">
+            ← Volver al registro
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Cuenta Usuario -->
+  <div id="userModal" class="modal hidden">
+    <div class="modal-content">
+      <span class="close" id="closeUserModal">&times;</span>
+      <div class="form-container">
+        <h1>Mi cuenta</h1>
+        <p><strong>Nombre:</strong> {{cliente_nombre}}</p>
+        <p><strong>Correo:</strong> {{cliente_email}}</p>
+        <p><strong>Teléfono:</strong> {{cliente_telefono}}</p>
+        <p><strong>Rol:</strong> {{nivel_acceso|default:"Cliente"}}</p>
+        <a class= "admin-btn admin-btn" href="{% url 'asistencia_cliente' %}" >QR_SCANN</a>
+        <div class="admin-buttons" style="display: none;">
+          <a href="{% url 'super_admin' %}" class="admin-btn superadmin-btn" style="display: none;">Panel Super Admin</a>
+          <a href="{% url 'estadisticas' %}" class="admin-btn admin-btn" style="display: none;">Panel Estadísticas</a>
+        </div>
+        <a href="{% url 'logout' %}" id="cerrarSesionBtn">Cerrar sesión</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts base -->
+  <script src="{% static 'js/validaciones.js' %}"></script>
+  <script src="{% static 'js/cuenta.js' %}"></script>
+  <script src="{% static 'js/signIn-Up.js' %}"></script>
+  <script src="{% static 'js/session_check.js' %}"></script>
+
+  {% block extra_scripts %}{% endblock %}
+</body>
+
+</html>

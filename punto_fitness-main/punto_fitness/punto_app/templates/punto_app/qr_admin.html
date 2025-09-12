@@ -1,0 +1,109 @@
+{% extends 'punto_app/base_admin.html' %}
+{% load static %}
+
+{% block content %}
+<div class="content">
+  <h1>Generador de QR para Asistencias</h1>
+  
+  <div class="qr-container">
+    <div class="qr-info">
+      <h2>QR Activo</h2>
+      <p>Este código QR debe ser escaneado por los clientes para registrar su entrada/salida.</p>
+      <p><strong>Código:</strong> {{ qr_code }}</p>
+      <p><strong>Generado:</strong> {{ qr_code|slice:"15:"|date:"d/m/Y H:i:s" }}</p>
+    </div>
+    
+    <div class="qr-display">
+      <img src="data:image/png;base64,{{ qr_image }}" alt="QR Code" class="qr-image">
+    </div>
+    
+    <div class="qr-actions">
+      <button class="btn-generar-qr" onclick="generarNuevoQR()">Generar Nuevo QR</button>
+      <button class="btn-refrescar" onclick="location.reload()">Refrescar</button>
+    </div>
+  </div>
+  
+  <div class="instrucciones">
+    <h3>Instrucciones:</h3>
+    <ul>
+      <li>Los clientes deben escanear este QR desde su aplicación</li>
+      <li>El sistema automáticamente registrará entrada o salida según corresponda</li>
+      <li>Puedes generar un nuevo QR en cualquier momento</li>
+    </ul>
+  </div>
+</div>
+
+<style>
+.qr-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2rem;
+  padding: 2rem;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+  margin: 2rem 0;
+}
+
+.qr-info {
+  text-align: center;
+}
+
+.qr-display {
+  border: 2px solid #e74c3c;
+  border-radius: 12px;
+  padding: 1rem;
+  background: #fff;
+}
+
+.qr-image {
+  width: 300px;
+  height: 300px;
+  display: block;
+}
+
+.qr-actions {
+  display: flex;
+  gap: 1rem;
+}
+
+.btn-generar-qr, .btn-refrescar {
+  background: #e74c3c;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 0.8rem 1.5rem;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.btn-generar-qr:hover, .btn-refrescar:hover {
+  background: #c0392b;
+}
+
+.instrucciones {
+  background: #f8f9fa;
+  padding: 1.5rem;
+  border-radius: 8px;
+  margin-top: 2rem;
+}
+
+.instrucciones ul {
+  margin-left: 1.5rem;
+}
+
+.instrucciones li {
+  margin: 0.5rem 0;
+}
+</style>
+
+<script>
+function generarNuevoQR() {
+  if (confirm('¿Generar un nuevo código QR? El anterior dejará de funcionar.')) {
+    location.reload();
+  }
+}
+</script>
+{% endblock %} 
