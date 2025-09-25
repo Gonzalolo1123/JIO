@@ -1,8 +1,8 @@
 /* Sección Hero */
 #hero {
-  background: linear-gradient(135deg, rgba(255, 107, 107, 0.9), rgba(255, 142, 142, 0.9)), 
+  background: linear-gradient(135deg, rgba(46, 125, 50, 0.9), rgba(76, 175, 80, 0.9)), 
               url('../images/hero-bg.jpg') center/cover;
-  height: 100vh;
+  height: 70vh; /* Reducido de 100vh a 70vh */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -26,7 +26,7 @@
 }
 
 .btn-hero {
-  background: linear-gradient(135deg, #ff6b6b, #ff8e8e);
+  background: linear-gradient(135deg, #2E7D32, #4CAF50);
   color: white;
   padding: 15px 40px;
   border-radius: 50px;
@@ -50,7 +50,7 @@
   background-color: rgba(255, 255, 255, 0.95);
   border-radius: 20px;
   padding: 40px;
-  max-width: 1200px;
+  width: 80%; /* Usando width en lugar de max-width */
   margin: 50px auto;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
   text-align: center;
@@ -88,7 +88,7 @@
 
 .video-slide video {
   width: 300px;
-  height: 200px;
+  height: 150px;
   object-fit: cover;
   border-radius: 15px;
   opacity: 0.4;
@@ -119,7 +119,7 @@
 }
 
 .punto.activo {
-  background-color: #ff6b6b;
+  background-color: #2E7D32;
 }
 
 /* Sección Juegos */
@@ -127,7 +127,7 @@
   background-color: rgba(255, 255, 255, 0.95);
   border-radius: 20px;
   padding: 50px 30px;
-  max-width: 1200px;
+  width: 80%; /* Usando width en lugar de max-width */
   margin: 50px auto;
   text-align: center;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
@@ -165,13 +165,13 @@
 
 .juego-box:hover {
   transform: translateY(-10px);
-  border-color: #ff6b6b;
+  border-color: #2E7D32;
   box-shadow: 0 15px 35px rgba(255, 107, 107, 0.2);
 }
 
 .juego-box img {
   width: 100%;
-  height: 200px;
+  height: 150px;
   object-fit: cover;
   border-radius: 15px;
   margin-bottom: 20px;
@@ -210,7 +210,7 @@
 }
 
 .precio {
-  background: #ff6b6b;
+  background: #2E7D32;
   color: white;
   padding: 5px 12px;
   border-radius: 20px;
@@ -223,7 +223,7 @@
   background-color: rgba(255, 255, 255, 0.95);
   border-radius: 20px;
   padding: 50px 30px;
-  max-width: 1200px;
+  width: 80%; /* Usando width en lugar de max-width */
   margin: 50px auto;
   text-align: center;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
@@ -287,7 +287,7 @@
 }
 
 .btn-reservar {
-  background: linear-gradient(135deg, #ff6b6b, #ff8e8e);
+  background: linear-gradient(135deg, #2E7D32, #4CAF50);
   color: white;
   padding: 15px 30px;
   border-radius: 50px;
@@ -313,7 +313,7 @@
 }
 
 .contacto-info strong {
-  color: #ff6b6b;
+  color: #2E7D32;
   font-size: 1.2rem;
 }
 
@@ -321,7 +321,7 @@
 .contenedor-equipo {
   background-color: rgba(255, 255, 255, 0.95);
   padding: 50px 30px;
-  max-width: 1200px;
+  width: 80%; /* Usando width en lugar de max-width */
   margin: 50px auto;
   text-align: center;
   border-radius: 20px;
@@ -358,11 +358,11 @@
 
 .persona img {
   width: 120px;
-  height: 120px;
+  height: 100px;
   object-fit: cover;
   border-radius: 50%;
   margin-bottom: 20px;
-  border: 4px solid #ff6b6b;
+  border: 4px solid #2E7D32;
 }
 
 .persona h3 {
@@ -384,7 +384,7 @@
   background-color: rgba(255, 255, 255, 0.95);
   border-radius: 20px;
   padding: 50px 30px;
-  max-width: 1200px;
+  width: 80%; /* Usando width en lugar de max-width */
   margin: 50px auto;
   text-align: center;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
@@ -411,7 +411,7 @@
   box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
   transition: all 0.3s ease;
   text-align: center;
-  border-left: 4px solid #ff6b6b;
+  border-left: 4px solid #2E7D32;
 }
 
 .testimonio:hover {
@@ -503,6 +503,6 @@
   
   .video-slide video {
     width: 200px;
-    height: 120px;
+    height: 100px;
   }
 }

@@ -3,7 +3,7 @@ body {
     margin: 0;
     padding: 0;
     font-family: 'Playfair Display', Arial, sans-serif;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, #A8E6CF 0%, #88D8A3 100%);
     min-height: 100vh;
 }
 
@@ -17,7 +17,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-around;
-  background: linear-gradient(135deg, #ff6b6b, #ff8e8e);
+  background: linear-gradient(135deg, #81C784, #A5D6A7);
   padding: 10px 50px;
   color: white;
   margin: 0;
@@ -63,7 +63,7 @@ body {
 /* Main con márgenes */
 main {
     margin: 120px auto 0;
-    max-width: 1200px;
+    width: 85%; /* Usando width en lugar de max-width */
     padding: 0 20px;
 }
 
@@ -78,13 +78,13 @@ main {
 }
 
 .footer-negro a {
-  color: #ff6b6b;
+  color: #4CAF50;
   text-decoration: none;
   transition: color 0.3s ease;
 }
 
 .footer-negro a:hover {
-  color: #ff8e8e;
+  color: #4CAF50;
   text-decoration: underline;
 }
 
@@ -154,11 +154,11 @@ main {
 
 .form-group input:focus {
   outline: none;
-  border-color: #ff6b6b;
+  border-color: #2E7D32;
 }
 
 .btn-login {
-  background: linear-gradient(135deg, #ff6b6b, #ff8e8e);
+  background: linear-gradient(135deg, #2E7D32, #4CAF50);
   color: white;
   border: none;
   padding: 14px 20px;
@@ -179,7 +179,7 @@ main {
 }
 
 .login-footer a {
-  color: #ff6b6b;
+  color: #4CAF50;
   text-decoration: none;
   font-size: 14px;
 }

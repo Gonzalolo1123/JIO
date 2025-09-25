@@ -23,7 +23,7 @@
   position: relative;
   background: #ffffff;
   border-radius: 20px;
-  border: 2px solid #ff6b6b;
+  border: 2px solid #2E7D32;
   padding: 40px;
   width: 90%;
   max-width: 400px;
@@ -51,9 +51,9 @@
 }
 
 .close:hover {
-  color: #ff6b6b;
+  color: #2E7D32;
   background: #fff;
-  border-color: #ff6b6b;
+  border-color: #2E7D32;
 }
 
 /* Contenedor del login */
@@ -62,7 +62,7 @@
 }
 
 .login-container h1 {
-  color: #ff6b6b;
+  color: #2E7D32;
   font-weight: bold;
   margin: 0 0 10px 0;
   font-size: 1.8rem;
@@ -94,7 +94,7 @@
 
 .input-group input:focus {
   outline: none;
-  border-color: #ff6b6b;
+  border-color: #2E7D32;
   background: #fff;
   box-shadow: 0 0 0 3px rgba(255, 107, 107, 0.1);
 }
@@ -109,7 +109,7 @@
   padding: 15px;
   border: none;
   border-radius: 25px;
-  background: linear-gradient(135deg, #ff6b6b, #ff8e8e);
+  background: linear-gradient(135deg, #2E7D32, #4CAF50);
   color: white;
   font-size: 16px;
   font-weight: bold;
