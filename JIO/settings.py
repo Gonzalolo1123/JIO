@@ -82,7 +82,7 @@ WSGI_APPLICATION = 'JIO.wsgi.application'
 #    }
 #}
 
-# POSTGRESQL
+# POSTGRESQL 
 
 DATABASES = {
        'default': {
