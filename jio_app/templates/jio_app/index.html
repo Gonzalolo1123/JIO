@@ -51,65 +51,162 @@
     <p class="subtitulo-seccion">Descubre nuestra amplia variedad de juegos inflables para todas las edades</p>
 
     <div class="juegos-grid">
-      <div class="juego-box">
-        <img src="{% static 'images/juegos_inflables/castillo.jpg' %}" alt="Castillo Inflable">
-        <h3>Castillos Inflables</h3>
-        <p>Perfectos para cumpleaños y eventos familiares. Diversión garantizada para los más pequeños.</p>
+      <!-- Categoría Pequeños -->
+      <div class="juego-box" data-categoria="pequeños">
+        <img src="{% static 'images/juegos_inflables/JI_2en1.jpg' %}" alt="Juego 2en1">
+        <h3>Juego 2en1</h3>
+        <p>Doble diversión en un solo juego. Perfecto para espacios reducidos y eventos íntimos.</p>
+        <div class="dimensiones">
+          <strong>Dimensiones:</strong>
+          <ul class="dimension-list">
+            <li>Largo: 4.5 mts</li>
+            <li>Ancho: 3 mts</li>
+            <li>Alto: 2 mts</li>
+          </ul>
+        </div>
+        <div class="edades">
+          <strong>Edad recomendada:</strong>
+          <span class="edad-text">3 a 8 años</span>
+        </div>
         <div class="juego-info">
-          <span class="capacidad">Hasta 8 niños</span>
+          <span class="capacidad">Hasta 6 niños</span>
           <span class="precio">Desde $25.000</span>
         </div>
       </div>
 
-      <div class="juego-box">
-        <img src="{% static 'images/juegos_inflables/tobogan.jpg' %}" alt="Tobogán Inflable">
-        <h3>Toboganes</h3>
-        <p>Emoción y adrenalina en cada deslizamiento. Los favoritos de los niños más aventureros.</p>
-        <div class="juego-info">
-          <span class="capacidad">Hasta 6 niños</span>
-          <span class="precio">Desde $30.000</span>
-        </div>
-      </div>
+       <div class="juego-box" data-categoria="pequeños">
+         <img src="{% static 'images/juegos_inflables/JI_3en1.jpg' %}" alt="Juego 3en1">
+         <h3>Juego 3en1</h3>
+         <p>Triple diversión combinada. Ideal para eventos pequeños con máxima variedad de entretenimiento.</p>
+         <div class="dimensiones">
+           <strong>Dimensiones:</strong>
+           <ul class="dimension-list">
+             <li>Largo: 3 mts</li>
+             <li>Ancho: 3 mts</li>
+             <li>Alto: 2 mts</li>
+           </ul>
+         </div>
+         <div class="edades">
+           <strong>Edad recomendada:</strong>
+           <span class="edad-text">4 a 12 años</span>
+         </div>
+         <div class="juego-info">
+           <span class="capacidad">Hasta 8 niños</span>
+           <span class="precio">Desde $30.000</span>
+         </div>
+       </div>
 
-      <div class="juego-box">
-        <img src="{% static 'images/juegos_inflables/obstaculos.jpg' %}" alt="Pista de Obstáculos">
-        <h3>Pistas de Obstáculos</h3>
-        <p>Desafíos y competencias para desarrollar habilidades motoras mientras se divierten.</p>
-        <div class="juego-info">
-          <span class="capacidad">Hasta 10 niños</span>
-          <span class="precio">Desde $35.000</span>
-        </div>
-      </div>
+       <!-- Categoría Medianos -->
+       <div class="juego-box" data-categoria="medianos">
+         <img src="{% static 'images/juegos_inflables/JI_block.jpg' %}" alt="Juego Block">
+         <h3>Juego Block</h3>
+         <p>Desafíos y construcción en un juego inflable. Desarrolla la creatividad y coordinación de los niños.</p>
+         <div class="dimensiones">
+           <strong>Dimensiones:</strong>
+           <ul class="dimension-list">
+             <li>Largo: 4 mts</li>
+             <li>Ancho: 3 mts</li>
+             <li>Alto: 3.5 mts</li>
+           </ul>
+         </div>
+         <div class="edades">
+           <strong>Edad recomendada:</strong>
+           <span class="edad-text">2 a 8 años</span>
+         </div>
+         <div class="juego-info">
+           <span class="capacidad">Hasta 10 niños</span>
+           <span class="precio">Desde $35.000</span>
+         </div>
+       </div>
 
-      <div class="juego-box">
-        <img src="{% static 'images/juegos_inflables/combo.jpg' %}" alt="Combo Inflable">
-        <h3>Combos Especiales</h3>
-        <p>La combinación perfecta de diversión. Múltiples juegos en uno para eventos grandes.</p>
-        <div class="juego-info">
-          <span class="capacidad">Hasta 15 niños</span>
-          <span class="precio">Desde $50.000</span>
-        </div>
-      </div>
+       <div class="juego-box" data-categoria="medianos">
+         <img src="{% static 'images/juegos_inflables/JI_fantasia.jpg' %}" alt="Juego Fantasía">
+         <h3>Juego Fantasía</h3>
+         <p>Un mundo mágico de diversión donde los niños pueden explorar y soñar sin límites.</p>
+         <div class="dimensiones">
+           <strong>Dimensiones:</strong>
+           <ul class="dimension-list">
+             <li>Largo: 6 mts</li>
+             <li>Ancho: 4 mts</li>
+             <li>Alto: 4 mts</li>
+           </ul>
+         </div>
+         <div class="edades">
+           <strong>Edad recomendada:</strong>
+           <span class="edad-text">4 a 12 años</span>
+         </div>
+         <div class="juego-info">
+           <span class="capacidad">Hasta 12 niños</span>
+           <span class="precio">Desde $40.000</span>
+         </div>
+       </div>
 
-      <div class="juego-box">
-        <img src="{% static 'images/juegos_inflables/deportivo.jpg' %}" alt="Juego Deportivo">
-        <h3>Juegos Deportivos</h3>
-        <p>Fútbol, básquetbol y más deportes en formato inflable. Ideal para eventos deportivos.</p>
-        <div class="juego-info">
-          <span class="capacidad">Hasta 12 niños</span>
-          <span class="precio">Desde $40.000</span>
-        </div>
-      </div>
+       <div class="juego-box" data-categoria="medianos">
+         <img src="{% static 'images/juegos_inflables/JI_candy.jpg' %}" alt="Juego Candy">
+         <h3>Juego Candy</h3>
+         <p>Dulce diversión con colores vibrantes. Perfecto para fiestas temáticas y celebraciones coloridas.</p>
+         <div class="dimensiones">
+           <strong>Dimensiones:</strong>
+           <ul class="dimension-list">
+             <li>Largo: 4 mts</li>
+             <li>Ancho: 3 mts</li>
+             <li>Alto: 4 mts</li>
+           </ul>
+         </div>
+         <div class="edades">
+           <strong>Edad recomendada:</strong>
+           <span class="edad-text">2 a 8 años</span>
+         </div>
+         <div class="juego-info">
+           <span class="capacidad">Hasta 10 niños</span>
+           <span class="precio">Desde $35.000</span>
+         </div>
+       </div>
 
-      <div class="juego-box">
-        <img src="{% static 'images/juegos_inflables/infantil.jpg' %}" alt="Juego Infantil">
-        <h3>Juegos Infantiles</h3>
-        <p>Diseñados especialmente para los más pequeños, con máxima seguridad y diversión.</p>
-        <div class="juego-info">
-          <span class="capacidad">Hasta 6 niños</span>
-          <span class="precio">Desde $20.000</span>
-        </div>
-      </div>
+       <!-- Categoría Grandes -->
+       <div class="juego-box" data-categoria="grandes">
+         <img src="{% static 'images/juegos_inflables/JI_tunel.jpg' %}" alt="Juego Túnel">
+         <h3>Juego Túnel</h3>
+         <p>Emoción y aventura en cada paso. Un túnel de diversión que desafía la imaginación de los niños.</p>
+         <div class="dimensiones">
+           <strong>Dimensiones:</strong>
+           <ul class="dimension-list">
+             <li>Largo: 7 mts</li>
+             <li>Ancho: 5 mts</li>
+             <li>Alto: 5 mts</li>
+           </ul>
+         </div>
+         <div class="edades">
+           <strong>Edad recomendada:</strong>
+           <span class="edad-text">4 a 12 años</span>
+         </div>
+         <div class="juego-info">
+           <span class="capacidad">Hasta 15 niños</span>
+           <span class="precio">Desde $50.000</span>
+         </div>
+       </div>
+
+       <div class="juego-box" data-categoria="grandes">
+         <img src="{% static 'images/juegos_inflables/JI_arco.jpg' %}" alt="Juego Arco">
+         <h3>Juego Arco</h3>
+         <p>Diversión en forma de arco con múltiples actividades. Ideal para eventos grandes y espacios amplios.</p>
+         <div class="dimensiones">
+           <strong>Dimensiones:</strong>
+           <ul class="dimension-list">
+             <li>Largo: 6 mts</li>
+             <li>Ancho: 4 mts</li>
+             <li>Alto: 5 mts</li>
+           </ul>
+         </div>
+         <div class="edades">
+           <strong>Edad recomendada:</strong>
+           <span class="edad-text">4 a 12 años</span>
+         </div>
+         <div class="juego-info">
+           <span class="capacidad">Hasta 20 niños</span>
+           <span class="precio">Desde $60.000</span>
+         </div>
+       </div>
     </div>
   </div>
 </section>

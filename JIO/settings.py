@@ -75,10 +75,23 @@ WSGI_APPLICATION = 'JIO.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'jio_db',
+        'USER': 'postgres',
+        'PASSWORD': 'hola1234',
+        'HOST': 'localhost',
+        'PORT': '5432',
     }
 }
+
+# Configuración de base de datos para desarrollo (SQLite como fallback)
+# Descomenta las siguientes líneas si quieres usar SQLite para desarrollo
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.sqlite3',
+#         'NAME': BASE_DIR / 'db.sqlite3',
+#     }
+# }
 
 
 # Password validation

@@ -11,8 +11,13 @@ urlpatterns = [
     path('contacto/', views.contacto_view, name='contacto'),
     
     # Autenticación
-    path('login/', views.login_view, name='login'),
+    path('login_jio/', views.login_view, name='login'),
     path('logout/', views.logout_view, name='logout'),
+    
+    # Paneles administrativos
+    path('panel/', views.panel_redirect, name='panel_redirect'),
+    path('admin_jio/', views.admin_panel, name='admin_panel'),
+    path('delivery/', views.delivery_panel, name='delivery_panel'),
     
     # API
     path('api/juegos/', views.api_juegos, name='api_juegos'),

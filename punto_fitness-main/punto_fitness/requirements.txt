@@ -1,9 +1,0 @@
-Django>=5.2,<6.0
-psycopg2-binary
-dj-database-url
-python-dotenv
-gunicorn
-whitenoise
-pytz
-python-dateutil
-qrcode[pil]

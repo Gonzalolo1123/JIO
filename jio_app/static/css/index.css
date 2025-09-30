@@ -169,6 +169,19 @@
   box-shadow: 0 15px 35px rgba(255, 107, 107, 0.2);
 }
 
+/* Categorías de juegos */
+.juego-box[data-categoria="pequeños"] {
+  border-left: 4px solid #4CAF50;
+}
+
+.juego-box[data-categoria="medianos"] {
+  border-left: 4px solid #FF9800;
+}
+
+.juego-box[data-categoria="grandes"] {
+  border-left: 4px solid #F44336;
+}
+
 .juego-box img {
   width: 100%;
   height: 150px;
@@ -189,6 +202,67 @@
   font-size: 1rem;
   line-height: 1.6;
   margin-bottom: 20px;
+}
+
+.dimensiones {
+  margin: 15px 0;
+  padding: 10px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  border-left: 4px solid #2E7D32;
+}
+
+.dimensiones strong {
+  color: #2c3e50;
+  font-size: 0.9rem;
+  display: block;
+  margin-bottom: 8px;
+}
+
+.dimension-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.dimension-list li {
+  color: #555;
+  font-size: 0.9rem;
+  margin-bottom: 4px;
+  padding: 2px 0;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.dimension-list li:last-child {
+  border-bottom: none;
+}
+
+.dimension-text {
+  color: #7f8c8d;
+  font-style: italic;
+  font-size: 0.9rem;
+}
+
+.edades {
+  margin: 10px 0;
+  padding: 8px 12px;
+  background: linear-gradient(135deg, #E3F2FD, #BBDEFB);
+  border-radius: 20px;
+  border-left: 4px solid #2196F3;
+  text-align: center;
+}
+
+.edades strong {
+  color: #1976D2;
+  font-size: 0.85rem;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.edad-text {
+  color: #1565C0;
+  font-weight: 600;
+  font-size: 0.9rem;
 }
 
 .juego-info {
