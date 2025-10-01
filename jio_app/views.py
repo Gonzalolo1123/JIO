@@ -298,6 +298,8 @@ def share_admin_invite(request):
     }
     token = signing.dumps(payload, salt=INVITE_SALT)
     invite_url = request.build_absolute_uri(reverse('jio_app:invite_signup') + f'?token={token}')
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or 'application/json' in request.headers.get('Accept', ''):
+        return JsonResponse({'invite_url': invite_url, 'role': 'administrador'})
     return render(request, 'jio_app/share_invite.html', {
         'invite_url': invite_url,
         'role_label': 'administrador',
@@ -315,6 +317,8 @@ def share_delivery_invite(request):
     }
     token = signing.dumps(payload, salt=INVITE_SALT)
     invite_url = request.build_absolute_uri(reverse('jio_app:invite_signup') + f'?token={token}')
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or 'application/json' in request.headers.get('Accept', ''):
+        return JsonResponse({'invite_url': invite_url, 'role': 'repartidor'})
     return render(request, 'jio_app/share_invite.html', {
         'invite_url': invite_url,
         'role_label': 'repartidor',

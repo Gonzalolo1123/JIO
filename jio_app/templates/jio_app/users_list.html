@@ -10,6 +10,12 @@
   </div>
 
   <div class="form-card">
+    <div class="form-actions" style="justify-content: flex-start; flex-wrap: wrap; gap: .75rem; margin-bottom: .75rem;">
+      <a href="{% url 'jio_app:create_admin' %}" class="btn btn-primary"><i class="fas fa-user-shield"></i> Agregar administrador</a>
+      <button type="button" id="btnShareAdmin" class="btn btn-secondary" title="Compartir admin"><i class="fas fa-share-from-square"></i></button>
+      <a href="{% url 'jio_app:create_delivery' %}" class="btn btn-primary"><i class="fas fa-motorcycle"></i> Agregar repartidor</a>
+      <button type="button" id="btnShareDelivery" class="btn btn-secondary" title="Compartir repartidor"><i class="fas fa-share-from-square"></i></button>
+    </div>
     <form method="get" class="form-grid" style="grid-template-columns: 1fr auto;align-items: end;">
       <label>Buscar
         <input type="text" name="q" value="{{ query }}" placeholder="Nombre, usuario, email o tipo">
@@ -55,127 +61,7 @@
   {% block extra_scripts %}
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
   <script src="{% static 'js/validaciones.js' %}"></script>
-  <script>
-  (function(){
-    function getCookie(name) {
-      const value = `; ${document.cookie}`;
-      const parts = value.split(`; ${name}=`);
-      if (parts.length === 2) return parts.pop().split(';').shift();
-    }
-
-    async function onClickEdit(userId){
-      try {
-        const detailRes = await fetch(`{% url 'jio_app:users_list' %}${userId}/json/`.replace('panel/users/', 'panel/users/'));
-        const detail = await detailRes.json();
-        if(!detailRes.ok){
-          return mostrarErroresValidacion([detail.error || 'Error al cargar usuario']);
-        }
-
-        const { value: formValues } = await Swal.fire({
-          title: 'Editar usuario',
-          html:
-            `<input id="sw-username" class="swal2-input" placeholder="Usuario" value="${detail.username}">` +
-            `<input id="sw-first" class="swal2-input" placeholder="Nombre" value="${detail.first_name}">` +
-            `<input id="sw-last" class="swal2-input" placeholder="Apellido" value="${detail.last_name}">` +
-            `<input id="sw-email" class="swal2-input" placeholder="Email" value="${detail.email}">` +
-            `<select id="sw-tipo" class="swal2-select">
-               <option value="administrador" ${detail.tipo_usuario==='administrador'?'selected':''}>Administrador</option>
-               <option value="repartidor" ${detail.tipo_usuario==='repartidor'?'selected':''}>Repartidor</option>
-             </select>` +
-            `<input id="sw-telefono" class="swal2-input" placeholder="Teléfono" value="${detail.telefono||''}">`,
-          focusConfirm: false,
-          confirmButtonText: 'Guardar',
-          showCancelButton: true,
-          preConfirm: () => {
-            const username = document.getElementById('sw-username').value.trim();
-            const first_name = document.getElementById('sw-first').value.trim();
-            const last_name = document.getElementById('sw-last').value.trim();
-            const email = document.getElementById('sw-email').value.trim();
-            const tipo_usuario = document.getElementById('sw-tipo').value;
-            const telefono = document.getElementById('sw-telefono').value.trim();
-
-            const ok = validarFormulario([
-              ()=> (function(){
-                    const errs = [];
-                    if(!/^[A-Za-z0-9._-]{3,30}$/.test(username)){
-                      errs.push('Usuario inválido. Use 3-30 caracteres: letras, números, . _ -');
-                    }
-                    return errs;
-                  })(),
-              ()=> validarNombre(first_name, 'nombre', 2, 30),
-              ()=> validarNombre(last_name, 'apellido', 2, 30),
-              ()=> validarEmail(email, 'email', 100),
-              ()=> (telefono ? validarTelefonoChileno(telefono, 'teléfono', false) : [])
-            ], 'Errores al editar usuario');
-            if(!ok){
-              return false;
-            }
-            return { username, first_name, last_name, email, tipo_usuario, telefono };
-          }
-        });
-
-        if(!formValues){ return; }
-
-        const formData = new FormData();
-        Object.entries(formValues).forEach(([k,v])=> formData.append(k, v));
-        const csrf = getCookie('csrftoken');
-        const updRes = await fetch(`{% url 'jio_app:users_list' %}${userId}/update/`.replace('panel/users/', 'panel/users/'), {
-          method: 'POST',
-          headers: { 'X-CSRFToken': csrf },
-          body: formData
-        });
-        const upd = await updRes.json();
-        if(!updRes.ok || !upd.success){
-          const errs = upd && upd.errors ? upd.errors : ['Error desconocido'];
-          return mostrarErroresValidacion(errs, 'No se pudo guardar');
-        }
-        mostrarExitoValidacion('Usuario actualizado correctamente');
-      } catch(e){
-        mostrarErroresValidacion(['Error inesperado al editar usuario']);
-      }
-    }
-
-    async function onClickDelete(userId){
-      const result = await Swal.fire({
-        title: '¿Eliminar usuario?',
-        text: 'Esta acción no se puede deshacer.',
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonText: 'Sí, eliminar',
-        cancelButtonText: 'Cancelar',
-        confirmButtonColor: '#c0392b'
-      });
-      if(!result.isConfirmed) return;
-      const csrf = getCookie('csrftoken');
-      const delRes = await fetch(`{% url 'jio_app:users_list' %}${userId}/delete/`.replace('panel/users/', 'panel/users/'), {
-        method: 'POST',
-        headers: { 'X-CSRFToken': csrf }
-      });
-      const del = await delRes.json();
-      if(!delRes.ok || !del.success){
-        const errs = del && del.errors ? del.errors : ['No se pudo eliminar'];
-        return mostrarErroresValidacion(errs, 'Error');
-      }
-      mostrarExitoValidacion('Usuario eliminado');
-    }
-
-    document.addEventListener('click', function(e){
-      const editBtn = e.target.closest('[data-edit-user]');
-      if(editBtn){
-        e.preventDefault();
-        const id = editBtn.getAttribute('data-edit-user');
-        onClickEdit(id);
-        return;
-      }
-      const delBtn = e.target.closest('[data-delete-user]');
-      if(delBtn){
-        e.preventDefault();
-        const id = delBtn.getAttribute('data-delete-user');
-        onClickDelete(id);
-      }
-    });
-  })();
-  </script>
+  <script>src="{% static 'js/users_list.js' %}"</script>
   {% endblock %}
 </div>
 {% endblock %}

@@ -7,6 +7,7 @@
   <title>JIO - Arriendo de Juegos Inflables</title>
 
   <!-- Estilos base -->
+  <link rel="stylesheet" href="{% static 'css/admin.css' %}">
   <link rel="stylesheet" href="{% static 'css/base.css' %}">
   <link rel="stylesheet" href="{% static 'css/signIn-Up.css' %}">
   
@@ -20,26 +21,27 @@
 </head>
 
 <body>
-  <!-- Menú Superior -->
-  <header class="encabezado">
-    <div class="logo">
-      <img src="{% static 'images/logo_jio.png' %}" alt="JIO" class="logo-img">
+  <!-- Navbar pública con colores/tamaños de base_admin -->
+  <nav class="navbar">
+    <div class="navbar-brand">
+      <img src="{% static 'images/logo_jio.png' %}" alt="JIO" class="logo">
+      <span class="brand-text">JIO</span>
     </div>
-    <nav class="menu">
-      <ul>
-        <li><a href="{% url 'jio_app:index' %}">Inicio</a></li>
-        <li><a href="#historia">Historia</a></li>
-        <li><a href="#juegos">Nuestros Juegos</a></li>
-        <li><a href="#reservar">Reservar</a></li>
-        <li>
-          <a href="#" id="openUserModal">Iniciar Sesión</a>
-        </li>
-      </ul>
-    </nav>
-  </header>
+    <div class="navbar-menu">
+      <div class="navbar-user">
+        <ul style="list-style: none; display: flex; gap: 1rem; margin: 0; padding: 0; align-items: center;">
+          <li><a href="{% url 'jio_app:index' %}" style="color: #fff; text-decoration: none; font-weight: 500;">Inicio</a></li>
+          <li><a href="#historia" style="color: #fff; text-decoration: none; font-weight: 500;">Historia</a></li>
+          <li><a href="#juegos" style="color: #fff; text-decoration: none; font-weight: 500;">Nuestros Juegos</a></li>
+          <li><a href="#reservar" style="color: #fff; text-decoration: none; font-weight: 500;">Reservar</a></li>
+          <li><a href="#" id="openUserModal" class="btn btn-secondary" style="color: #2E7D32;">Iniciar Sesión</a></li>
+        </ul>
+      </div>
+    </div>
+  </nav>
 
   <!-- Contenido dinámico -->
-  <main>
+  <main class="main-content">
     {% block content %}
     {% endblock %}
   </main>

@@ -129,6 +129,13 @@ body {
     place-items: center;
 }
 
+/* Utilities */
+.overflow-auto { overflow: auto; }
+.mt-075 { margin-top: 0.75rem; }
+.actions-wrap { display:flex; justify-content:flex-start; flex-wrap:wrap; gap:.75rem; }
+.grid-1fr-auto { grid-template-columns: 1fr auto; }
+.panel-header .logo-large { height: 60px; margin-bottom: 10px; }
+
 /* Panel content */
 .panel-container {
     max-width: 1200px;
