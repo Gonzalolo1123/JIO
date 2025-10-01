@@ -1,0 +1,275 @@
+{% extends "jio_app/base.html" %}
+{% load static %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{% static 'css/index.css' %}">
+{% endblock %}
+
+{% block content %}
+<!-- Sección Hero -->
+<section id="hero">
+  <div class="hero-content">
+    <h1>¡Diversión Garantizada!</h1>
+    <p>Arrienda los mejores juegos inflables para tus eventos</p>
+    <a href="#reservar" class="btn-hero">Reservar Ahora</a>
+  </div>
+</section>
+
+<!-- Sección Historia -->
+<section id="historia">
+  <div class="contenedor-historia">
+    <h2>Nuestra Historia</h2>
+    <p>Desde nuestros humildes comienzos, JIO ha crecido para convertirse en la empresa líder en arriendo de juegos inflables en la región. Con más de 10 años de experiencia, hemos llevado diversión y alegría a miles de eventos familiares, cumpleaños, fiestas corporativas y celebraciones especiales.</p>
+    
+    <p>Nuestra pasión por crear momentos inolvidables nos ha llevado a expandir nuestro catálogo constantemente, incorporando los juegos más modernos y seguros del mercado. Cada evento es único para nosotros, y nos esforzamos por superar las expectativas de nuestros clientes.</p>
+
+    <div class="carrusel-videos-historia">
+      <div class="video-slider">
+        <div class="video-slide" id="video0">
+          <video src="{% static 'videos/juego1.mp4' %}" muted onclick="cambiarSlide(0)"></video>
+        </div>
+        <div class="video-slide central" id="video1">
+          <video src="{% static 'videos/juego2.mp4' %}" controls onclick="cambiarSlide(1)"></video>
+        </div>
+        <div class="video-slide" id="video2">
+          <video src="{% static 'videos/juego3.mp4' %}" muted onclick="cambiarSlide(2)"></video>
+        </div>
+      </div>
+      <div class="puntos-indicadores">
+        <span class="punto" onclick="cambiarSlide(0)"></span>
+        <span class="punto activo" onclick="cambiarSlide(1)"></span>
+        <span class="punto" onclick="cambiarSlide(2)"></span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Sección Juegos Inflables -->
+<section id="juegos">
+  <div class="contenedor-juegos">
+    <h2 class="titulo-seccion">Nuestros Juegos Inflables</h2>
+    <p class="subtitulo-seccion">Descubre nuestra amplia variedad de juegos inflables para todas las edades</p>
+
+    <div class="juegos-grid">
+      <!-- Categoría Pequeños -->
+      <div class="juego-box" data-categoria="pequeños">
+        <img src="{% static 'images/juegos_inflables/JI_2en1.jpg' %}" alt="Juego 2en1">
+        <h3>Juego 2en1</h3>
+        <p>Doble diversión en un solo juego. Perfecto para espacios reducidos y eventos íntimos.</p>
+        <div class="dimensiones">
+          <strong>Dimensiones:</strong>
+          <ul class="dimension-list">
+            <li>Largo: 4.5 mts</li>
+            <li>Ancho: 3 mts</li>
+            <li>Alto: 2 mts</li>
+          </ul>
+        </div>
+        <div class="edades">
+          <strong>Edad recomendada:</strong>
+          <span class="edad-text">3 a 8 años</span>
+        </div>
+        <div class="juego-info">
+          <span class="capacidad">Hasta 6 niños</span>
+          <span class="precio">Desde $25.000</span>
+        </div>
+      </div>
+
+       <div class="juego-box" data-categoria="pequeños">
+         <img src="{% static 'images/juegos_inflables/JI_3en1.jpg' %}" alt="Juego 3en1">
+         <h3>Juego 3en1</h3>
+         <p>Triple diversión combinada. Ideal para eventos pequeños con máxima variedad de entretenimiento.</p>
+         <div class="dimensiones">
+           <strong>Dimensiones:</strong>
+           <ul class="dimension-list">
+             <li>Largo: 3 mts</li>
+             <li>Ancho: 3 mts</li>
+             <li>Alto: 2 mts</li>
+           </ul>
+         </div>
+         <div class="edades">
+           <strong>Edad recomendada:</strong>
+           <span class="edad-text">4 a 12 años</span>
+         </div>
+         <div class="juego-info">
+           <span class="capacidad">Hasta 8 niños</span>
+           <span class="precio">Desde $30.000</span>
+         </div>
+       </div>
+
+       <!-- Categoría Medianos -->
+       <div class="juego-box" data-categoria="medianos">
+         <img src="{% static 'images/juegos_inflables/JI_block.jpg' %}" alt="Juego Block">
+         <h3>Juego Block</h3>
+         <p>Desafíos y construcción en un juego inflable. Desarrolla la creatividad y coordinación de los niños.</p>
+         <div class="dimensiones">
+           <strong>Dimensiones:</strong>
+           <ul class="dimension-list">
+             <li>Largo: 4 mts</li>
+             <li>Ancho: 3 mts</li>
+             <li>Alto: 3.5 mts</li>
+           </ul>
+         </div>
+         <div class="edades">
+           <strong>Edad recomendada:</strong>
+           <span class="edad-text">2 a 8 años</span>
+         </div>
+         <div class="juego-info">
+           <span class="capacidad">Hasta 10 niños</span>
+           <span class="precio">Desde $35.000</span>
+         </div>
+       </div>
+
+       <div class="juego-box" data-categoria="medianos">
+         <img src="{% static 'images/juegos_inflables/JI_fantasia.jpg' %}" alt="Juego Fantasía">
+         <h3>Juego Fantasía</h3>
+         <p>Un mundo mágico de diversión donde los niños pueden explorar y soñar sin límites.</p>
+         <div class="dimensiones">
+           <strong>Dimensiones:</strong>
+           <ul class="dimension-list">
+             <li>Largo: 6 mts</li>
+             <li>Ancho: 4 mts</li>
+             <li>Alto: 4 mts</li>
+           </ul>
+         </div>
+         <div class="edades">
+           <strong>Edad recomendada:</strong>
+           <span class="edad-text">4 a 12 años</span>
+         </div>
+         <div class="juego-info">
+           <span class="capacidad">Hasta 12 niños</span>
+           <span class="precio">Desde $40.000</span>
+         </div>
+       </div>
+
+       <div class="juego-box" data-categoria="medianos">
+         <img src="{% static 'images/juegos_inflables/JI_candy.jpg' %}" alt="Juego Candy">
+         <h3>Juego Candy</h3>
+         <p>Dulce diversión con colores vibrantes. Perfecto para fiestas temáticas y celebraciones coloridas.</p>
+         <div class="dimensiones">
+           <strong>Dimensiones:</strong>
+           <ul class="dimension-list">
+             <li>Largo: 4 mts</li>
+             <li>Ancho: 3 mts</li>
+             <li>Alto: 4 mts</li>
+           </ul>
+         </div>
+         <div class="edades">
+           <strong>Edad recomendada:</strong>
+           <span class="edad-text">2 a 8 años</span>
+         </div>
+         <div class="juego-info">
+           <span class="capacidad">Hasta 10 niños</span>
+           <span class="precio">Desde $35.000</span>
+         </div>
+       </div>
+
+       <!-- Categoría Grandes -->
+       <div class="juego-box" data-categoria="grandes">
+         <img src="{% static 'images/juegos_inflables/JI_tunel.jpg' %}" alt="Juego Túnel">
+         <h3>Juego Túnel</h3>
+         <p>Emoción y aventura en cada paso. Un túnel de diversión que desafía la imaginación de los niños.</p>
+         <div class="dimensiones">
+           <strong>Dimensiones:</strong>
+           <ul class="dimension-list">
+             <li>Largo: 7 mts</li>
+             <li>Ancho: 5 mts</li>
+             <li>Alto: 5 mts</li>
+           </ul>
+         </div>
+         <div class="edades">
+           <strong>Edad recomendada:</strong>
+           <span class="edad-text">4 a 12 años</span>
+         </div>
+         <div class="juego-info">
+           <span class="capacidad">Hasta 15 niños</span>
+           <span class="precio">Desde $50.000</span>
+         </div>
+       </div>
+
+       <div class="juego-box" data-categoria="grandes">
+         <img src="{% static 'images/juegos_inflables/JI_arco.jpg' %}" alt="Juego Arco">
+         <h3>Juego Arco</h3>
+         <p>Diversión en forma de arco con múltiples actividades. Ideal para eventos grandes y espacios amplios.</p>
+         <div class="dimensiones">
+           <strong>Dimensiones:</strong>
+           <ul class="dimension-list">
+             <li>Largo: 6 mts</li>
+             <li>Ancho: 4 mts</li>
+             <li>Alto: 5 mts</li>
+           </ul>
+         </div>
+         <div class="edades">
+           <strong>Edad recomendada:</strong>
+           <span class="edad-text">4 a 12 años</span>
+         </div>
+         <div class="juego-info">
+           <span class="capacidad">Hasta 20 niños</span>
+           <span class="precio">Desde $60.000</span>
+         </div>
+       </div>
+    </div>
+  </div>
+</section>
+
+<!-- Sección Reservar -->
+<section id="reservar">
+  <div class="contenedor-reservar">
+    <h2>¡Reserva tu Juego Inflable!</h2>
+    <p>Haz que tu evento sea inolvidable con nuestros juegos inflables</p>
+    
+    <div class="reservar-content">
+      <div class="reservar-info">
+        <h3>¿Por qué elegir JIO?</h3>
+        <ul>
+          <li>✅ Juegos seguros y certificados</li>
+          <li>✅ Instalación y retiro incluido</li>
+          <li>✅ Personal capacitado</li>
+          <li>✅ Precios competitivos</li>
+          <li>✅ Disponibilidad 7 días a la semana</li>
+          <li>✅ Cobertura 30km a las afueras de Osorno </li>
+        </ul>
+      </div>
+      
+      <div class="reservar-form">
+        <h3>Inicia tu Reserva</h3>
+        <p>Completa el formulario y nos pondremos en contacto contigo</p>
+        <a href="#" class="btn-reservar" onclick="alert('Formulario de reserva próximamente disponible')">
+          Reservar Ahora
+        </a>
+        <p class="contacto-info">
+          O llámanos directamente:<br>
+          <strong>+56 9 1234 5678</strong>
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Sección Testimonios -->
+<section id="testimonios">
+  <div class="contenedor-testimonios">
+    <h2>Lo que dicen nuestros clientes</h2>
+    <div class="testimonios-grid">
+      <div class="testimonio">
+        <p>"Excelente servicio, llegaron puntuales y el castillo estaba impecable. Los niños se divirtieron muchísimo."</p>
+        <h4>- Patricia Silva</h4>
+        <span>Cumpleaños de su hijo</span>
+      </div>
+      <div class="testimonio">
+        <p>"Muy profesionales, nos ayudaron con todo el proceso de reserva y el evento fue un éxito total."</p>
+        <h4>- Roberto Pérez</h4>
+        <span>Fiesta de empresa</span>
+      </div>
+      <div class="testimonio">
+        <p>"Los precios son justos y la calidad de los juegos es excelente. Definitivamente los recomiendo."</p>
+        <h4>- Carmen López</h4>
+        <span>Evento escolar</span>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{% static 'js/index.js' %}"></script>
+{% endblock %}

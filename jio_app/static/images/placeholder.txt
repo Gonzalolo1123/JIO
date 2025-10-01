@@ -1,0 +1,24 @@
+# Imágenes Placeholder para JIO
+
+## Juegos Inflables
+- castillo.jpg - Imagen de castillo inflable
+- tobogan.jpg - Imagen de tobogán inflable  
+- obstaculos.jpg - Imagen de pista de obstáculos
+- combo.jpg - Imagen de combo inflable
+- deportivo.jpg - Imagen de juego deportivo
+- infantil.jpg - Imagen de juego infantil
+
+## Trabajadores
+- administrador.jpg - Foto del administrador
+- repartidor.jpg - Foto del repartidor
+- tecnico.jpg - Foto del técnico
+
+## Videos
+- juego1.mp4 - Video promocional 1
+- juego2.mp4 - Video promocional 2
+- juego3.mp4 - Video promocional 3
+
+## Logo
+- logo_jio.png - Logo de la empresa JIO
+
+Nota: Reemplazar estos archivos con las imágenes reales de la empresa.

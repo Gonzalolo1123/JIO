@@ -1,0 +1,88 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JIO - Arriendo de Juegos Inflables</title>
+
+  <!-- Estilos base -->
+  <link rel="stylesheet" href="{% static 'css/base.css' %}">
+  <link rel="stylesheet" href="{% static 'css/signIn-Up.css' %}">
+  
+  <!-- Fuente Playfair Display -->
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&display=swap" rel="stylesheet">
+
+  <!-- SweetAlert2 -->
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+  {% block extra_head %}{% endblock %}
+</head>
+
+<body>
+  <!-- Menú Superior -->
+  <header class="encabezado">
+    <div class="logo">
+      <img src="{% static 'images/logo_jio.png' %}" alt="JIO" class="logo-img">
+    </div>
+    <nav class="menu">
+      <ul>
+        <li><a href="{% url 'jio_app:index' %}">Inicio</a></li>
+        <li><a href="#historia">Historia</a></li>
+        <li><a href="#juegos">Nuestros Juegos</a></li>
+        <li><a href="#reservar">Reservar</a></li>
+        <li>
+          <a href="{% url 'jio_app:login_jio' %}">Iniciar Sesión</a>
+        </li>
+      </ul>
+    </nav>
+  </header>
+
+  <!-- Contenido dinámico -->
+  <main>
+    {% block content %}
+    {% endblock %}
+  </main>
+
+  <footer class="footer-negro">
+    <p>© 2025 JIO - Arriendo de Juegos Inflables</p>
+    <p>Síguenos en:
+      <a href="#">Instagram</a> |
+      <a href="#">Facebook</a> |
+      <a href="#">WhatsApp</a>
+    </p>
+    <p>Contacto: +56 9 1234 5678 | contacto@jio.cl</p>
+  </footer>
+
+  <!-- Modal de Login (Solo para Administradores y Repartidores) -->
+<div id="authModal" class="modal hidden">
+  <div class="modal-content">
+    <span class="close" id="closeModal">&times;</span>
+    <div class="login-container">
+      <form id="signInForm" method="POST" action="{% url 'jio_app:login' %}">
+        {% csrf_token %}
+        <h1>Iniciar sesión</h1>
+        <p class="login-subtitle">Acceso restringido para administradores y repartidores</p>
+        
+        <div class="input-group">
+          <input type="text" name="username" placeholder="Usuario" required />
+        </div>
+        
+        <div class="input-group">
+          <input type="password" name="password" placeholder="Contraseña" required />
+        </div>
+        
+        <button type="submit" class="login-btn">Iniciar sesión</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+  <!-- Scripts base -->
+  <script src="{% static 'js/signIn-Up.js' %}"></script>
+
+  {% block extra_scripts %}{% endblock %}
+</body>
+
+</html>
