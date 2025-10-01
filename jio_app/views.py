@@ -1,10 +1,11 @@
-from django.shortcuts import render, redirect
+from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.http import JsonResponse
 from django.core.exceptions import PermissionDenied
 from .models import Juego, PrecioTemporada, Usuario
+from .forms import UsuarioCreateForm, UsuarioUpdateForm
 
 # Create your views here.
 
@@ -21,39 +22,55 @@ def index(request):
     return render(request, 'jio_app/index.html', context)
 
 def login_view(request):
-    """
-    Vista para el login de administradores y repartidores
-    """
     if request.user.is_authenticated:
-        # Si ya está autenticado, redirigir al admin
-        return redirect('admin:index')
-    
+        return redirect('jio_app:panel_redirect')
+
     if request.method == 'POST':
-        email = request.POST.get('email')
+        identifier = request.POST.get('email')  # puede ser email o username
         password = request.POST.get('password')
-        
-        if email and password:
-            # Buscar usuario por email
+
+        if identifier and password:
+            user = None
+            # Buscar por email o por username
             try:
-                user = Usuario.objects.get(email=email)
-                # Autenticar con username (Django requiere username para authenticate)
-                user = authenticate(request, username=user.username, password=password)
-                if user is not None:
-                    # Verificar que el usuario sea administrador o repartidor
-                    if user.tipo_usuario in ['administrador', 'repartidor']:
-                        login(request, user)
-                        messages.success(request, f'¡Bienvenido, {user.get_full_name()}!')
-                        return redirect('jio_app:panel_redirect')
-                    else:
-                        messages.error(request, 'Acceso denegado. Solo administradores y repartidores pueden acceder.')
-                else:
-                    messages.error(request, 'Correo electrónico o contraseña incorrectos.')
+                user = Usuario.objects.get(email=identifier)
             except Usuario.DoesNotExist:
-                messages.error(request, 'Correo electrónico no encontrado.')
-        else:
-            messages.error(request, 'Por favor completa todos los campos.')
-    
-    return render(request, 'jio_app/login.html')
+                try:
+                    user = Usuario.objects.get(username=identifier)
+                except Usuario.DoesNotExist:
+                    user = None
+
+            if not user:
+                messages.error(request, 'Usuario no encontrado')
+            else:
+                password_ok = user.check_password(password)
+
+                # Manejar posible contraseña en texto plano (creada manualmente)
+                if not password_ok:
+                    raw = user.password or ''
+                    is_hashed = raw.startswith('pbkdf2_') or raw.startswith('argon2$') or raw.startswith('bcrypt$') or raw.startswith('scrypt$')
+                    if not is_hashed and raw == password:
+                        # Primera vez: re-hash y guardar
+                        user.set_password(password)
+                        user.save(update_fields=['password'])
+                        password_ok = True
+
+                if password_ok:
+                    # Verificar autorización: superuser o tipo permitido
+                    is_admin_like = user.is_superuser or user.tipo_usuario == 'administrador'
+                    is_delivery = user.tipo_usuario == 'repartidor'
+
+                    if is_admin_like or is_delivery:
+                        login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+                        if is_admin_like:
+                            return redirect('jio_app:admin_panel')
+                        return redirect('jio_app:delivery_panel')
+                    else:
+                        messages.error(request, 'No autorizado para acceder al panel.')
+                else:
+                    messages.error(request, 'Credenciales incorrectas')
+
+    return render(request, 'jio_app/login_jio.html')
 
 @login_required
 def logout_view(request):
@@ -62,7 +79,7 @@ def logout_view(request):
     """
     logout(request)
     messages.success(request, 'Has cerrado sesión correctamente.')
-    return redirect('index')
+    return redirect('jio_app:index')
 
 def reservar_view(request):
     """
@@ -198,6 +215,74 @@ def admin_panel(request):
     }
     
     return render(request, 'jio_app/admin_panel.html', context)
+
+
+@login_required
+def usuarios_list(request):
+    if not request.user.tipo_usuario == 'administrador':
+        raise PermissionDenied("Solo los administradores pueden acceder a este panel.")
+
+    query = request.GET.get('q', '').strip()
+    usuarios = Usuario.objects.all().order_by('-is_superuser', '-is_staff', 'username')
+    if query:
+        usuarios = usuarios.filter(username__icontains=query)
+
+    context = {
+        'usuarios': usuarios,
+        'query': query,
+    }
+    return render(request, 'jio_app/usuarios/list.html', context)
+
+
+@login_required
+def usuarios_create(request):
+    if not request.user.tipo_usuario == 'administrador':
+        raise PermissionDenied("Solo los administradores pueden acceder a este panel.")
+
+    if request.method == 'POST':
+        form = UsuarioCreateForm(request.POST)
+        if form.is_valid():
+            usuario = form.save()
+            messages.success(request, f'Usuario "{usuario.username}" creado correctamente.')
+            return redirect('jio_app:usuarios_list')
+    else:
+        form = UsuarioCreateForm()
+
+    return render(request, 'jio_app/usuarios/form.html', {'form': form, 'is_create': True})
+
+
+@login_required
+def usuarios_update(request, pk):
+    if not request.user.tipo_usuario == 'administrador':
+        raise PermissionDenied("Solo los administradores pueden acceder a este panel.")
+
+    usuario = get_object_or_404(Usuario, pk=pk)
+
+    if request.method == 'POST':
+        form = UsuarioUpdateForm(request.POST, instance=usuario)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f'Usuario "{usuario.username}" actualizado correctamente.')
+            return redirect('jio_app:usuarios_list')
+    else:
+        form = UsuarioUpdateForm(instance=usuario)
+
+    return render(request, 'jio_app/usuarios/form.html', {'form': form, 'is_create': False, 'usuario': usuario})
+
+
+@login_required
+def usuarios_delete(request, pk):
+    if not request.user.tipo_usuario == 'administrador':
+        raise PermissionDenied("Solo los administradores pueden acceder a este panel.")
+
+    usuario = get_object_or_404(Usuario, pk=pk)
+    if request.method == 'POST':
+        username = usuario.username
+        usuario.delete()
+        messages.success(request, f'Usuario "{username}" eliminado correctamente.')
+        return redirect('jio_app:usuarios_list')
+
+    return render(request, 'jio_app/usuarios/confirm_delete.html', {'usuario': usuario})
 
 @login_required
 def delivery_panel(request):

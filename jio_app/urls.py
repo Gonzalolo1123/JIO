@@ -1,3 +1,4 @@
+# urls.py
 from django.urls import path
 from . import views
 
@@ -17,6 +18,11 @@ urlpatterns = [
     # Paneles administrativos
     path('panel/', views.panel_redirect, name='panel_redirect'),
     path('admin_jio/', views.admin_panel, name='admin_panel'),
+    # Usuarios CRUD
+    path('admin_jio/usuarios/', views.usuarios_list, name='usuarios_list'),
+    path('admin_jio/usuarios/nuevo/', views.usuarios_create, name='usuarios_create'),
+    path('admin_jio/usuarios/<int:pk>/editar/', views.usuarios_update, name='usuarios_update'),
+    path('admin_jio/usuarios/<int:pk>/eliminar/', views.usuarios_delete, name='usuarios_delete'),
     path('delivery/', views.delivery_panel, name='delivery_panel'),
     
     # API
