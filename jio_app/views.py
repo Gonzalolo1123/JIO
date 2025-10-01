@@ -88,7 +88,7 @@ def reservar_view(request):
     if request.method == 'POST':
         # Aquí se procesará el formulario de reserva cuando esté implementado
         messages.info(request, 'Formulario de reserva en desarrollo. Próximamente disponible.')
-        return redirect('index')
+        return redirect('jio_app:index')
     
     # Obtener todos los juegos disponibles
     juegos_disponibles = Juego.objects.filter(estado='disponible')
@@ -124,7 +124,7 @@ def contacto_view(request):
     if request.method == 'POST':
         # Aquí se procesará el formulario de contacto cuando esté implementado
         messages.success(request, '¡Gracias por tu mensaje! Te contactaremos pronto.')
-        return redirect('index')
+        return redirect('jio_app:index')
     
     return render(request, 'jio_app/contacto.html')
 
