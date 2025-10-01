@@ -11,6 +11,7 @@ from django.core import signing
 from django.utils import timezone
 from django.db.models import Q
 from django.views.decorators.csrf import csrf_exempt
+from django.utils.text import slugify
 import re
 
 # Create your views here.
@@ -159,17 +160,16 @@ def create_admin(request):
         raise PermissionDenied("Solo los administradores pueden acceder a este recurso.")
 
     if request.method == 'POST':
+        is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest' or 'application/json' in request.headers.get('Accept', '')
         first_name = (request.POST.get('first_name') or '').strip()
         last_name = (request.POST.get('last_name') or '').strip()
         email = (request.POST.get('email') or '').strip()
-        username = (request.POST.get('username') or '').strip()
         password = request.POST.get('password') or ''
 
         errors = []
         email_regex = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
-        username_regex = re.compile(r'^[A-Za-z0-9._-]{3,30}$')
 
-        if not all([first_name, last_name, email, username, password]):
+        if not all([first_name, last_name, email, password]):
             errors.append('Completa todos los campos.')
         if len(first_name) < 2 or len(first_name) > 30:
             errors.append('El nombre debe tener entre 2 y 30 caracteres.')
@@ -177,21 +177,26 @@ def create_admin(request):
             errors.append('El apellido debe tener entre 2 y 30 caracteres.')
         if not email_regex.match(email) or len(email) > 100:
             errors.append('Email inválido o demasiado largo (máx 100).')
-        if not username_regex.match(username):
-            errors.append('Usuario inválido. Use 3-30 caracteres: letras, números, . _ -')
         if len(password) < 8:
             errors.append('La contraseña debe tener al menos 8 caracteres.')
         if Usuario.objects.filter(email=email).exists():
             errors.append('Ya existe un usuario con ese email.')
-        if Usuario.objects.filter(username=username).exists():
-            errors.append('Ya existe un usuario con ese username.')
+        # Generar username único basado en nombre y apellido
+        base_username = slugify(f"{first_name}.{last_name}").replace('-', '.')[:24] or slugify(first_name) or 'user'
+        candidate = base_username
+        suffix = 1
+        while Usuario.objects.filter(username=candidate).exists():
+            candidate = f"{base_username}.{suffix}"
+            suffix += 1
 
         if errors:
+            if is_ajax:
+                return JsonResponse({'success': False, 'errors': errors}, status=400)
             for e in errors:
                 messages.error(request, e)
         else:
             user = Usuario.objects.create_user(
-                username=username,
+                username=candidate,
                 email=email,
                 password=password,
                 first_name=first_name,
@@ -201,10 +206,12 @@ def create_admin(request):
                 is_superuser=True,
                 is_active=True,
             )
+            if is_ajax:
+                return JsonResponse({'success': True, 'message': f'Administrador {user.get_full_name()} creado correctamente.'})
             messages.success(request, f'Administrador {user.get_full_name()} creado correctamente.')
             return redirect('jio_app:admin_panel')
 
-    return render(request, 'jio_app/create_admin.html')
+    return redirect('jio_app:users_list')
 
 
 @login_required
@@ -214,10 +221,10 @@ def create_delivery(request):
         raise PermissionDenied("Solo los administradores pueden acceder a este recurso.")
 
     if request.method == 'POST':
+        is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest' or 'application/json' in request.headers.get('Accept', '')
         first_name = (request.POST.get('first_name') or '').strip()
         last_name = (request.POST.get('last_name') or '').strip()
         email = (request.POST.get('email') or '').strip()
-        username = (request.POST.get('username') or '').strip()
         password = request.POST.get('password') or ''
         telefono = (request.POST.get('telefono') or '').strip()
         licencia = (request.POST.get('licencia') or '').strip()
@@ -225,10 +232,9 @@ def create_delivery(request):
 
         errors = []
         email_regex = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
-        username_regex = re.compile(r'^[A-Za-z0-9._-]{3,30}$')
         telefono_regex = re.compile(r'^[\d\s\+\-\(\)]{8,15}$')
 
-        if not all([first_name, last_name, email, username, password]):
+        if not all([first_name, last_name, email, password]):
             errors.append('Completa todos los campos obligatorios.')
         if len(first_name) < 2 or len(first_name) > 30:
             errors.append('El nombre debe tener entre 2 y 30 caracteres.')
@@ -236,8 +242,6 @@ def create_delivery(request):
             errors.append('El apellido debe tener entre 2 y 30 caracteres.')
         if not email_regex.match(email) or len(email) > 100:
             errors.append('Email inválido o demasiado largo (máx 100).')
-        if not username_regex.match(username):
-            errors.append('Usuario inválido. Use 3-30 caracteres: letras, números, . _ -')
         if len(password) < 8:
             errors.append('La contraseña debe tener al menos 8 caracteres.')
         if telefono and not telefono_regex.test(telefono) if hasattr(telefono_regex, 'test') else (telefono_regex.match(telefono) is None):
@@ -250,15 +254,22 @@ def create_delivery(request):
             errors.append('El vehículo no puede exceder 100 caracteres.')
         if Usuario.objects.filter(email=email).exists():
             errors.append('Ya existe un usuario con ese email.')
-        if Usuario.objects.filter(username=username).exists():
-            errors.append('Ya existe un usuario con ese username.')
+        # Generar username único basado en nombre y apellido
+        base_username = slugify(f"{first_name}.{last_name}").replace('-', '.')[:24] or slugify(first_name) or 'user'
+        candidate = base_username
+        suffix = 1
+        while Usuario.objects.filter(username=candidate).exists():
+            candidate = f"{base_username}.{suffix}"
+            suffix += 1
 
         if errors:
+            if is_ajax:
+                return JsonResponse({'success': False, 'errors': errors}, status=400)
             for e in errors:
                 messages.error(request, e)
         else:
             user = Usuario.objects.create_user(
-                username=username,
+                username=candidate,
                 email=email,
                 password=password,
                 first_name=first_name,
@@ -275,10 +286,12 @@ def create_delivery(request):
                 vehiculo=vehiculo or None,
                 estado='disponible',
             )
+            if is_ajax:
+                return JsonResponse({'success': True, 'message': f'Repartidor {user.get_full_name()} creado correctamente.'})
             messages.success(request, f'Repartidor {user.get_full_name()} creado correctamente.')
             return redirect('jio_app:admin_panel')
 
-    return render(request, 'jio_app/create_delivery.html')
+    return redirect('jio_app:users_list')
 
 
 # --------- Invitaciones compartibles con token firmado ---------
@@ -434,9 +447,9 @@ def users_list(request):
         raise PermissionDenied("Solo los administradores pueden acceder a este recurso.")
 
     query = request.GET.get('q', '').strip()
-    usuarios = Usuario.objects.all().order_by('date_joined')
+    base_qs = Usuario.objects.all().order_by('date_joined')
     if query:
-        usuarios = usuarios.filter(
+        base_qs = base_qs.filter(
             Q(username__icontains=query) |
             Q(email__icontains=query) |
             Q(first_name__icontains=query) |
@@ -444,8 +457,12 @@ def users_list(request):
             Q(tipo_usuario__icontains=query)
         )
 
+    administradores = base_qs.filter(tipo_usuario='administrador')
+    repartidores = base_qs.filter(tipo_usuario='repartidor').select_related('repartidor')
+
     return render(request, 'jio_app/users_list.html', {
-        'usuarios': usuarios,
+        'administradores': administradores,
+        'repartidores': repartidores,
         'query': query,
     })
 
@@ -459,6 +476,17 @@ def user_detail_json(request, user_id: int):
         return JsonResponse({'error': 'No autorizado'}, status=403)
     try:
         u = Usuario.objects.get(id=user_id)
+        LICENSE_TYPES = ['A1','A2','A3','A4','A5','B','C','D','E','F']
+        repartidor_data = None
+        estado_choices = []
+        if hasattr(u, 'repartidor'):
+            repartidor_data = {
+                'licencia_conducir': u.repartidor.licencia_conducir or '',
+                'vehiculo': u.repartidor.vehiculo or '',
+                'estado': u.repartidor.estado,
+                'estado_display': u.repartidor.get_estado_display(),
+            }
+            estado_choices = [key for key, _ in u.repartidor._meta.get_field('estado').choices]
         return JsonResponse({
             'id': u.id,
             'username': u.username,
@@ -466,7 +494,10 @@ def user_detail_json(request, user_id: int):
             'last_name': u.last_name,
             'email': u.email,
             'tipo_usuario': u.tipo_usuario,
-            'telefono': u.telefono or ''
+            'telefono': u.telefono or '',
+            'repartidor': repartidor_data,
+            'license_types': LICENSE_TYPES,
+            'estado_choices': estado_choices,
         })
     except Usuario.DoesNotExist:
         return JsonResponse({'error': 'Usuario no encontrado'}, status=404)
@@ -486,8 +517,11 @@ def user_update_json(request, user_id: int):
     first_name = request.POST.get('first_name', '').strip()
     last_name = request.POST.get('last_name', '').strip()
     email = request.POST.get('email', '').strip()
-    tipo_usuario = request.POST.get('tipo_usuario', '').strip()
+    tipo_usuario = (request.POST.get('tipo_usuario') or u.tipo_usuario).strip()
     telefono = request.POST.get('telefono', '').strip()
+    licencia_conducir = request.POST.get('licencia_conducir', '').strip()
+    vehiculo = request.POST.get('vehiculo', '').strip()
+    estado = request.POST.get('estado', '').strip()
 
     # Validaciones básicas del lado servidor
     errors = []
@@ -496,11 +530,22 @@ def user_update_json(request, user_id: int):
     if not last_name: errors.append('El apellido es obligatorio')
     if not email: errors.append('El email es obligatorio')
     if tipo_usuario not in ['administrador', 'repartidor', 'cliente']:
-        errors.append('Tipo de usuario inválido')
+        tipo_usuario = u.tipo_usuario
     if Usuario.objects.exclude(id=u.id).filter(username=username).exists():
         errors.append('El nombre de usuario ya existe')
     if Usuario.objects.exclude(id=u.id).filter(email=email).exists():
         errors.append('El email ya existe')
+
+    # Validaciones extra para repartidor
+    if u.tipo_usuario == 'repartidor':
+        LICENSE_TYPES = ['A1','A2','A3','A4','A5','B','C','D','E','F']
+        if licencia_conducir and licencia_conducir not in LICENSE_TYPES:
+            errors.append('Tipo de licencia inválido')
+        if len(vehiculo) > 100:
+            errors.append('El vehículo no puede exceder 100 caracteres')
+        estado_choices = [key for key, _ in Repartidor._meta.get_field('estado').choices]
+        if estado and estado not in estado_choices:
+            errors.append('Estado de repartidor inválido')
 
     if errors:
         return JsonResponse({'success': False, 'errors': errors}, status=400)
@@ -512,6 +557,14 @@ def user_update_json(request, user_id: int):
     u.tipo_usuario = tipo_usuario
     u.telefono = telefono or None
     u.save()
+    if u.tipo_usuario == 'repartidor':
+        r = getattr(u, 'repartidor', None)
+        if r is not None:
+            r.licencia_conducir = licencia_conducir or None
+            r.vehiculo = vehiculo or None
+            if estado:
+                r.estado = estado
+            r.save()
     return JsonResponse({'success': True})
 
 

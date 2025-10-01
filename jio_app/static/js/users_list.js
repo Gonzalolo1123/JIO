@@ -14,65 +14,141 @@
         return mostrarErroresValidacion([detail.error || 'Error al cargar usuario']);
       }
 
-      const { value: formValues } = await Swal.fire({
-        title: 'Editar usuario',
-        html:
-          `<input id="sw-username" class="swal2-input" placeholder="Usuario" value="${detail.username}">` +
-          `<input id="sw-first" class="swal2-input" placeholder="Nombre" value="${detail.first_name}">` +
-          `<input id="sw-last" class="swal2-input" placeholder="Apellido" value="${detail.last_name}">` +
-          `<input id="sw-email" class="swal2-input" placeholder="Email" value="${detail.email}">` +
-          `<select id="sw-tipo" class="swal2-select">
-             <option value="administrador" ${detail.tipo_usuario==='administrador'?'selected':''}>Administrador</option>
-             <option value="repartidor" ${detail.tipo_usuario==='repartidor'?'selected':''}>Repartidor</option>
-           </select>` +
-          `<input id="sw-telefono" class="swal2-input" placeholder="Teléfono" value="${detail.telefono||''}">`,
-        focusConfirm: false,
-        confirmButtonText: 'Guardar',
-        showCancelButton: true,
-        preConfirm: () => {
-          const username = document.getElementById('sw-username').value.trim();
-          const first_name = document.getElementById('sw-first').value.trim();
-          const last_name = document.getElementById('sw-last').value.trim();
-          const email = document.getElementById('sw-email').value.trim();
-          const tipo_usuario = document.getElementById('sw-tipo').value;
-          const telefono = document.getElementById('sw-telefono').value.trim();
+      // Determinar qué modal abrir según el tipo de usuario
+      const isRepartidor = detail.tipo_usuario === 'repartidor';
+      const modalId = isRepartidor ? 'modalEditRepartidor' : 'modalEditAdmin';
+      const modal = document.getElementById(modalId);
+      if(!modal) return;
 
-          const ok = validarFormulario([
-            ()=> (function(){
-                  const errs = [];
-                  if(!/^[A-Za-z0-9._-]{3,30}$/.test(username)){
-                    errs.push('Usuario inválido. Use 3-30 caracteres: letras, números, . _ -');
-                  }
-                  return errs;
-                })(),
-            ()=> validarNombre(first_name, 'nombre', 2, 30),
-            ()=> validarNombre(last_name, 'apellido', 2, 30),
-            ()=> validarEmail(email, 'email', 100),
-            ()=> (telefono ? validarTelefonoChileno(telefono, 'teléfono', false) : [])
-          ], 'Errores al editar usuario');
-          if(!ok){
-            return false;
+      // Poblar campos según el tipo
+      if(isRepartidor){
+        // Modal de repartidor
+        document.getElementById('editRepartidorId').value = detail.id;
+        document.getElementById('editRepartidorFirst').value = detail.first_name || '';
+        document.getElementById('editRepartidorLast').value = detail.last_name || '';
+        document.getElementById('editRepartidorEmail').value = detail.email || '';
+        document.getElementById('editRepartidorTelefono').value = detail.telefono || '';
+        
+        // Poblar selects específicos de repartidor
+        const selLic = document.getElementById('editRepartidorLicencia');
+        const selEst = document.getElementById('editRepartidorEstado');
+        if(selLic && selEst){
+          selLic.length = 1;
+          selEst.length = 1;
+          (detail.license_types || []).forEach(t=>{
+            const opt = document.createElement('option'); opt.value = t; opt.textContent = t; selLic.appendChild(opt);
+          });
+          (detail.estado_choices || []).forEach(e=>{
+            const opt = document.createElement('option'); opt.value = e; opt.textContent = e.replace('_',' '); selEst.appendChild(opt);
+          });
+          if(detail.repartidor){
+            if(detail.repartidor.licencia_conducir){ selLic.value = detail.repartidor.licencia_conducir; }
+            if(detail.repartidor.estado){ selEst.value = detail.repartidor.estado; }
+            document.getElementById('editRepartidorVehiculo').value = detail.repartidor.vehiculo || '';
           }
-          return { username, first_name, last_name, email, tipo_usuario, telefono };
         }
-      });
-
-      if(!formValues){ return; }
-
-      const formData = new FormData();
-      Object.entries(formValues).forEach(([k,v])=> formData.append(k, v));
-      const csrf = getCookie('csrftoken');
-      const updRes = await fetch(`${endpoints.update}${userId}/update/`, {
-        method: 'POST',
-        headers: { 'X-CSRFToken': csrf },
-        body: formData
-      });
-      const upd = await updRes.json();
-      if(!updRes.ok || !upd.success){
-        const errs = upd && upd.errors ? upd.errors : ['Error desconocido'];
-        return mostrarErroresValidacion(errs, 'No se pudo guardar');
+      } else {
+        // Modal de administrador
+        document.getElementById('editAdminId').value = detail.id;
+        document.getElementById('editAdminUsername').value = detail.username || '';
+        document.getElementById('editAdminFirst').value = detail.first_name || '';
+        document.getElementById('editAdminLast').value = detail.last_name || '';
+        document.getElementById('editAdminEmail').value = detail.email || '';
+        document.getElementById('editAdminTelefono').value = detail.telefono || '';
       }
-      mostrarExitoValidacion('Usuario actualizado correctamente');
+
+      modal.classList.add('show');
+      modal.setAttribute('aria-hidden','false');
+
+      // Bind submit del formulario correspondiente
+      const formId = isRepartidor ? 'formEditRepartidor' : 'formEditAdmin';
+      const form = document.getElementById(formId);
+      const submitHandler = async function(e){
+        e.preventDefault();
+        
+        let username, first_name, last_name, email, telefono, licencia_conducir, vehiculo, estado;
+        
+        if(isRepartidor){
+          first_name = document.getElementById('editRepartidorFirst').value.trim();
+          last_name = document.getElementById('editRepartidorLast').value.trim();
+          email = document.getElementById('editRepartidorEmail').value.trim();
+          telefono = document.getElementById('editRepartidorTelefono').value.trim();
+          licencia_conducir = document.getElementById('editRepartidorLicencia').value;
+          vehiculo = document.getElementById('editRepartidorVehiculo').value.trim();
+          estado = document.getElementById('editRepartidorEstado').value;
+        } else {
+          username = document.getElementById('editAdminUsername').value.trim();
+          first_name = document.getElementById('editAdminFirst').value.trim();
+          last_name = document.getElementById('editAdminLast').value.trim();
+          email = document.getElementById('editAdminEmail').value.trim();
+          telefono = document.getElementById('editAdminTelefono').value.trim();
+        }
+
+        const validaciones = [
+          ()=> validarNombre(first_name, 'nombre', 2, 30),
+          ()=> validarNombre(last_name, 'apellido', 2, 30),
+          ()=> validarEmail(email, 'email', 100),
+          ()=> (telefono ? validarTelefonoChileno(telefono, 'teléfono', false) : [])
+        ];
+        
+        // Solo validar username para administradores
+        if(!isRepartidor){
+          validaciones.unshift(()=> (function(){
+                const errs = [];
+                if(!/^[A-Za-z0-9._-]{3,30}$/.test(username)){
+                  errs.push('Usuario inválido. Use 3-30 caracteres: letras, números, . _ -');
+                }
+                return errs;
+              })());
+        }
+        
+        if(isRepartidor){
+          validaciones.push(()=> (vehiculo && vehiculo.length > 100 ? ['El vehículo no puede exceder 100 caracteres'] : []));
+        }
+
+        const ok = validarFormulario(validaciones, 'Errores al editar usuario');
+        if(!ok){ return; }
+
+        const formData = new FormData();
+        if(!isRepartidor){
+          formData.append('username', username);
+        }
+        formData.append('first_name', first_name);
+        formData.append('last_name', last_name);
+        formData.append('email', email);
+        formData.append('telefono', telefono);
+        if(isRepartidor){
+          if(licencia_conducir) formData.append('licencia_conducir', licencia_conducir);
+          if(vehiculo) formData.append('vehiculo', vehiculo);
+          if(estado) formData.append('estado', estado);
+        }
+        const csrf = getCookie('csrftoken');
+        const updRes = await fetch(`${endpoints.update}${userId}/update/`, {
+          method: 'POST',
+          headers: { 'X-CSRFToken': csrf },
+          body: formData
+        });
+        const upd = await updRes.json();
+        if(!updRes.ok || !upd.success){
+          const errs = upd && upd.errors ? upd.errors : ['Error desconocido'];
+          return mostrarErroresValidacion(errs, 'No se pudo guardar');
+        }
+        // Cerrar modal y mostrar éxito
+        modal.classList.remove('show');
+        modal.setAttribute('aria-hidden','true');
+        mostrarExitoValidacion('Usuario actualizado correctamente');
+        form.removeEventListener('submit', submitHandler);
+      };
+      form.addEventListener('submit', submitHandler);
+
+      // Cierre por backdrop/botón
+      modal.addEventListener('click', function(ev){
+        if(ev.target === modal || ev.target.closest('[data-modal-close]')){
+          modal.classList.remove('show');
+          modal.setAttribute('aria-hidden','true');
+        }
+      }, { once: true });
+
     } catch(e){
       mostrarErroresValidacion(['Error inesperado al editar usuario']);
     }

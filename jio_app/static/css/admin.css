@@ -295,6 +295,60 @@ body {
     background: #fafafa;
 }
 
+/* Modal básico */
+.modal {
+    position: fixed;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 1200;
+}
+
+.modal.show { display: flex; }
+
+.modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.4);
+}
+
+.modal-content {
+    position: relative;
+    z-index: 1201;
+    background: #fff;
+    width: min(700px, 92%);
+    border-radius: 14px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+}
+
+.modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid #eee;
+}
+
+.modal-header h2 {
+    font-size: 1.25rem;
+    margin: 0;
+}
+
+.modal-close {
+    border: none;
+    background: transparent;
+    font-size: 1.5rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.modal .form-grid { padding: 1rem 1.25rem; }
+.modal .form-actions { justify-content: flex-end; }
+
+/* Asegurar que las alertas SweetAlert2 queden por encima de cualquier modal propio */
+.swal2-container { z-index: 5000 !important; }
+
 /* Responsive */
 @media (max-width: 768px) {
     .navbar {
