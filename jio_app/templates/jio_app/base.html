@@ -1,7 +1,6 @@
 {% load static %}
 <!DOCTYPE html>
 <html lang="es">
-
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -33,7 +32,7 @@
         <li><a href="#juegos">Nuestros Juegos</a></li>
         <li><a href="#reservar">Reservar</a></li>
         <li>
-          <a href="{% url 'jio_app:login_jio' %}">Iniciar Sesión</a>
+          <a href="#" id="openUserModal">Iniciar Sesión</a>
         </li>
       </ul>
     </nav>
@@ -55,34 +54,34 @@
     <p>Contacto: +56 9 1234 5678 | contacto@jio.cl</p>
   </footer>
 
-  <!-- Modal de Login (Solo para Administradores y Repartidores) -->
-<div id="authModal" class="modal hidden">
-  <div class="modal-content">
-    <span class="close" id="closeModal">&times;</span>
-    <div class="login-container">
-      <form id="signInForm" method="POST" action="{% url 'jio_app:login' %}">
-        {% csrf_token %}
-        <h1>Iniciar sesión</h1>
-        <p class="login-subtitle">Acceso restringido para administradores y repartidores</p>
-        
-        <div class="input-group">
-          <input type="text" name="username" placeholder="Usuario" required />
-        </div>
-        
-        <div class="input-group">
-          <input type="password" name="password" placeholder="Contraseña" required />
-        </div>
-        
-        <button type="submit" class="login-btn">Iniciar sesión</button>
-      </form>
+  <!-- Modal de Login -->
+  <div id="authModal" class="modal hidden">
+    <div class="modal-content">
+      <span class="close" id="closeModal">&times;</span>
+      <div class="login-container">
+        <form id="signInForm">
+          {% csrf_token %}
+          <h1>Iniciar sesión</h1>
+          <p class="login-subtitle">Acceso para administradores y repartidores</p>
+          
+          <div class="input-group">
+            <input type="email" name="email" placeholder="Correo electrónico" required />
+          </div>
+          
+          <div class="input-group">
+            <input type="password" name="password" placeholder="Contraseña" required />
+          </div>
+          
+          <button type="submit" class="login-btn">Iniciar sesión</button>
+        </form>
+      </div>
     </div>
   </div>
-</div>
 
-  <!-- Scripts base -->
-  <script src="{% static 'js/signIn-Up.js' %}"></script>
+  <!-- Scripts -->
+  <script src="{% static 'js/validaciones.js' %}"></script>
+  <script src="{% static 'js/modal-login.js' %}"></script>
 
   {% block extra_scripts %}{% endblock %}
 </body>
-
 </html>

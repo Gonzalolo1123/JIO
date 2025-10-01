@@ -1,0 +1,43 @@
+{% extends 'jio_app/base_admin.html' %}
+{% load static %}
+
+{% block title %}Compartir invitación - JIO{% endblock %}
+
+{% block content %}
+<div class="panel-container">
+    <div class="panel-header">
+        <h1 class="panel-title">Compartir formulario de {{ role_label }}</h1>
+    </div>
+    <div class="form-card">
+        <p>Copia y comparte este enlace para que completen el registro:</p>
+        <div class="copy-row">
+            <input id="inviteLink" type="text" value="{{ invite_url }}" readonly>
+            <button class="btn btn-secondary" id="copyBtn">Copiar</button>
+        </div>
+    </div>
+</div>
+
+{% block extra_scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+    const input = document.getElementById('inviteLink');
+    const btn = document.getElementById('copyBtn');
+    if(btn && input){
+        btn.addEventListener('click', async function(){
+            try {
+                await navigator.clipboard.writeText(input.value);
+                btn.textContent = 'Copiado!';
+                setTimeout(()=>btn.textContent='Copiar', 1500);
+            } catch(e){
+                input.select();
+                document.execCommand('copy');
+                btn.textContent = 'Copiado!';
+                setTimeout(()=>btn.textContent='Copiar', 1500);
+            }
+        });
+    }
+});
+</script>
+{% endblock %}
+{% endblock %}
+

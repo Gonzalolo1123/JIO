@@ -1,37 +1,31 @@
-{% extends "jio_app/base_admin.html" %}
+{% extends 'jio_app/base_admin.html' %}
 {% load static %}
 
-{% block title %}JIO - Panel de Administrador{% endblock %}
+{% block title %}Panel Administrativo - JIO{% endblock %}
 
-{% block nav_items %}
-<li class="nav-item">
-    <a class="nav-link" href="#">
-        <i class="fas fa-tachometer-alt"></i> Dashboard
-    </a>
-</li>
-<li class="nav-item">
-    <a class="nav-link" href="#">
-        <i class="fas fa-users"></i> Usuarios
-    </a>
-</li>
-<li class="nav-item">
-    <a class="nav-link" href="#">
-        <i class="fas fa-truck"></i> Repartidores
-    </a>
-</li>
-<li class="nav-item">
-    <a class="nav-link" href="#">
-        <i class="fas fa-calendar"></i> Reservas
-    </a>
-</li>
-<li class="nav-item">
-    <a class="nav-link" href="#">
-        <i class="fas fa-gamepad"></i> Juegos
-    </a>
-</li>
-<li class="nav-item">
-    <a class="nav-link" href="#">
-        <i class="fas fa-chart-bar"></i> Reportes
-    </a>
-</li>
+{% block content %}
+<div class="panel-container">
+    <div class="panel-header">
+        <h1 class="panel-title">Panel Administrativo</h1>
+    </div>
+    <div class="panel-actions">
+        <div class="actions-grid">
+            <a href="{% url 'jio_app:create_admin' %}" class="btn btn-primary">
+                <i class="fas fa-user-shield"></i> Agregar administrador
+            </a>
+            <a href="{% url 'jio_app:share_admin_invite' %}" class="btn btn-secondary">
+                <i class="fas fa-share-from-square"></i> Compartir formulario de creación de administrador
+            </a>
+            <a href="{% url 'jio_app:create_delivery' %}" class="btn btn-primary">
+                <i class="fas fa-motorcycle"></i> Agregar repartidor
+            </a>
+            <a href="{% url 'jio_app:share_delivery_invite' %}" class="btn btn-secondary">
+                <i class="fas fa-share-from-square"></i> Compartir formulario de creación de repartidor
+            </a>
+            <a href="{% url 'jio_app:users_list' %}" class="btn btn-secondary">
+                <i class="fas fa-users"></i> Ver usuarios
+            </a>
+        </div>
+    </div>
+</div>
 {% endblock %}

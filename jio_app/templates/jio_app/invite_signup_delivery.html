@@ -1,0 +1,31 @@
+{% extends 'jio_app/base_admin.html' %}
+{% load static %}
+
+{% block title %}Registro de Repartidor - JIO{% endblock %}
+
+{% block content %}
+<div class="panel-container">
+  <div class="panel-header centered">
+    <img src="{% static 'images/logo_jio.png' %}" alt="JIO" class="logo" style="height:60px;margin-bottom:10px;">
+    <h1 class="panel-title">Registro de Repartidor</h1>
+  </div>
+  <form method="post" class="form-card">
+    {% csrf_token %}
+    <input type="hidden" name="token" value="{{ token }}">
+    <div class="form-grid">
+      <label>Nombre<input type="text" name="first_name" required></label>
+      <label>Apellido<input type="text" name="last_name" required></label>
+      <label>Email<input type="email" name="email" required></label>
+      <label>Usuario<input type="text" name="username" required></label>
+      <label>Contraseña<input type="password" name="password" required></label>
+      <label>Teléfono<input type="text" name="telefono"></label>
+      <label>Licencia<input type="text" name="licencia"></label>
+      <label>Vehículo<input type="text" name="vehiculo"></label>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-primary" type="submit">Crear cuenta</button>
+    </div>
+  </form>
+</div>
+{% endblock %}
+

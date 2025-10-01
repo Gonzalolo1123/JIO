@@ -1,31 +1,68 @@
 document.addEventListener("DOMContentLoaded", function () {
+  console.log("🚀 DOM cargado, configurando modal de login...");
+  
   const signUpButton = document.getElementById("signUp");
   const signInButton = document.getElementById("signIn");
   const container = document.getElementById("container");
 
   const usuarioBtn = document.getElementById("usuarioBtn");
+  const loginLink = document.getElementById("loginLink");
   const authModal = document.getElementById("authModal");
   const closeModal = document.getElementById("closeModal");
 
-  signUpButton.addEventListener("click", function () {
+  console.log("🔍 Elementos encontrados:");
+  console.log("  - loginLink:", loginLink);
+  console.log("  - authModal:", authModal);
+  console.log("  - closeModal:", closeModal);
+
+  signUpButton?.addEventListener("click", function () {
     container.classList.add("right-panel-active");
   });
 
-  signInButton.addEventListener("click", function () {
+  signInButton?.addEventListener("click", function () {
     container.classList.remove("right-panel-active");
   });
 
-  usuarioBtn.addEventListener("click", () => {
+  usuarioBtn?.addEventListener("click", () => {
     authModal.classList.remove("hidden");
   });
 
-  closeModal.addEventListener("click", () => {
-    authModal.classList.add("hidden");
-  });
+  // Nuevo event listener para el enlace de login en el menú
+  if (loginLink) {
+    console.log("✅ Configurando event listener para loginLink");
+    loginLink.addEventListener("click", (e) => {
+      console.log("🖱️ Click en loginLink detectado");
+      e.preventDefault();
+      if (authModal) {
+        console.log("👁️ Mostrando modal...");
+        authModal.classList.remove("hidden");
+        authModal.classList.add("show");
+        console.log("📊 Estado del modal:", {
+          hidden: authModal.classList.contains("hidden"),
+          show: authModal.classList.contains("show"),
+          display: window.getComputedStyle(authModal).display
+        });
+      } else {
+        console.error("❌ authModal no encontrado");
+      }
+    });
+  } else {
+    console.error("❌ loginLink no encontrado");
+  }
+
+  if (closeModal) {
+    closeModal.addEventListener("click", () => {
+      console.log("🔒 Cerrando modal...");
+      authModal.classList.add("hidden");
+      authModal.classList.remove("show");
+    });
+  }
 
   window.addEventListener("click", (e) => {
     if (e.target === authModal) {
+      console.log("🔒 Cerrando modal (click fuera)...");
       authModal.classList.add("hidden");
+      authModal.classList.remove("show");
     }
   });
 });
@@ -500,15 +537,17 @@ function crearUsuarioConValidacion(formData) {
   });
 }
 
-//Inicio de Sesion
+//Inicio de Sesion - COMENTADO PARA USAR MODAL-LOGIN.JS
+/*
 document.addEventListener("DOMContentLoaded", function () {
   const form = document.getElementById("signInForm");
 
-  form.addEventListener("submit", async function (e) {
-    e.preventDefault();
+  if (form) {
+    form.addEventListener("submit", async function (e) {
+      e.preventDefault();
 
-    const correo = document.getElementById("correoi").value;
-    const contrasena = document.getElementById("contrasenai").value;
+      const correo = form.querySelector('input[name="email"]').value;
+      const contrasena = form.querySelector('input[name="password"]').value;
 
     //###################Validaciones usando funciones de validaciones.js######################
     const errores = [];
@@ -529,9 +568,9 @@ document.addEventListener("DOMContentLoaded", function () {
       
       // Enfocar el primer campo con error
       if (errores.some(e => e.includes('correo'))) {
-        document.getElementById("correoi").focus();
+        form.querySelector('input[name="email"]').focus();
       } else if (errores.some(e => e.includes('contraseña'))) {
-        document.getElementById("contrasenai").focus();
+        form.querySelector('input[name="password"]').focus();
       }
       return;
     }
@@ -546,11 +585,11 @@ document.addEventListener("DOMContentLoaded", function () {
       }
 
       const datos = {
-        correo: correo,
-        contrasena: contrasena,
+        email: correo,
+        password: contrasena,
       };
 
-      const response = await fetch("/login/", {
+      const response = await fetch("/login_jio/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -562,7 +601,7 @@ document.addEventListener("DOMContentLoaded", function () {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.detail || "Error en el inicio de sesión");
+        throw new Error(data.error || "Error en el inicio de sesión");
       }
 
       if (data.success) {
@@ -573,30 +612,25 @@ document.addEventListener("DOMContentLoaded", function () {
         const authModal = document.getElementById("authModal");
         if (authModal) {
           authModal.classList.add("hidden");
+          authModal.classList.remove("show");
         }
         
         // Esperar un momento para asegurar que la sesión se haya establecido
         setTimeout(() => {
-          // Redirigir según el nivel de acceso usando fetch para mantener las cookies
-          if (data.is_admin) {
-            if (data.nivel_acceso === "superadmin") {
-              window.location.replace('/super_admin/');
-            } else if (data.nivel_acceso === "admin") {
-              window.location.replace('/estadisticas/');
-            }
-          } else {
-            window.location.reload();
-          }
+          // Redirigir al panel correspondiente
+          window.location.href = "/panel/";
         }, 500);
       } else {
-        showErrorAlert(data.detail || "Error en el inicio de sesión");
+        showErrorAlert(data.error || "Error en el inicio de sesión");
       }
     } catch (error) {
       console.error("Error en inicio de sesión:", error);
       showErrorAlert(error.message || "Error al intentar iniciar sesión. Por favor, intente nuevamente.");
     }
-  });
+    });
+  }
 });
+*/
 
 function showCustomAlert(message, type = 'info') {
   // Verificar si SweetAlert2 está disponible
@@ -868,7 +902,7 @@ window.hideModal = function() {
   }
 };
 
-// Función para cerrar el modal con transición suave
+  // Función para cerrar el modal con transición suave
 function closeEmailVerificationModal() {
   console.log("🔒 Cerrando modal de verificación...");
   
@@ -887,4 +921,52 @@ function closeEmailVerificationModal() {
     
     console.log("✅ Modal de verificación cerrado");
   }, 300);
+}
+
+// Función de prueba para el modal de login
+function testModal() {
+  console.log("🧪 Probando modal de login...");
+  const authModal = document.getElementById("authModal");
+  const loginLink = document.getElementById("loginLink");
+  
+  if (!authModal) {
+    console.error("❌ Modal no encontrado");
+    alert("Modal no encontrado");
+    return;
+  }
+  
+  if (!loginLink) {
+    console.error("❌ Login link no encontrado");
+    alert("Login link no encontrado");
+    return;
+  }
+  
+  console.log("✅ Elementos encontrados, mostrando modal...");
+  authModal.classList.remove("hidden");
+  authModal.classList.add("show");
+  
+  // Forzar estilos inline para asegurar que se muestre
+  authModal.style.cssText = `
+    display: flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    z-index: 9999 !important;
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    background-color: rgba(0, 0, 0, 0.5) !important;
+    backdrop-filter: blur(5px) !important;
+    justify-content: center !important;
+    align-items: center !important;
+  `;
+  
+  console.log("✅ Modal forzado a mostrar");
+  console.log("📊 Estado del modal:", {
+    display: window.getComputedStyle(authModal).display,
+    visibility: window.getComputedStyle(authModal).visibility,
+    zIndex: window.getComputedStyle(authModal).zIndex,
+    classes: authModal.className
+  });
 }
