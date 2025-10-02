@@ -1,28 +1,12 @@
-{% extends "jio_app/base_admin.html" %}
+{% extends 'jio_app/base_admin.html' %}
 {% load static %}
 
-{% block title %}JIO - Panel de Repartidor{% endblock %}
+{% block title %}Panel de Repartidores - JIO{% endblock %}
 
-{% block nav_items %}
-<li class="nav-item">
-    <a class="nav-link" href="#">
-        <i class="fas fa-tachometer-alt"></i> Dashboard
-    </a>
-</li>
-<li class="nav-item">
-    <a class="nav-link" href="#">
-        <i class="fas fa-truck"></i> Mis Entregas
-    </a>
-</li>
-<li class="nav-item">
-    <a class="nav-link" href="#">
-        <i class="fas fa-map-marker-alt"></i> Rutas
-    </a>
-</li>
-<li class="nav-item">
-    <a class="nav-link" href="#">
-        <i class="fas fa-clock"></i> Horarios
-    </a>
-</li>
+{% block content %}
+<div class="panel-container">
+    <div class="panel-header">
+        <h1 class="panel-title">Panel de Repartos</h1>
+    </div>
+</div>
 {% endblock %}
-

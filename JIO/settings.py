@@ -144,8 +144,3 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Configuración del modelo de usuario personalizado
 AUTH_USER_MODEL = 'jio_app.Usuario'
-
-# Para inicio de sesión
-LOGIN_URL = '/login_jio/'
-LOGIN_REDIRECT_URL = '/panel/'
-LOGOUT_REDIRECT_URL = '/'

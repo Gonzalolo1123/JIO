@@ -1,11 +1,18 @@
-from django.shortcuts import render, redirect, get_object_or_404
+from django.shortcuts import render, redirect
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.http import JsonResponse
 from django.core.exceptions import PermissionDenied
-from .models import Juego, PrecioTemporada, Usuario
-from .forms import UsuarioCreateForm, UsuarioUpdateForm
+from django.urls import reverse
+from .models import Juego, Usuario, Repartidor
+from django.views.decorators.http import require_http_methods
+from django.core import signing
+from django.utils import timezone
+from django.db.models import Q
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.text import slugify
+import re
 
 # Create your views here.
 
@@ -22,326 +29,92 @@ def index(request):
     return render(request, 'jio_app/index.html', context)
 
 def login_view(request):
+    """
+    Vista para el login de administradores y repartidores
+    """
+    # Verificar si es una petición AJAX
+    is_ajax = request.headers.get('Content-Type') == 'application/json'
+    
     if request.user.is_authenticated:
+        if is_ajax:
+            # Si ya está autenticado, redirigir al panel correspondiente
+            return JsonResponse({
+                'success': True,
+                'message': f'¡Bienvenido de nuevo, {request.user.get_full_name()}!',
+                'redirect_url': reverse('jio_app:panel_redirect')
+            })
         return redirect('jio_app:panel_redirect')
-
+    
     if request.method == 'POST':
-        identifier = request.POST.get('email')  # puede ser email o username
-        password = request.POST.get('password')
-
-        if identifier and password:
-            user = None
-            # Buscar por email o por username
+        # Obtener datos según el tipo de petición
+        if is_ajax:
+            import json
+            data = json.loads(request.body)
+            email = data.get('email')
+            password = data.get('password')
+        else:
+            email = request.POST.get('email')
+            password = request.POST.get('password')
+        
+        if email and password:
             try:
-                user = Usuario.objects.get(email=identifier)
-            except Usuario.DoesNotExist:
-                try:
-                    user = Usuario.objects.get(username=identifier)
-                except Usuario.DoesNotExist:
-                    user = None
-
-            if not user:
-                messages.error(request, 'Usuario no encontrado')
-            else:
-                password_ok = user.check_password(password)
-
-                # Manejar posible contraseña en texto plano (creada manualmente)
-                if not password_ok:
-                    raw = user.password or ''
-                    is_hashed = raw.startswith('pbkdf2_') or raw.startswith('argon2$') or raw.startswith('bcrypt$') or raw.startswith('scrypt$')
-                    if not is_hashed and raw == password:
-                        # Primera vez: re-hash y guardar
-                        user.set_password(password)
-                        user.save(update_fields=['password'])
-                        password_ok = True
-
-                if password_ok:
-                    # Verificar autorización: superuser o tipo permitido
-                    is_admin_like = user.is_superuser or user.tipo_usuario == 'administrador'
-                    is_delivery = user.tipo_usuario == 'repartidor'
-
-                    if is_admin_like or is_delivery:
-                        login(request, user, backend='django.contrib.auth.backends.ModelBackend')
-                        if is_admin_like:
-                            return redirect('jio_app:admin_panel')
-                        return redirect('jio_app:delivery_panel')
+                user = Usuario.objects.get(email=email)
+                user = authenticate(request, username=user.username, password=password)
+                
+                if user is not None:
+                    if user.tipo_usuario in ['administrador', 'repartidor']:
+                        login(request, user)
+                        if is_ajax:
+                            return JsonResponse({
+                                'success': True,
+                                'message': f'¡Bienvenido, {user.get_full_name()}!',
+                                'redirect_url': reverse('jio_app:panel_redirect')
+                            })
+                        else:
+                            messages.success(request, f'¡Bienvenido, {user.get_full_name()}!')
+                            return redirect('jio_app:panel_redirect')
                     else:
-                        messages.error(request, 'No autorizado para acceder al panel.')
+                        error_msg = 'Acceso denegado. Solo administradores y repartidores pueden acceder.'
+                        if is_ajax:
+                            return JsonResponse({'success': False, 'error': error_msg})
+                        else:
+                            messages.error(request, error_msg)
                 else:
-                    messages.error(request, 'Credenciales incorrectas')
-
+                    error_msg = 'Correo electrónico o contraseña incorrectos.'
+                    if is_ajax:
+                        return JsonResponse({'success': False, 'error': error_msg})
+                    else:
+                        messages.error(request, error_msg)
+            except Usuario.DoesNotExist:
+                error_msg = 'Correo electrónico no encontrado.'
+                if is_ajax:
+                    return JsonResponse({'success': False, 'error': error_msg})
+                else:
+                    messages.error(request, error_msg)
+        else:
+            error_msg = 'Por favor completa todos los campos.'
+            if is_ajax:
+                return JsonResponse({'success': False, 'error': error_msg})
+            else:
+                messages.error(request, error_msg)
+    
+    # Si es una petición GET o hay errores en POST no-AJAX, mostrar el formulario
+    if is_ajax:
+        return JsonResponse({'success': False, 'error': 'Método no permitido'})
     return render(request, 'jio_app/login_jio.html')
 
-@login_required
 def logout_view(request):
     """
     Vista para cerrar sesión
     """
     logout(request)
     messages.success(request, 'Has cerrado sesión correctamente.')
-    return redirect('jio_app:index')
-
-def reservar_view(request):
-    """
-    Vista para el formulario de reserva (próximamente)
-    """
-    if request.method == 'POST':
-        # Aquí se procesará el formulario de reserva cuando esté implementado
-        messages.info(request, 'Formulario de reserva en desarrollo. Próximamente disponible.')
-        return redirect('jio_app:index')
-    
-    # Obtener todos los juegos disponibles
-    juegos_disponibles = Juego.objects.filter(estado='disponible')
-    
-    context = {
-        'juegos_disponibles': juegos_disponibles,
-    }
-    return render(request, 'jio_app/reservar.html', context)
-
-def juegos_view(request):
-    """
-    Vista para mostrar todos los juegos disponibles
-    """
-    juegos = Juego.objects.filter(estado='disponible').order_by('categoria', 'nombre')
-    
-    # Agrupar por categoría
-    categorias = {}
-    for juego in juegos:
-        categoria = juego.get_categoria_display()
-        if categoria not in categorias:
-            categorias[categoria] = []
-        categorias[categoria].append(juego)
-    
-    context = {
-        'categorias': categorias,
-    }
-    return render(request, 'jio_app/juegos.html', context)
-
-def contacto_view(request):
-    """
-    Vista para la página de contacto
-    """
-    if request.method == 'POST':
-        # Aquí se procesará el formulario de contacto cuando esté implementado
-        messages.success(request, '¡Gracias por tu mensaje! Te contactaremos pronto.')
-        return redirect('jio_app:index')
-    
-    return render(request, 'jio_app/contacto.html')
-
-def api_juegos(request):
-    """
-    API para obtener información de juegos (para futuras funcionalidades)
-    """
-    juegos = Juego.objects.filter(estado='disponible')
-    data = []
-    
-    for juego in juegos:
-        data.append({
-            'id': juego.id,
-            'nombre': juego.nombre,
-            'categoria': juego.get_categoria_display(),
-            'dimensiones': juego.dimensiones,
-            'capacidad': juego.capacidad_personas,
-            'peso_maximo': juego.peso_maximo,
-            'precio_base': float(juego.precio_base),
-            'foto': juego.foto.url if juego.foto else None,
-        })
-    
-    return JsonResponse({'juegos': data})
-
-# ===== PANELES ADMINISTRATIVOS =====
-
-@login_required
-def admin_panel(request):
-    """
-    Panel de administración principal
-    """
-    # Verificar que el usuario sea administrador
-    if not request.user.tipo_usuario == 'administrador':
-        raise PermissionDenied("Solo los administradores pueden acceder a este panel.")
-    
-    # Estadísticas para el dashboard
-    stats = {
-        'reservas_hoy': 12,  # Esto vendría de la base de datos
-        'ingresos_mes': 2400000,
-        'juegos_activos': 8,
-        'repartidores': 5,
-    }
-    
-    # Reservas recientes (datos de ejemplo)
-    reservas_recientes = [
-        {
-            'id': '#001',
-            'cliente': 'María González',
-            'juego': 'Castillo 2en1',
-            'fecha': '2024-01-15',
-            'estado': 'Confirmada'
-        },
-        {
-            'id': '#002',
-            'cliente': 'Carlos Pérez',
-            'juego': 'Túnel Grande',
-            'fecha': '2024-01-16',
-            'estado': 'Pendiente'
-        }
-    ]
-    
-    # Actividad reciente (datos de ejemplo)
-    actividad_reciente = [
-        {
-            'tipo': 'Nueva reserva creada',
-            'descripcion': 'María González reservó Castillo 2en1',
-            'tiempo': 'Hace 2 horas',
-            'color': 'primary'
-        },
-        {
-            'tipo': 'Juego entregado',
-            'descripcion': 'Túnel Grande entregado a Carlos Pérez',
-            'tiempo': 'Hace 4 horas',
-            'color': 'success'
-        },
-        {
-            'tipo': 'Pago pendiente',
-            'descripcion': 'Pago pendiente para reserva #003',
-            'tiempo': 'Hace 6 horas',
-            'color': 'warning'
-        }
-    ]
-    
-    context = {
-        'stats': stats,
-        'reservas_recientes': reservas_recientes,
-        'actividad_reciente': actividad_reciente,
-    }
-    
-    return render(request, 'jio_app/admin_panel.html', context)
-
-
-@login_required
-def usuarios_list(request):
-    if not request.user.tipo_usuario == 'administrador':
-        raise PermissionDenied("Solo los administradores pueden acceder a este panel.")
-
-    query = request.GET.get('q', '').strip()
-    usuarios = Usuario.objects.all().order_by('-is_superuser', '-is_staff', 'username')
-    if query:
-        usuarios = usuarios.filter(username__icontains=query)
-
-    context = {
-        'usuarios': usuarios,
-        'query': query,
-    }
-    return render(request, 'jio_app/usuarios/list.html', context)
-
-
-@login_required
-def usuarios_create(request):
-    if not request.user.tipo_usuario == 'administrador':
-        raise PermissionDenied("Solo los administradores pueden acceder a este panel.")
-
-    if request.method == 'POST':
-        form = UsuarioCreateForm(request.POST)
-        if form.is_valid():
-            usuario = form.save()
-            messages.success(request, f'Usuario "{usuario.username}" creado correctamente.')
-            return redirect('jio_app:usuarios_list')
-    else:
-        form = UsuarioCreateForm()
-
-    return render(request, 'jio_app/usuarios/form.html', {'form': form, 'is_create': True})
-
-
-@login_required
-def usuarios_update(request, pk):
-    if not request.user.tipo_usuario == 'administrador':
-        raise PermissionDenied("Solo los administradores pueden acceder a este panel.")
-
-    usuario = get_object_or_404(Usuario, pk=pk)
-
-    if request.method == 'POST':
-        form = UsuarioUpdateForm(request.POST, instance=usuario)
-        if form.is_valid():
-            form.save()
-            messages.success(request, f'Usuario "{usuario.username}" actualizado correctamente.')
-            return redirect('jio_app:usuarios_list')
-    else:
-        form = UsuarioUpdateForm(instance=usuario)
-
-    return render(request, 'jio_app/usuarios/form.html', {'form': form, 'is_create': False, 'usuario': usuario})
-
-
-@login_required
-def usuarios_delete(request, pk):
-    if not request.user.tipo_usuario == 'administrador':
-        raise PermissionDenied("Solo los administradores pueden acceder a este panel.")
-
-    usuario = get_object_or_404(Usuario, pk=pk)
-    if request.method == 'POST':
-        username = usuario.username
-        usuario.delete()
-        messages.success(request, f'Usuario "{username}" eliminado correctamente.')
-        return redirect('jio_app:usuarios_list')
-
-    return render(request, 'jio_app/usuarios/confirm_delete.html', {'usuario': usuario})
-
-@login_required
-def delivery_panel(request):
-    """
-    Panel de repartidor
-    """
-    # Verificar que el usuario sea repartidor
-    if not request.user.tipo_usuario == 'repartidor':
-        raise PermissionDenied("Solo los repartidores pueden acceder a este panel.")
-    
-    # Estadísticas del repartidor
-    stats = {
-        'estado_actual': 'Disponible',
-        'entregas_hoy': 3,
-        'pendientes': 2,
-        'kilometros_hoy': 45,
-    }
-    
-    # Entregas asignadas (datos de ejemplo)
-    entregas_asignadas = [
-        {
-            'id': '#001',
-            'cliente': 'María González',
-            'juego': 'Castillo 2en1',
-            'direccion': 'Av. Principal 123, Osorno',
-            'hora': '14:00',
-            'estado': 'En Ruta'
-        },
-        {
-            'id': '#002',
-            'cliente': 'Carlos Pérez',
-            'juego': 'Túnel Grande',
-            'direccion': 'Calle Secundaria 456, Osorno',
-            'hora': '16:30',
-            'estado': 'Pendiente'
-        }
-    ]
-    
-    # Próximas entregas
-    proximas_entregas = [
-        {
-            'cliente': 'María González',
-            'juego': 'Castillo 2en1',
-            'hora': '14:00'
-        },
-        {
-            'cliente': 'Carlos Pérez',
-            'juego': 'Túnel Grande',
-            'hora': '16:30'
-        }
-    ]
-    
-    context = {
-        'stats': stats,
-        'entregas_asignadas': entregas_asignadas,
-        'proximas_entregas': proximas_entregas,
-    }
-    
-    return render(request, 'jio_app/delivery_panel.html', context)
+    # Redirigir a index con parámetros para limpiar cache
+    response = redirect('jio_app:index')
+    # Limpiar cookies de sesión
+    response.delete_cookie('sessionid')
+    response.delete_cookie('csrftoken')
+    return response
 
 @login_required
 def panel_redirect(request):
@@ -355,3 +128,463 @@ def panel_redirect(request):
     else:
         messages.error(request, 'No tienes permisos para acceder a los paneles administrativos.')
         return redirect('jio_app:index')
+
+@login_required
+def admin_panel(request):
+    """
+    Panel de administración principal
+    """
+    if not request.user.tipo_usuario == 'administrador':
+        raise PermissionDenied("Solo los administradores pueden acceder a este panel.")
+    
+    context = {
+        'user': request.user,
+    }
+    return render(request, 'jio_app/admin_panel.html', context)
+
+@login_required
+def delivery_panel(request):
+    """
+    Panel de repartidor
+    """
+    if not request.user.tipo_usuario == 'repartidor':
+        raise PermissionDenied("Solo los repartidores pueden acceder a este panel.")
+    
+    context = {
+        'user': request.user,
+    }
+    return render(request, 'jio_app/delivery_panel.html', context)
+
+
+# --------- Creación de usuarios protegida (solo administrador) ---------
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def create_admin(request):
+    if not request.user.tipo_usuario == 'administrador':
+        raise PermissionDenied("Solo los administradores pueden acceder a este recurso.")
+
+    if request.method == 'POST':
+        is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest' or 'application/json' in request.headers.get('Accept', '')
+        first_name = (request.POST.get('first_name') or '').strip()
+        last_name = (request.POST.get('last_name') or '').strip()
+        email = (request.POST.get('email') or '').strip()
+        password = request.POST.get('password') or ''
+
+        errors = []
+        email_regex = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
+
+        if not all([first_name, last_name, email, password]):
+            errors.append('Completa todos los campos.')
+        if len(first_name) < 2 or len(first_name) > 30:
+            errors.append('El nombre debe tener entre 2 y 30 caracteres.')
+        if len(last_name) < 2 or len(last_name) > 30:
+            errors.append('El apellido debe tener entre 2 y 30 caracteres.')
+        if not email_regex.match(email) or len(email) > 100:
+            errors.append('Email inválido o demasiado largo (máx 100).')
+        if len(password) < 8:
+            errors.append('La contraseña debe tener al menos 8 caracteres.')
+        if Usuario.objects.filter(email=email).exists():
+            errors.append('Ya existe un usuario con ese email.')
+        # Generar username único basado en nombre y apellido
+        base_username = slugify(f"{first_name}.{last_name}").replace('-', '.')[:24] or slugify(first_name) or 'user'
+        candidate = base_username
+        suffix = 1
+        while Usuario.objects.filter(username=candidate).exists():
+            candidate = f"{base_username}.{suffix}"
+            suffix += 1
+
+        if errors:
+            if is_ajax:
+                return JsonResponse({'success': False, 'errors': errors}, status=400)
+            for e in errors:
+                messages.error(request, e)
+        else:
+            user = Usuario.objects.create_user(
+                username=candidate,
+                email=email,
+                password=password,
+                first_name=first_name,
+                last_name=last_name,
+                tipo_usuario='administrador',
+                is_staff=True,
+                is_superuser=True,
+                is_active=True,
+            )
+            if is_ajax:
+                return JsonResponse({'success': True, 'message': f'Administrador {user.get_full_name()} creado correctamente.'})
+            messages.success(request, f'Administrador {user.get_full_name()} creado correctamente.')
+            return redirect('jio_app:admin_panel')
+
+    return redirect('jio_app:users_list')
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def create_delivery(request):
+    if not request.user.tipo_usuario == 'administrador':
+        raise PermissionDenied("Solo los administradores pueden acceder a este recurso.")
+
+    if request.method == 'POST':
+        is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest' or 'application/json' in request.headers.get('Accept', '')
+        first_name = (request.POST.get('first_name') or '').strip()
+        last_name = (request.POST.get('last_name') or '').strip()
+        email = (request.POST.get('email') or '').strip()
+        password = request.POST.get('password') or ''
+        telefono = (request.POST.get('telefono') or '').strip()
+        licencia = (request.POST.get('licencia') or '').strip()
+        vehiculo = (request.POST.get('vehiculo') or '').strip()
+
+        errors = []
+        email_regex = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
+        telefono_regex = re.compile(r'^[\d\s\+\-\(\)]{8,15}$')
+
+        if not all([first_name, last_name, email, password]):
+            errors.append('Completa todos los campos obligatorios.')
+        if len(first_name) < 2 or len(first_name) > 30:
+            errors.append('El nombre debe tener entre 2 y 30 caracteres.')
+        if len(last_name) < 2 or len(last_name) > 30:
+            errors.append('El apellido debe tener entre 2 y 30 caracteres.')
+        if not email_regex.match(email) or len(email) > 100:
+            errors.append('Email inválido o demasiado largo (máx 100).')
+        if len(password) < 8:
+            errors.append('La contraseña debe tener al menos 8 caracteres.')
+        if telefono and telefono_regex.match(telefono) is None:
+            errors.append('El teléfono no tiene un formato válido (8-15 dígitos, puede incluir +, -, (), espacios).')
+        if len(licencia) > 20:
+            errors.append('La licencia no puede exceder 20 caracteres.')
+        if len(vehiculo) > 100:
+            errors.append('El vehículo no puede exceder 100 caracteres.')
+        if Usuario.objects.filter(email=email).exists():
+            errors.append('Ya existe un usuario con ese email.')
+        # Generar username único basado en nombre y apellido
+        base_username = slugify(f"{first_name}.{last_name}").replace('-', '.')[:24] or slugify(first_name) or 'user'
+        candidate = base_username
+        suffix = 1
+        while Usuario.objects.filter(username=candidate).exists():
+            candidate = f"{base_username}.{suffix}"
+            suffix += 1
+
+        if errors:
+            if is_ajax:
+                return JsonResponse({'success': False, 'errors': errors}, status=400)
+            for e in errors:
+                messages.error(request, e)
+        else:
+            user = Usuario.objects.create_user(
+                username=candidate,
+                email=email,
+                password=password,
+                first_name=first_name,
+                last_name=last_name,
+                tipo_usuario='repartidor',
+                is_active=True,
+            )
+            if telefono:
+                user.telefono = telefono
+                user.save(update_fields=['telefono'])
+            Repartidor.objects.create(
+                usuario=user,
+                licencia_conducir=licencia or None,
+                vehiculo=vehiculo or None,
+                estado='disponible',
+            )
+            if is_ajax:
+                return JsonResponse({'success': True, 'message': f'Repartidor {user.get_full_name()} creado correctamente.'})
+            messages.success(request, f'Repartidor {user.get_full_name()} creado correctamente.')
+            return redirect('jio_app:admin_panel')
+
+    return redirect('jio_app:users_list')
+
+
+# --------- Invitaciones compartibles con token firmado ---------
+
+INVITE_SALT = 'jio-app-invite'
+INVITE_MAX_AGE_SECONDS = 60 * 60 * 24 * 7  # 7 días
+
+
+@login_required
+def share_admin_invite(request):
+    if not request.user.tipo_usuario == 'administrador':
+        raise PermissionDenied("Solo los administradores pueden acceder a este recurso.")
+    payload = {
+        'role': 'administrador',
+        'inviter_id': request.user.id,
+        'ts': int(timezone.now().timestamp()),
+    }
+    token = signing.dumps(payload, salt=INVITE_SALT)
+    invite_url = request.build_absolute_uri(reverse('jio_app:invite_signup') + f'?token={token}')
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or 'application/json' in request.headers.get('Accept', ''):
+        return JsonResponse({'invite_url': invite_url, 'role': 'administrador'})
+    return render(request, 'jio_app/share_invite.html', {
+        'invite_url': invite_url,
+        'role_label': 'administrador',
+    })
+
+
+@login_required
+def share_delivery_invite(request):
+    if not request.user.tipo_usuario == 'administrador':
+        raise PermissionDenied("Solo los administradores pueden acceder a este recurso.")
+    payload = {
+        'role': 'repartidor',
+        'inviter_id': request.user.id,
+        'ts': int(timezone.now().timestamp()),
+    }
+    token = signing.dumps(payload, salt=INVITE_SALT)
+    invite_url = request.build_absolute_uri(reverse('jio_app:invite_signup') + f'?token={token}')
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or 'application/json' in request.headers.get('Accept', ''):
+        return JsonResponse({'invite_url': invite_url, 'role': 'repartidor'})
+    return render(request, 'jio_app/share_invite.html', {
+        'invite_url': invite_url,
+        'role_label': 'repartidor',
+    })
+
+
+@require_http_methods(["GET", "POST"])
+def invite_signup(request):
+    token = request.GET.get('token') or request.POST.get('token')
+    if not token:
+        messages.error(request, 'Falta el token de invitación.')
+        return redirect('jio_app:index')
+    try:
+        data = signing.loads(token, salt=INVITE_SALT, max_age=INVITE_MAX_AGE_SECONDS)
+    except signing.BadSignature:
+        messages.error(request, 'Invitación inválida.')
+        return redirect('jio_app:index')
+    except signing.SignatureExpired:
+        messages.error(request, 'La invitación ha expirado.')
+        return redirect('jio_app:index')
+
+    role = data.get('role')
+    if role not in ['administrador', 'repartidor']:
+        messages.error(request, 'Invitación inválida.')
+        return redirect('jio_app:index')
+
+    if request.method == 'POST':
+        first_name = (request.POST.get('first_name') or '').strip()
+        last_name = (request.POST.get('last_name') or '').strip()
+        email = (request.POST.get('email') or '').strip()
+        username = (request.POST.get('username') or '').strip()
+        password = request.POST.get('password') or ''
+        telefono = (request.POST.get('telefono') or '').strip()
+        licencia = (request.POST.get('licencia') or '').strip()
+        vehiculo = (request.POST.get('vehiculo') or '').strip()
+
+        errors = []
+        email_regex = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
+        username_regex = re.compile(r'^[A-Za-z0-9._-]{3,30}$')
+        telefono_regex = re.compile(r'^[\d\s\+\-\(\)]{8,15}$')
+
+        if not all([first_name, last_name, email, username, password]):
+            errors.append('Completa todos los campos obligatorios.')
+        if len(first_name) < 2 or len(first_name) > 30:
+            errors.append('El nombre debe tener entre 2 y 30 caracteres.')
+        if len(last_name) < 2 or len(last_name) > 30:
+            errors.append('El apellido debe tener entre 2 y 30 caracteres.')
+        if not email_regex.match(email) or len(email) > 100:
+            errors.append('Email inválido o demasiado largo (máx 100).')
+        if not username_regex.match(username):
+            errors.append('Usuario inválido. Use 3-30 caracteres: letras, números, . _ -')
+        if len(password) < 8:
+            errors.append('La contraseña debe tener al menos 8 caracteres.')
+        if role == 'repartidor':
+            if telefono and telefono_regex.match(telefono) is None:
+                errors.append('El teléfono no tiene un formato válido (8-15 dígitos, puede incluir +, -, (), espacios).')
+            if len(licencia) > 20:
+                errors.append('La licencia no puede exceder 20 caracteres.')
+            if len(vehiculo) > 100:
+                errors.append('El vehículo no puede exceder 100 caracteres.')
+        if Usuario.objects.filter(email=email).exists():
+            errors.append('Ya existe un usuario con ese email.')
+        if Usuario.objects.filter(username=username).exists():
+            errors.append('Ya existe un usuario con ese username.')
+
+        if errors:
+            for e in errors:
+                messages.error(request, e)
+        else:
+            if role == 'administrador':
+                user = Usuario.objects.create_user(
+                    username=username,
+                    email=email,
+                    password=password,
+                    first_name=first_name,
+                    last_name=last_name,
+                    tipo_usuario='administrador',
+                    is_staff=True,
+                    is_superuser=True,
+                    is_active=True,
+                )
+            else:
+                user = Usuario.objects.create_user(
+                    username=username,
+                    email=email,
+                    password=password,
+                    first_name=first_name,
+                    last_name=last_name,
+                    tipo_usuario='repartidor',
+                    is_active=True,
+                )
+                if telefono:
+                    user.telefono = telefono
+                    user.save(update_fields=['telefono'])
+                Repartidor.objects.create(
+                    usuario=user,
+                    licencia_conducir=licencia or None,
+                    vehiculo=vehiculo or None,
+                    estado='disponible',
+                )
+            messages.success(request, 'Cuenta creada correctamente. Ya puedes iniciar sesión.')
+            return redirect('jio_app:login_jio')
+
+    template = 'jio_app/invite_signup_admin.html' if role == 'administrador' else 'jio_app/invite_signup_delivery.html'
+    return render(request, template, { 'token': token })
+
+
+# --------- Listado de usuarios (solo administrador) ---------
+
+@login_required
+def users_list(request):
+    if not request.user.tipo_usuario == 'administrador':
+        raise PermissionDenied("Solo los administradores pueden acceder a este recurso.")
+
+    query = request.GET.get('q', '').strip()
+    base_qs = Usuario.objects.all().order_by('date_joined')
+    if query:
+        base_qs = base_qs.filter(
+            Q(username__icontains=query) |
+            Q(email__icontains=query) |
+            Q(first_name__icontains=query) |
+            Q(last_name__icontains=query) |
+            Q(tipo_usuario__icontains=query)
+        )
+
+    administradores = base_qs.filter(tipo_usuario='administrador')
+    repartidores = base_qs.filter(tipo_usuario='repartidor').select_related('repartidor')
+
+    return render(request, 'jio_app/users_list.html', {
+        'administradores': administradores,
+        'repartidores': repartidores,
+        'query': query,
+    })
+
+
+# --------- Endpoints JSON para editar/eliminar usuarios (solo admin) ---------
+
+@login_required
+@require_http_methods(["GET"])
+def user_detail_json(request, user_id: int):
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    try:
+        u = Usuario.objects.get(id=user_id)
+        LICENSE_TYPES = ['A1','A2','A3','A4','A5','B','C','D','E','F']
+        repartidor_data = None
+        estado_choices = []
+        if hasattr(u, 'repartidor'):
+            repartidor_data = {
+                'licencia_conducir': u.repartidor.licencia_conducir or '',
+                'vehiculo': u.repartidor.vehiculo or '',
+                'estado': u.repartidor.estado,
+                'estado_display': u.repartidor.get_estado_display(),
+            }
+            estado_choices = [key for key, _ in u.repartidor._meta.get_field('estado').choices]
+        return JsonResponse({
+            'id': u.id,
+            'username': u.username,
+            'first_name': u.first_name,
+            'last_name': u.last_name,
+            'email': u.email,
+            'tipo_usuario': u.tipo_usuario,
+            'telefono': u.telefono or '',
+            'repartidor': repartidor_data,
+            'license_types': LICENSE_TYPES,
+            'estado_choices': estado_choices,
+        })
+    except Usuario.DoesNotExist:
+        return JsonResponse({'error': 'Usuario no encontrado'}, status=404)
+
+
+@login_required
+@require_http_methods(["POST"])
+def user_update_json(request, user_id: int):
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    try:
+        u = Usuario.objects.get(id=user_id)
+    except Usuario.DoesNotExist:
+        return JsonResponse({'error': 'Usuario no encontrado'}, status=404)
+
+    username = request.POST.get('username', '').strip()
+    first_name = request.POST.get('first_name', '').strip()
+    last_name = request.POST.get('last_name', '').strip()
+    email = request.POST.get('email', '').strip()
+    tipo_usuario = (request.POST.get('tipo_usuario') or u.tipo_usuario).strip()
+    telefono = request.POST.get('telefono', '').strip()
+    licencia_conducir = request.POST.get('licencia_conducir', '').strip()
+    vehiculo = request.POST.get('vehiculo', '').strip()
+    estado = request.POST.get('estado', '').strip()
+
+    # Validaciones básicas del lado servidor
+    errors = []
+    # El campo username no se valida en edición (se mantiene el existente)
+    if not first_name: errors.append('El nombre es obligatorio')
+    if not last_name: errors.append('El apellido es obligatorio')
+    if not email: errors.append('El email es obligatorio')
+    if tipo_usuario not in ['administrador', 'repartidor', 'cliente']:
+        tipo_usuario = u.tipo_usuario
+    # Solo validar username si se proporciona (para compatibilidad)
+    if username and Usuario.objects.exclude(id=u.id).filter(username=username).exists():
+        errors.append('El nombre de usuario ya existe')
+    if Usuario.objects.exclude(id=u.id).filter(email=email).exists():
+        errors.append('El email ya existe')
+
+    # Validaciones extra para repartidor
+    if u.tipo_usuario == 'repartidor':
+        LICENSE_TYPES = ['A1','A2','A3','A4','A5','B','C','D','E','F']
+        if licencia_conducir and licencia_conducir not in LICENSE_TYPES:
+            errors.append('Tipo de licencia inválido')
+        if len(vehiculo) > 100:
+            errors.append('El vehículo no puede exceder 100 caracteres')
+        estado_choices = [key for key, _ in Repartidor._meta.get_field('estado').choices]
+        if estado and estado not in estado_choices:
+            errors.append('Estado de repartidor inválido')
+
+    if errors:
+        return JsonResponse({'success': False, 'errors': errors}, status=400)
+
+    # El username no se actualiza (se mantiene el existente)
+    u.first_name = first_name
+    u.last_name = last_name
+    u.email = email
+    u.tipo_usuario = tipo_usuario
+    u.telefono = telefono or None
+    u.save()
+    if u.tipo_usuario == 'repartidor':
+        r = getattr(u, 'repartidor', None)
+        if r is not None:
+            r.licencia_conducir = licencia_conducir or None
+            r.vehiculo = vehiculo or None
+            if estado:
+                r.estado = estado
+            r.save()
+    return JsonResponse({'success': True})
+
+
+@login_required
+@require_http_methods(["POST"])
+def user_delete_json(request, user_id: int):
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    try:
+        u = Usuario.objects.get(id=user_id)
+    except Usuario.DoesNotExist:
+        return JsonResponse({'error': 'Usuario no encontrado'}, status=404)
+
+    # Evitar que un admin se elimine a sí mismo por accidente
+    if u.id == request.user.id:
+        return JsonResponse({'success': False, 'errors': ['No puedes eliminar tu propia cuenta.']}, status=400)
+
+    u.delete()
+    return JsonResponse({'success': True})
