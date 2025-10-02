@@ -136,17 +136,26 @@ document.addEventListener("DOMContentLoaded", function() {
             icon: 'success',
             confirmButtonText: 'Aceptar',
             timer: 1500,
-            timerProgressBar: true
+            timerProgressBar: true,
+            zIndex: 10000,
+            backdrop: true,
+            allowOutsideClick: true,
+            allowEscapeKey: true
           }).then(() => {
-            // Redirigir al panel
-            window.location.href = "/panel/";
+            // Redirigir al panel usando la URL proporcionada por el servidor o la por defecto
+            const redirectUrl = data.redirect_url || "/panel/";
+            window.location.href = redirectUrl;
           });
         } else {
           Swal.fire({
             title: 'Error',
             text: data.error || 'Error en el inicio de sesión',
             icon: 'error',
-            confirmButtonText: 'Aceptar'
+            confirmButtonText: 'Aceptar',
+            zIndex: 10000,
+            backdrop: true,
+            allowOutsideClick: true,
+            allowEscapeKey: true
           });
         }
         
@@ -156,7 +165,11 @@ document.addEventListener("DOMContentLoaded", function() {
           title: 'Error de Conexión',
           text: 'Error al intentar iniciar sesión',
           icon: 'error',
-          confirmButtonText: 'Aceptar'
+          confirmButtonText: 'Aceptar',
+          zIndex: 10000,
+          backdrop: true,
+          allowOutsideClick: true,
+          allowEscapeKey: true
         });
       }
     });

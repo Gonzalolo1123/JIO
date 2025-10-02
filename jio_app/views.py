@@ -37,8 +37,13 @@ def login_view(request):
     
     if request.user.is_authenticated:
         if is_ajax:
-            return JsonResponse({'success': False, 'error': 'Ya estás autenticado'})
-        return redirect('admin:index')
+            # Si ya está autenticado, redirigir al panel correspondiente
+            return JsonResponse({
+                'success': True,
+                'message': f'¡Bienvenido de nuevo, {request.user.get_full_name()}!',
+                'redirect_url': reverse('jio_app:panel_redirect')
+            })
+        return redirect('jio_app:panel_redirect')
     
     if request.method == 'POST':
         # Obtener datos según el tipo de petición
@@ -244,10 +249,8 @@ def create_delivery(request):
             errors.append('Email inválido o demasiado largo (máx 100).')
         if len(password) < 8:
             errors.append('La contraseña debe tener al menos 8 caracteres.')
-        if telefono and not telefono_regex.test(telefono) if hasattr(telefono_regex, 'test') else (telefono_regex.match(telefono) is None):
-            # Compatibilidad por si .test no existe
-            if telefono_regex.match(telefono) is None:
-                errors.append('El teléfono no tiene un formato válido (8-15 dígitos, puede incluir +, -, (), espacios).')
+        if telefono and telefono_regex.match(telefono) is None:
+            errors.append('El teléfono no tiene un formato válido (8-15 dígitos, puede incluir +, -, (), espacios).')
         if len(licencia) > 20:
             errors.append('La licencia no puede exceder 20 caracteres.')
         if len(vehiculo) > 100:
@@ -525,13 +528,14 @@ def user_update_json(request, user_id: int):
 
     # Validaciones básicas del lado servidor
     errors = []
-    if not username: errors.append('El usuario es obligatorio')
+    # El campo username no se valida en edición (se mantiene el existente)
     if not first_name: errors.append('El nombre es obligatorio')
     if not last_name: errors.append('El apellido es obligatorio')
     if not email: errors.append('El email es obligatorio')
     if tipo_usuario not in ['administrador', 'repartidor', 'cliente']:
         tipo_usuario = u.tipo_usuario
-    if Usuario.objects.exclude(id=u.id).filter(username=username).exists():
+    # Solo validar username si se proporciona (para compatibilidad)
+    if username and Usuario.objects.exclude(id=u.id).filter(username=username).exists():
         errors.append('El nombre de usuario ya existe')
     if Usuario.objects.exclude(id=u.id).filter(email=email).exists():
         errors.append('El email ya existe')
@@ -550,7 +554,7 @@ def user_update_json(request, user_id: int):
     if errors:
         return JsonResponse({'success': False, 'errors': errors}, status=400)
 
-    u.username = username
+    # El username no se actualiza (se mantiene el existente)
     u.first_name = first_name
     u.last_name = last_name
     u.email = email

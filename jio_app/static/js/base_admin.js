@@ -60,7 +60,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
       // Campos extra solo para repartidor
       if(form.id === 'formCreateDelivery'){
-        checks.push(()=> (telefono ? validarTelefonoChileno(telefono, 'teléfono', false) : []));
+        // Validar teléfono solo si tiene valor (es opcional)
+        if(telefono){
+          checks.push(()=> validarTelefonoChileno(telefono, 'teléfono', false));
+        }
         if(licencia){ checks.push(()=> validarNombre(licencia, 'licencia', 0, 20, true)); }
         if(vehiculo){ checks.push(()=> validarNombre(vehiculo, 'vehículo', 0, 100, true)); }
       }

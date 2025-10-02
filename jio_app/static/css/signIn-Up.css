@@ -144,6 +144,19 @@
   transform: translateY(0);
 }
 
+/* Asegurar que SweetAlert2 aparezca por encima del modal */
+.swal2-container {
+  z-index: 10000 !important;
+}
+
+.swal2-popup {
+  z-index: 10001 !important;
+}
+
+.swal2-backdrop {
+  z-index: 10000 !important;
+}
+
 /* Responsive */
 @media (max-width: 480px) {
   .modal-content {
