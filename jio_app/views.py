@@ -30,6 +30,18 @@ def index(request):
     }
     return render(request, 'jio_app/index.html', context)
 
+def calendario_reservas(request):
+    """
+    Vista para el calendario de reservas
+    """
+    # Obtener todos los juegos disponibles para mostrar en el calendario
+    juegos_disponibles = Juego.objects.filter(estado='disponible')
+    
+    context = {
+        'juegos_disponibles': juegos_disponibles,
+    }
+    return render(request, 'jio_app/calendario_reservas.html', context)
+
 def login_view(request):
     """
     Vista para el login de administradores y repartidores

@@ -1,0 +1,112 @@
+{% extends "jio_app/base.html" %}
+{% load static %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{% static 'css/calendario.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="calendario-container">
+  <div class="calendario-header">
+    <h1>Calendario de Reservas</h1>
+    <p>Selecciona una fecha para ver la disponibilidad y hacer tu reserva</p>
+  </div>
+
+  <div class="calendario-content">
+    <!-- Controles del calendario -->
+    <div class="calendario-controls">
+      <button id="prev-month" class="btn-nav">&lt;</button>
+      <h2 id="current-month"></h2>
+      <button id="next-month" class="btn-nav">&gt;</button>
+    </div>
+
+    <!-- Calendario -->
+    <div class="calendario-grid" id="calendario-grid">
+      <!-- Los días se generarán dinámicamente con JavaScript -->
+    </div>
+
+    <!-- Información de disponibilidad -->
+    <div class="disponibilidad-info">
+      <h3>Información de Disponibilidad</h3>
+      <div class="disponibilidad-legend">
+        <div class="legend-item">
+          <span class="legend-color disponible"></span>
+          <span>Disponible</span>
+        </div>
+        <div class="legend-item">
+          <span class="legend-color ocupado"></span>
+          <span>Ocupado</span>
+        </div>
+        <div class="legend-item">
+          <span class="legend-color pasado"></span>
+          <span>Fecha pasada</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Formulario de reserva (se muestra cuando se selecciona una fecha) -->
+    <div class="reserva-form-container" id="reserva-form-container" style="display: none;">
+      <div class="reserva-form">
+        <h3>Formulario de Reserva</h3>
+        <p id="fecha-seleccionada"></p>
+        
+        <form id="formulario-reserva">
+          <div class="form-group">
+            <label for="nombre">Nombre completo:</label>
+            <input type="text" id="nombre" name="nombre" required>
+          </div>
+          
+          <div class="form-group">
+            <label for="email">Correo electrónico:</label>
+            <input type="email" id="email" name="email" required>
+          </div>
+          
+          <div class="form-group">
+            <label for="telefono">Teléfono:</label>
+            <input type="tel" id="telefono" name="telefono" required>
+          </div>
+          
+          <div class="form-group">
+            <label for="juego">Juego inflable:</label>
+            <select id="juego" name="juego" required>
+              <option value="">Selecciona un juego</option>
+              {% for juego in juegos_disponibles %}
+                <option value="{{ juego.id }}">{{ juego.nombre }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          
+          <div class="form-group">
+            <label for="horario">Horario preferido:</label>
+            <select id="horario" name="horario" required>
+              <option value="">Selecciona un horario</option>
+              <option value="09:00-13:00">Mañana (9:00 - 13:00)</option>
+              <option value="14:00-18:00">Tarde (14:00 - 18:00)</option>
+              <option value="09:00-18:00">Todo el día (9:00 - 18:00)</option>
+            </select>
+          </div>
+          
+          <div class="form-group">
+            <label for="direccion">Dirección del evento:</label>
+            <textarea id="direccion" name="direccion" rows="3" required></textarea>
+          </div>
+          
+          <div class="form-group">
+            <label for="comentarios">Comentarios adicionales:</label>
+            <textarea id="comentarios" name="comentarios" rows="3"></textarea>
+          </div>
+          
+          <div class="form-actions">
+            <button type="button" id="cancelar-reserva" class="btn-cancelar">Cancelar</button>
+            <button type="submit" class="btn-confirmar">Confirmar Reserva</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{% static 'js/calendario.js' %}"></script>
+{% endblock %}

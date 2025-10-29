@@ -6,6 +6,7 @@ app_name = 'jio_app'
 urlpatterns = [
     # Páginas públicas
     path('', views.index, name='index'),
+    path('calendario/', views.calendario_reservas, name='calendario_reservas'),
     
     # Autenticación
     path('login_jio/', views.login_view, name='login_jio'),
