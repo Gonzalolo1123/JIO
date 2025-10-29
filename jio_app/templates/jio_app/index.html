@@ -11,7 +11,7 @@
   <div class="hero-content">
     <h1>¡Diversión Garantizada!</h1>
     <p>Arrienda los mejores juegos inflables para tus eventos</p>
-    <a href="#reservar" class="btn-hero">Reservar Ahora</a>
+    <a href="{% url 'jio_app:calendario_reservas' %}" class="btn-hero">Reservar Ahora</a>
   </div>
 </section>
 
@@ -233,7 +233,7 @@
       <div class="reservar-form">
         <h3>Inicia tu Reserva</h3>
         <p>Completa el formulario y nos pondremos en contacto contigo</p>
-        <a href="#" class="btn-reservar" onclick="alert('Formulario de reserva próximamente disponible')">
+        <a href="{% url 'jio_app:calendario_reservas' %}" class="btn-reservar">
           Reservar Ahora
         </a>
         <p class="contacto-info">
