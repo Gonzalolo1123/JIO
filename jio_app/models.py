@@ -111,7 +111,7 @@ class Juego(models.Model):
     dimensiones = models.CharField(max_length=50, help_text="Ej: 5m x 3m x 2m")
     capacidad_personas = models.PositiveIntegerField()
     peso_maximo = models.PositiveIntegerField(help_text="Peso máximo en kg")
-    precio_base = models.DecimalField(max_digits=10, decimal_places=2)
+    precio_base = models.PositiveIntegerField()
     foto = models.CharField(max_length=200, blank=True, null=True, help_text="URL de la imagen del juego")
     estado = models.CharField(
         max_length=20, 

@@ -716,3 +716,297 @@ def user_delete_json(request, user_id: int):
 
     u.delete()
     return JsonResponse({'success': True})
+
+
+# --------- CRUD de Juegos Inflables (solo administrador) ---------
+
+@login_required
+def juegos_list(request):
+    """
+    Lista todos los juegos inflables con filtros de búsqueda
+    """
+    if not request.user.tipo_usuario == 'administrador':
+        raise PermissionDenied("Solo los administradores pueden acceder a este recurso.")
+
+    query = request.GET.get('q', '').strip()
+    categoria_filter = request.GET.get('categoria', '').strip()
+    estado_filter = request.GET.get('estado', '').strip()
+    
+    base_qs = Juego.objects.all().order_by('nombre')
+    
+    if query:
+        base_qs = base_qs.filter(
+            Q(nombre__icontains=query) |
+            Q(descripcion__icontains=query) |
+            Q(categoria__icontains=query)
+        )
+    
+    if categoria_filter:
+        base_qs = base_qs.filter(categoria=categoria_filter)
+    
+    if estado_filter:
+        base_qs = base_qs.filter(estado=estado_filter)
+
+    return render(request, 'jio_app/juegos_list.html', {
+        'juegos': base_qs,
+        'query': query,
+        'categoria_filter': categoria_filter,
+        'estado_filter': estado_filter,
+        'categoria_choices': Juego.CATEGORIA_CHOICES,
+        'estado_choices': Juego.ESTADO_CHOICES,
+    })
+
+
+@login_required
+@require_http_methods(["GET"])
+def juego_detail_json(request, juego_id: int):
+    """
+    Obtiene los detalles de un juego en formato JSON
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    try:
+        juego = Juego.objects.get(id=juego_id)
+        return JsonResponse({
+            'id': juego.id,
+            'nombre': juego.nombre,
+            'descripcion': juego.descripcion or '',
+            'categoria': juego.categoria,
+            'dimensiones': juego.dimensiones,
+            'capacidad_personas': juego.capacidad_personas,
+            'peso_maximo': juego.peso_maximo,
+            'precio_base': int(juego.precio_base),
+            'foto': juego.foto or '',
+            'estado': juego.estado,
+            'categoria_choices': Juego.CATEGORIA_CHOICES,
+            'estado_choices': Juego.ESTADO_CHOICES,
+        })
+    except Juego.DoesNotExist:
+        return JsonResponse({'error': 'Juego no encontrado'}, status=404)
+
+
+@login_required
+@require_http_methods(["POST"])
+def juego_create_json(request):
+    """
+    Crea un nuevo juego inflable
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+
+    nombre = request.POST.get('nombre', '').strip()
+    descripcion = request.POST.get('descripcion', '').strip()
+    categoria = request.POST.get('categoria', '').strip()
+    dimensiones = request.POST.get('dimensiones', '').strip()
+    capacidad_personas = request.POST.get('capacidad_personas', '').strip()
+    peso_maximo = request.POST.get('peso_maximo', '').strip()
+    precio_base = request.POST.get('precio_base', '').strip()
+    foto = request.POST.get('foto', '').strip()
+    estado = request.POST.get('estado', 'disponible').strip()
+
+    errors = []
+    
+    # Validaciones
+    if not nombre:
+        errors.append('El nombre es obligatorio')
+    elif len(nombre) > 100:
+        errors.append('El nombre no puede exceder 100 caracteres')
+    
+    if len(descripcion) > 1000:
+        errors.append('La descripción no puede exceder 1000 caracteres')
+    
+    if categoria not in [choice[0] for choice in Juego.CATEGORIA_CHOICES]:
+        errors.append('Categoría inválida')
+    
+    if not dimensiones:
+        errors.append('Las dimensiones son obligatorias')
+    elif len(dimensiones) > 50:
+        errors.append('Las dimensiones no pueden exceder 50 caracteres')
+    
+    try:
+        capacidad = int(capacidad_personas)
+        if capacidad <= 0:
+            errors.append('La capacidad debe ser mayor a 0')
+    except (ValueError, TypeError):
+        errors.append('La capacidad debe ser un número válido')
+    
+    try:
+        peso = int(peso_maximo)
+        if peso <= 0:
+            errors.append('El peso máximo debe ser mayor a 0')
+    except (ValueError, TypeError):
+        errors.append('El peso máximo debe ser un número válido')
+    
+    try:
+        precio = int(precio_base)
+        if precio < 1:
+            errors.append('El precio base debe ser un número entero mayor a 0')
+    except (ValueError, TypeError):
+        errors.append('El precio base debe ser un número entero válido')
+    
+    if len(foto) > 200:
+        errors.append('La URL de la foto no puede exceder 200 caracteres')
+    
+    if estado not in [choice[0] for choice in Juego.ESTADO_CHOICES]:
+        errors.append('Estado inválido')
+    
+    if Juego.objects.filter(nombre=nombre).exists():
+        errors.append('Ya existe un juego con ese nombre')
+
+    if errors:
+        return JsonResponse({'success': False, 'errors': errors}, status=400)
+
+    try:
+        juego = Juego.objects.create(
+            nombre=nombre,
+            descripcion=descripcion or None,
+            categoria=categoria,
+            dimensiones=dimensiones,
+            capacidad_personas=capacidad,
+            peso_maximo=peso,
+            precio_base=precio,
+            foto=foto or None,
+            estado=estado,
+        )
+        return JsonResponse({
+            'success': True, 
+            'message': f'Juego "{juego.nombre}" creado correctamente.',
+            'juego_id': juego.id
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False, 
+            'errors': [f'Error al crear el juego: {str(e)}']
+        }, status=500)
+
+
+@login_required
+@require_http_methods(["POST"])
+def juego_update_json(request, juego_id: int):
+    """
+    Actualiza un juego inflable existente
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    try:
+        juego = Juego.objects.get(id=juego_id)
+    except Juego.DoesNotExist:
+        return JsonResponse({'error': 'Juego no encontrado'}, status=404)
+
+    nombre = request.POST.get('nombre', '').strip()
+    descripcion = request.POST.get('descripcion', '').strip()
+    categoria = request.POST.get('categoria', '').strip()
+    dimensiones = request.POST.get('dimensiones', '').strip()
+    capacidad_personas = request.POST.get('capacidad_personas', '').strip()
+    peso_maximo = request.POST.get('peso_maximo', '').strip()
+    precio_base = request.POST.get('precio_base', '').strip()
+    foto = request.POST.get('foto', '').strip()
+    estado = request.POST.get('estado', '').strip()
+
+    errors = []
+    
+    # Validaciones
+    if not nombre:
+        errors.append('El nombre es obligatorio')
+    elif len(nombre) > 100:
+        errors.append('El nombre no puede exceder 100 caracteres')
+    
+    if len(descripcion) > 1000:
+        errors.append('La descripción no puede exceder 1000 caracteres')
+    
+    if not categoria:
+        errors.append('La categoría es obligatoria')
+    elif categoria not in [choice[0] for choice in Juego.CATEGORIA_CHOICES]:
+        errors.append('Categoría inválida')
+    
+    if not dimensiones:
+        errors.append('Las dimensiones son obligatorias')
+    elif len(dimensiones) > 50:
+        errors.append('Las dimensiones no pueden exceder 50 caracteres')
+    
+    try:
+        capacidad = int(capacidad_personas)
+        if capacidad <= 0:
+            errors.append('La capacidad debe ser mayor a 0')
+    except (ValueError, TypeError):
+        errors.append('La capacidad debe ser un número válido')
+    
+    try:
+        peso = int(peso_maximo)
+        if peso <= 0:
+            errors.append('El peso máximo debe ser mayor a 0')
+    except (ValueError, TypeError):
+        errors.append('El peso máximo debe ser un número válido')
+    
+    try:
+        precio = int(precio_base)
+        if precio < 1:
+            errors.append('El precio base debe ser un número entero mayor a 0')
+    except (ValueError, TypeError):
+        errors.append('El precio base debe ser un número entero válido')
+    
+    if len(foto) > 200:
+        errors.append('La URL de la foto no puede exceder 200 caracteres')
+    
+    if not estado:
+        errors.append('El estado es obligatorio')
+    elif estado not in [choice[0] for choice in Juego.ESTADO_CHOICES]:
+        errors.append('Estado inválido')
+    
+    if nombre != juego.nombre and Juego.objects.filter(nombre=nombre).exists():
+        errors.append('Ya existe un juego con ese nombre')
+
+    if errors:
+        return JsonResponse({'success': False, 'errors': errors}, status=400)
+
+    try:
+        juego.nombre = nombre
+        juego.descripcion = descripcion or None
+        juego.categoria = categoria
+        juego.dimensiones = dimensiones
+        juego.capacidad_personas = capacidad
+        juego.peso_maximo = peso
+        juego.precio_base = precio
+        juego.foto = foto or None
+        juego.estado = estado
+        juego.save()
+        
+        return JsonResponse({
+            'success': True, 
+            'message': f'Juego "{juego.nombre}" actualizado correctamente.'
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False, 
+            'errors': [f'Error al actualizar el juego: {str(e)}']
+        }, status=500)
+
+
+@login_required
+@require_http_methods(["POST"])
+def juego_delete_json(request, juego_id: int):
+    """
+    Elimina un juego inflable
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    try:
+        juego = Juego.objects.get(id=juego_id)
+    except Juego.DoesNotExist:
+        return JsonResponse({'error': 'Juego no encontrado'}, status=404)
+
+    try:
+        nombre_juego = juego.nombre
+        juego.delete()
+        return JsonResponse({
+            'success': True, 
+            'message': f'Juego "{nombre_juego}" eliminado correctamente.'
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False, 
+            'errors': [f'Error al eliminar el juego: {str(e)}']
+        }, status=500)

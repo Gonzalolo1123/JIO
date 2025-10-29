@@ -32,4 +32,11 @@ urlpatterns = [
     path('panel/users/<int:user_id>/json/', views.user_detail_json, name='user_detail_json'),
     path('panel/users/<int:user_id>/update/', views.user_update_json, name='user_update_json'),
     path('panel/users/<int:user_id>/delete/', views.user_delete_json, name='user_delete_json'),
+    
+    # CRUD de juegos inflables
+    path('panel/juegos/', views.juegos_list, name='juegos_list'),
+    path('panel/juegos/create/', views.juego_create_json, name='juego_create_json'),
+    path('panel/juegos/<int:juego_id>/json/', views.juego_detail_json, name='juego_detail_json'),
+    path('panel/juegos/<int:juego_id>/update/', views.juego_update_json, name='juego_update_json'),
+    path('panel/juegos/<int:juego_id>/delete/', views.juego_delete_json, name='juego_delete_json'),
 ]
