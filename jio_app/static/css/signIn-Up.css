@@ -1,0 +1,179 @@
+/* Modal de Login Simplificado para JIO */
+
+/* Modal */
+.modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  backdrop-filter: blur(5px);
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+}
+
+.hidden {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+}
+
+.modal.show {
+  display: flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  z-index: 9999 !important;
+}
+
+/* Forzar visibilidad del modal cuando no tiene hidden */
+.modal:not(.hidden) {
+  display: flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  z-index: 9999 !important;
+}
+
+.modal-content {
+  position: relative;
+  background: #ffffff;
+  border-radius: 20px;
+  border: 2px solid #2E7D32;
+  padding: 40px;
+  width: 90%;
+  max-width: 400px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+
+/* Botón de cierre */
+.close {
+  position: absolute;
+  top: 15px;
+  right: 15px;
+  font-size: 24px;
+  cursor: pointer;
+  font-weight: bold;
+  color: #666;
+  background: #f8f8f8;
+  border-radius: 50%;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #ddd;
+  transition: all 0.3s ease;
+}
+
+.close:hover {
+  color: #2E7D32;
+  background: #fff;
+  border-color: #2E7D32;
+}
+
+/* Contenedor del login */
+.login-container {
+  text-align: center;
+}
+
+.login-container h1 {
+  color: #2E7D32;
+  font-weight: bold;
+  margin: 0 0 10px 0;
+  font-size: 1.8rem;
+}
+
+.login-subtitle {
+  color: #666;
+  font-size: 14px;
+  margin: 0 0 30px 0;
+  line-height: 1.4;
+}
+
+/* Grupos de input */
+.input-group {
+  margin-bottom: 20px;
+  width: 100%;
+}
+
+.input-group input {
+  width: 100%;
+  padding: 15px 20px;
+  border: 2px solid #e0e0e0;
+  border-radius: 25px;
+  font-size: 14px;
+  background: #f8f8f8;
+  transition: all 0.3s ease;
+  box-sizing: border-box;
+}
+
+.input-group input:focus {
+  outline: none;
+  border-color: #2E7D32;
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(255, 107, 107, 0.1);
+}
+
+.input-group input:hover {
+  border-color: #ccc;
+}
+
+/* Botón de login */
+.login-btn {
+  width: 100%;
+  padding: 15px;
+  border: none;
+  border-radius: 25px;
+  background: linear-gradient(135deg, #2E7D32, #4CAF50);
+  color: white;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  margin-top: 10px;
+}
+
+.login-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(255, 107, 107, 0.3);
+}
+
+.login-btn:active {
+  transform: translateY(0);
+}
+
+/* Asegurar que SweetAlert2 aparezca por encima del modal */
+.swal2-container {
+  z-index: 10000 !important;
+}
+
+.swal2-popup {
+  z-index: 10001 !important;
+}
+
+.swal2-backdrop {
+  z-index: 10000 !important;
+}
+
+/* Responsive */
+@media (max-width: 480px) {
+  .modal-content {
+    padding: 30px 25px;
+    margin: 20px;
+  }
+  
+  .login-container h1 {
+    font-size: 1.5rem;
+  }
+  
+  .input-group input {
+    padding: 12px 18px;
+  }
+  
+  .login-btn {
+    padding: 14px;
+    font-size: 15px;
+  }
+}

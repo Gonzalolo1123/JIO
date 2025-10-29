@@ -1,0 +1,73 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Panel Administrativo - JIO{% endblock %}</title>
+    
+    <!-- Estilos base y personalizados -->
+    <link rel="stylesheet" href="{% static 'css/base.css' %}">
+    <link rel="stylesheet" href="{% static 'css/admin.css' %}">
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+    <!-- Navbar -->
+    <nav class="navbar">
+        <div class="navbar-brand">
+            <img src="{% static 'images/logo_jio.png' %}" alt="JIO" class="logo">
+            <span class="brand-text">JIO</span>
+        </div>
+        <div class="navbar-menu">
+            <div class="navbar-user menu">
+              <ul>
+                <li>
+                {% if request.user.is_authenticated %}
+                {% if request.user.tipo_usuario == 'administrador' %}
+                <a href="{% url 'jio_app:admin_panel' %}">Inicio</a>
+                {% elif request.user.tipo_usuario == 'repartidor' %}
+                <a href="{% url 'jio_app:delivery_panel' %}">Inicio</a>
+                {% else %}
+                <a href="{% url 'jio_app:index' %}">Inicio</a>
+                {% endif %}
+                {% else %}
+                <a href="{% url 'jio_app:index' %}">Inicio</a>
+                {% endif %}
+                </li>
+              </ul>
+            </div>
+          </div>
+        {% if request.user.is_authenticated %}
+        <div class="navbar-menu">
+            <div class="navbar-user">
+                <div class="user-info">
+                    <i class="fas fa-user"></i>
+                    <span>{{ request.user.get_full_name|default:'Usuario' }}</span>
+                </div>
+                <a href="{% url 'jio_app:logout' %}" id="logoutLink" class="btn btn-secondary" style="color:#2E7D32; background:#fff;">
+                    <i class="fas fa-sign-out-alt"></i>
+                    Cerrar sesión
+                </a>
+            </div>
+        </div>
+        {% endif %}
+    </nav>
+
+    <!-- Main content -->
+    <main class="main-content">
+        {% block content %}
+        {% endblock %}
+    </main>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="{% static 'js/validaciones.js' %}"></script>
+    <script src="{% static 'js/base_admin.js' %}"></script>
+
+    {% block extra_scripts %}{% endblock %}
+</body>
+</html>

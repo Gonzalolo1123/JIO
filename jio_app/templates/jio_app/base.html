@@ -1,0 +1,89 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JIO - Arriendo de Juegos Inflables</title>
+
+  <!-- Estilos base -->
+  <link rel="stylesheet" href="{% static 'css/admin.css' %}">
+  <link rel="stylesheet" href="{% static 'css/base.css' %}">
+  <link rel="stylesheet" href="{% static 'css/signIn-Up.css' %}">
+  
+  <!-- Fuente Playfair Display -->
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&display=swap" rel="stylesheet">
+
+  <!-- SweetAlert2 -->
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+  {% block extra_head %}{% endblock %}
+</head>
+
+<body>
+  <!-- Navbar pública con colores/tamaños de base_admin -->
+  <nav class="navbar">
+    <div class="navbar-brand">
+      <img src="{% static 'images/logo_jio.png' %}" alt="JIO" class="logo">
+      <span class="brand-text">JIO</span>
+    </div>
+    <div class="navbar-menu">
+      <div class="navbar-user">
+        <ul style="list-style: none; display: flex; gap: 1rem; margin: 0; padding: 0; align-items: center;">
+          <li><a href="{% url 'jio_app:index' %}" style="color: #fff; text-decoration: none; font-weight: 500;">Inicio</a></li>
+          <li><a href="#historia" style="color: #fff; text-decoration: none; font-weight: 500;">Historia</a></li>
+          <li><a href="#juegos" style="color: #fff; text-decoration: none; font-weight: 500;">Nuestros Juegos</a></li>
+          <li><a href="#reservar" style="color: #fff; text-decoration: none; font-weight: 500;">Reservar</a></li>
+          <li><a href="#" id="openUserModal" class="btn btn-secondary" style="color: #2E7D32;">Iniciar Sesión</a></li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Contenido dinámico -->
+  <main class="main-content">
+    {% block content %}
+    {% endblock %}
+  </main>
+
+  <footer class="footer-negro">
+    <p>© 2025 JIO - Arriendo de Juegos Inflables</p>
+    <p>Síguenos en:
+      <a href="#">Instagram</a> |
+      <a href="#">Facebook</a> |
+      <a href="#">WhatsApp</a>
+    </p>
+    <p>Contacto: +56 9 1234 5678 | contacto@jio.cl</p>
+  </footer>
+
+  <!-- Modal de Login -->
+  <div id="authModal" class="modal hidden">
+    <div class="modal-content">
+      <span class="close" id="closeModal">&times;</span>
+      <div class="login-container">
+        <form id="signInForm">
+          {% csrf_token %}
+          <h1>Iniciar sesión</h1>
+          <p class="login-subtitle">Acceso para administradores y repartidores</p>
+          
+          <div class="input-group">
+            <input type="email" name="email" placeholder="Correo electrónico" required />
+          </div>
+          
+          <div class="input-group">
+            <input type="password" name="password" placeholder="Contraseña" required />
+          </div>
+          
+          <button type="submit" class="login-btn">Iniciar sesión</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="{% static 'js/validaciones.js' %}"></script>
+  <script src="{% static 'js/modal-login.js' %}"></script>
+
+  {% block extra_scripts %}{% endblock %}
+</body>
+</html>
