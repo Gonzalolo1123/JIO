@@ -19,6 +19,7 @@ urlpatterns = [
     # Creación protegida (solo admin) - prefijo 'panel/' para evitar colisión con Django admin
     path('panel/admin/create/', views.create_admin, name='create_admin'),
     path('panel/delivery/create/', views.create_delivery, name='create_delivery'),
+    path('panel/cliente/create/', views.create_cliente, name='create_cliente'),
 
     # Invitaciones compartibles
     path('panel/admin/share-invite/', views.share_admin_invite, name='share_admin_invite'),

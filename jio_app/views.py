@@ -5,7 +5,7 @@ from django.contrib import messages
 from django.http import JsonResponse
 from django.core.exceptions import PermissionDenied
 from django.urls import reverse
-from .models import Juego, Usuario, Repartidor
+from .models import Juego, Usuario, Repartidor, Cliente
 from django.views.decorators.http import require_http_methods
 from django.core import signing
 from django.utils import timezone
@@ -13,6 +13,8 @@ from django.db.models import Q
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.text import slugify
 import re
+import secrets
+import string
 
 # Create your views here.
 
@@ -297,6 +299,87 @@ def create_delivery(request):
     return redirect('jio_app:users_list')
 
 
+@login_required
+def create_cliente(request):
+    if not request.user.tipo_usuario == 'administrador':
+        raise PermissionDenied("Solo los administradores pueden acceder a este recurso.")
+
+    if request.method == 'POST':
+        is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest' or 'application/json' in request.headers.get('Accept', '')
+        first_name = (request.POST.get('first_name') or '').strip()
+        last_name = (request.POST.get('last_name') or '').strip()
+        email = (request.POST.get('email') or '').strip()
+        telefono = (request.POST.get('telefono') or '').strip()
+        rut = (request.POST.get('rut') or '').strip()
+        tipo_cliente = (request.POST.get('tipo_cliente') or '').strip()
+
+        errors = []
+        email_regex = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
+        telefono_regex = re.compile(r'^[\d\s\+\-\(\)]{8,15}$')
+        rut_regex = re.compile(r'^\d{7,8}-[\dkK]$')
+
+        if not all([first_name, last_name, email, rut, tipo_cliente]):
+            errors.append('Completa todos los campos obligatorios.')
+        if len(first_name) < 2 or len(first_name) > 30:
+            errors.append('El nombre debe tener entre 2 y 30 caracteres.')
+        if len(last_name) < 2 or len(last_name) > 30:
+            errors.append('El apellido debe tener entre 2 y 30 caracteres.')
+        if not email_regex.match(email) or len(email) > 100:
+            errors.append('Email inválido o demasiado largo (máx 100).')
+        if telefono and telefono_regex.match(telefono) is None:
+            errors.append('El teléfono no tiene un formato válido (8-15 dígitos, puede incluir +, -, (), espacios).')
+        if not rut_regex.match(rut):
+            errors.append('El RUT debe tener el formato 12345678-9 o 1234567-K.')
+        if tipo_cliente not in ['particular', 'empresa']:
+            errors.append('Tipo de cliente inválido.')
+        if Usuario.objects.filter(email=email).exists():
+            errors.append('Ya existe un usuario con ese email.')
+        if Cliente.objects.filter(rut=rut).exists():
+            errors.append('Ya existe un cliente con ese RUT.')
+        
+        # Generar username único basado en nombre y apellido
+        base_username = slugify(f"{first_name}.{last_name}").replace('-', '.')[:24] or slugify(first_name) or 'user'
+        candidate = base_username
+        suffix = 1
+        while Usuario.objects.filter(username=candidate).exists():
+            candidate = f"{base_username}.{suffix}"
+            suffix += 1
+        
+        # Generar contraseña aleatoria segura (el cliente no tendrá acceso al sistema)
+        alphabet = string.ascii_letters + string.digits + string.punctuation
+        random_password = ''.join(secrets.choice(alphabet) for _ in range(16))
+
+        if errors:
+            if is_ajax:
+                return JsonResponse({'success': False, 'errors': errors}, status=400)
+            for e in errors:
+                messages.error(request, e)
+        else:
+            user = Usuario.objects.create_user(
+                username=candidate,
+                email=email,
+                password=random_password,
+                first_name=first_name,
+                last_name=last_name,
+                tipo_usuario='cliente',
+                is_active=True,
+            )
+            if telefono:
+                user.telefono = telefono
+                user.save(update_fields=['telefono'])
+            Cliente.objects.create(
+                usuario=user,
+                rut=rut,
+                tipo_cliente=tipo_cliente,
+            )
+            if is_ajax:
+                return JsonResponse({'success': True, 'message': f'Cliente {user.get_full_name()} creado correctamente.'})
+            messages.success(request, f'Cliente {user.get_full_name()} creado correctamente.')
+            return redirect('jio_app:admin_panel')
+
+    return redirect('jio_app:users_list')
+
+
 # --------- Invitaciones compartibles con token firmado ---------
 
 INVITE_SALT = 'jio-app-invite'
@@ -462,10 +545,12 @@ def users_list(request):
 
     administradores = base_qs.filter(tipo_usuario='administrador')
     repartidores = base_qs.filter(tipo_usuario='repartidor').select_related('repartidor')
+    clientes = base_qs.filter(tipo_usuario='cliente').select_related('cliente')
 
     return render(request, 'jio_app/users_list.html', {
         'administradores': administradores,
         'repartidores': repartidores,
+        'clientes': clientes,
         'query': query,
     })
 
@@ -481,6 +566,7 @@ def user_detail_json(request, user_id: int):
         u = Usuario.objects.get(id=user_id)
         LICENSE_TYPES = ['A1','A2','A3','A4','A5','B','C','D','E','F']
         repartidor_data = None
+        cliente_data = None
         estado_choices = []
         if hasattr(u, 'repartidor'):
             repartidor_data = {
@@ -490,6 +576,12 @@ def user_detail_json(request, user_id: int):
                 'estado_display': u.repartidor.get_estado_display(),
             }
             estado_choices = [key for key, _ in u.repartidor._meta.get_field('estado').choices]
+        if hasattr(u, 'cliente'):
+            cliente_data = {
+                'rut': u.cliente.rut,
+                'tipo_cliente': u.cliente.tipo_cliente,
+                'tipo_cliente_display': u.cliente.get_tipo_cliente_display(),
+            }
         return JsonResponse({
             'id': u.id,
             'username': u.username,
@@ -499,6 +591,7 @@ def user_detail_json(request, user_id: int):
             'tipo_usuario': u.tipo_usuario,
             'telefono': u.telefono or '',
             'repartidor': repartidor_data,
+            'cliente': cliente_data,
             'license_types': LICENSE_TYPES,
             'estado_choices': estado_choices,
         })
@@ -525,6 +618,8 @@ def user_update_json(request, user_id: int):
     licencia_conducir = request.POST.get('licencia_conducir', '').strip()
     vehiculo = request.POST.get('vehiculo', '').strip()
     estado = request.POST.get('estado', '').strip()
+    rut = request.POST.get('rut', '').strip()
+    tipo_cliente = request.POST.get('tipo_cliente', '').strip()
 
     # Validaciones básicas del lado servidor
     errors = []
@@ -551,6 +646,19 @@ def user_update_json(request, user_id: int):
         if estado and estado not in estado_choices:
             errors.append('Estado de repartidor inválido')
 
+    # Validaciones extra para cliente
+    if u.tipo_usuario == 'cliente':
+        if rut:
+            import re
+            rut_regex = re.compile(r'^\d{7,8}-[\dkK]$')
+            if not rut_regex.match(rut):
+                errors.append('El RUT debe tener el formato 12345678-9 o 1234567-K')
+            # Validar que el RUT no esté en uso por otro cliente
+            if Cliente.objects.exclude(usuario_id=u.id).filter(rut=rut).exists():
+                errors.append('Ya existe un cliente con ese RUT')
+        if tipo_cliente and tipo_cliente not in ['particular', 'empresa']:
+            errors.append('Tipo de cliente inválido')
+
     if errors:
         return JsonResponse({'success': False, 'errors': errors}, status=400)
 
@@ -569,6 +677,14 @@ def user_update_json(request, user_id: int):
             if estado:
                 r.estado = estado
             r.save()
+    elif u.tipo_usuario == 'cliente':
+        c = getattr(u, 'cliente', None)
+        if c is not None:
+            if rut:
+                c.rut = rut
+            if tipo_cliente:
+                c.tipo_cliente = tipo_cliente
+            c.save()
     return JsonResponse({'success': True})
 
 
