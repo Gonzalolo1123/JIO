@@ -7,11 +7,107 @@
 <div class="panel-container">
     <div class="panel-header">
         <h1 class="panel-title">Panel Administrativo</h1>
+        <p class="panel-subtitle">Bienvenido, {{ user.get_full_name|default:user.username }}</p>
     </div>
-    <div class="panel-actions">
-        <div class="actions-grid">
-            <a href="{% url 'jio_app:users_list' %}" class="btn btn-secondary">
-                <i class="fas fa-users"></i> Ver usuarios
+
+    <!-- Tarjetas de estadísticas rápidas -->
+    <!-- <div class="stats-grid">
+        <div class="stat-card stat-success">
+            <div class="stat-icon">
+                <i class="fas fa-gamepad"></i>
+            </div>
+            <div class="stat-content">
+                <h3 class="stat-value">--</h3>
+                <p class="stat-label">Juegos disponibles</p>
+            </div>
+        </div>
+        <div class="stat-card stat-warning">
+            <div class="stat-icon">
+                <i class="fas fa-calendar-check"></i>
+            </div>
+            <div class="stat-content">
+                <h3 class="stat-value">--</h3>
+                <p class="stat-label">Arriendos activos</p>
+            </div>
+        </div>
+        <div class="stat-card stat-info">
+            <div class="stat-icon">
+                <i class="fas fa-truck"></i>
+            </div>
+            <div class="stat-content">
+                <h3 class="stat-value">--</h3>
+                <p class="stat-label">Repartos hoy</p>
+            </div>
+        </div>
+    </div> -->
+
+    <!-- Sección de módulos principales -->
+    <div class="panel-section">
+        <h2 class="section-title">Módulos de gestión</h2>
+        <div class="modules-grid">
+            <a href="{% url 'jio_app:users_list' %}" class="module-card module-primary">
+                <div class="module-icon">
+                    <i class="fas fa-users"></i>
+                </div>
+                <div class="module-content">
+                    <h3 class="module-title">Usuarios</h3>
+                    <p class="module-description">Gestiona administradores, repartidores y clientes</p>
+                </div>
+                <div class="module-arrow">
+                    <i class="fas fa-chevron-right"></i>
+                </div>
+            </a>
+
+            <a href="#" class="module-card module-success">
+                <div class="module-icon">
+                    <i class="fas fa-gamepad"></i>
+                </div>
+                <div class="module-content">
+                    <h3 class="module-title">Juegos Inflables</h3>
+                    <p class="module-description">Administra el catálogo de juegos y disponibilidad</p>
+                </div>
+                <div class="module-arrow">
+                    <i class="fas fa-chevron-right"></i>
+                </div>
+            </a>
+
+            <a href="#" class="module-card module-warning">
+                <div class="module-icon">
+                    <i class="fas fa-calendar-check"></i>
+                </div>
+                <div class="module-content">
+                    <h3 class="module-title">Arriendos</h3>
+                    <p class="module-description">Gestiona reservas, pagos y seguimiento</p>
+                </div>
+                <div class="module-arrow">
+                    <i class="fas fa-chevron-right"></i>
+                </div>
+            </a>
+
+            <a href="#" class="module-card module-info">
+                <div class="module-icon">
+                    <i class="fas fa-truck"></i>
+                </div>
+                <div class="module-content">
+                    <h3 class="module-title">Repartos</h3>
+                    <p class="module-description">Coordina instalaciones y retiros de juegos</p>
+                </div>
+                <div class="module-arrow">
+                    <i class="fas fa-chevron-right"></i>
+                </div>
+            </a>
+
+            <a href="#" class="module-card module-purple">
+                <div class="module-icon">
+                    <i class="fas fa-chart-line"></i>
+                </div>
+                <div class="module-content">
+                    <h3 class="module-title">Estadísticas</h3>
+                    <p class="module-description">Reportes, análisis y métricas del negocio</p>
+                </div>
+                <div class="module-arrow">
+                    <i class="fas fa-chevron-right"></i>
+                </div>
             </a>
         </div>
     </div>

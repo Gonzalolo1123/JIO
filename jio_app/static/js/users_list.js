@@ -15,13 +15,24 @@
       }
 
       // Determinar qué modal abrir según el tipo de usuario
-      const isRepartidor = detail.tipo_usuario === 'repartidor';
-      const modalId = isRepartidor ? 'modalEditRepartidor' : 'modalEditAdmin';
+      const tipoUsuario = detail.tipo_usuario;
+      let modalId, formId;
+      
+      if(tipoUsuario === 'repartidor'){
+        modalId = 'modalEditRepartidor';
+        formId = 'formEditRepartidor';
+      } else if(tipoUsuario === 'cliente'){
+        modalId = 'modalEditUsuario';
+        formId = 'formEditUsuario';
+      } else {
+        modalId = 'modalEditAdmin';
+        formId = 'formEditAdmin';
+      }
       const modal = document.getElementById(modalId);
       if(!modal) return;
 
       // Poblar campos según el tipo
-      if(isRepartidor){
+      if(tipoUsuario === 'repartidor'){
         // Modal de repartidor
         document.getElementById('editRepartidorId').value = detail.id;
         document.getElementById('editRepartidorFirst').value = detail.first_name || '';
@@ -47,6 +58,14 @@
             document.getElementById('editRepartidorVehiculo').value = detail.repartidor.vehiculo || '';
           }
         }
+      } else if(tipoUsuario === 'cliente'){
+        // Modal de cliente
+        document.getElementById('editUsuarioId').value = detail.id;
+        document.getElementById('editUsuarioUsername').value = detail.username || '';
+        document.getElementById('editUsuarioFirst').value = detail.first_name || '';
+        document.getElementById('editUsuarioLast').value = detail.last_name || '';
+        document.getElementById('editUsuarioEmail').value = detail.email || '';
+        document.getElementById('editUsuarioTelefono').value = detail.telefono || '';
       } else {
         // Modal de administrador
         document.getElementById('editAdminId').value = detail.id;
@@ -61,14 +80,13 @@
       modal.setAttribute('aria-hidden','false');
 
       // Bind submit del formulario correspondiente
-      const formId = isRepartidor ? 'formEditRepartidor' : 'formEditAdmin';
       const form = document.getElementById(formId);
       const submitHandler = async function(e){
         e.preventDefault();
         
         let username, first_name, last_name, email, telefono, licencia_conducir, vehiculo, estado;
         
-        if(isRepartidor){
+        if(tipoUsuario === 'repartidor'){
           first_name = document.getElementById('editRepartidorFirst').value.trim();
           last_name = document.getElementById('editRepartidorLast').value.trim();
           email = document.getElementById('editRepartidorEmail').value.trim();
@@ -76,6 +94,12 @@
           licencia_conducir = document.getElementById('editRepartidorLicencia').value;
           vehiculo = document.getElementById('editRepartidorVehiculo').value.trim();
           estado = document.getElementById('editRepartidorEstado').value;
+        } else if(tipoUsuario === 'cliente'){
+          username = document.getElementById('editUsuarioUsername').value.trim();
+          first_name = document.getElementById('editUsuarioFirst').value.trim();
+          last_name = document.getElementById('editUsuarioLast').value.trim();
+          email = document.getElementById('editUsuarioEmail').value.trim();
+          telefono = document.getElementById('editUsuarioTelefono').value.trim();
         } else {
           username = document.getElementById('editAdminUsername').value.trim();
           first_name = document.getElementById('editAdminFirst').value.trim();
@@ -91,9 +115,7 @@
           ()=> (telefono ? validarTelefonoChileno(telefono, 'teléfono', false) : [])
         ];
         
-        // El campo username no se valida en edición (es de solo lectura)
-        
-        if(isRepartidor){
+        if(tipoUsuario === 'repartidor'){
           validaciones.push(()=> (vehiculo && vehiculo.length > 100 ? ['El vehículo no puede exceder 100 caracteres'] : []));
         }
 
@@ -101,16 +123,17 @@
         if(!ok){ return; }
 
         const formData = new FormData();
-        // El campo username no se envía al servidor (es de solo lectura)
         formData.append('first_name', first_name);
         formData.append('last_name', last_name);
         formData.append('email', email);
         formData.append('telefono', telefono);
-        if(isRepartidor){
+        
+        if(tipoUsuario === 'repartidor'){
           if(licencia_conducir) formData.append('licencia_conducir', licencia_conducir);
           if(vehiculo) formData.append('vehiculo', vehiculo);
           if(estado) formData.append('estado', estado);
         }
+        
         const csrf = getCookie('csrftoken');
         const updRes = await fetch(`${endpoints.update}${userId}/update/`, {
           method: 'POST',
@@ -127,6 +150,8 @@
         modal.setAttribute('aria-hidden','true');
         mostrarExitoValidacion('Usuario actualizado correctamente');
         form.removeEventListener('submit', submitHandler);
+        // Recargar página después de un segundo
+        setTimeout(() => location.reload(), 1000);
       };
       form.addEventListener('submit', submitHandler);
 
@@ -165,6 +190,7 @@
       return mostrarErroresValidacion(errs, 'Error');
     }
     mostrarExitoValidacion('Usuario eliminado');
+    setTimeout(() => location.reload(), 1000);
   }
 
   async function openShare(role, endpoints){
@@ -184,7 +210,16 @@
           const btn = document.getElementById('copyBtn');
           if(btn && input){
             btn.addEventListener('click', async function(){
-              try { await navigator.clipboard.writeText(input.value); btn.textContent = 'Copiado!'; setTimeout(()=>btn.textContent='Copiar', 1500);} catch(e){ input.select(); document.execCommand('copy'); btn.textContent='Copiado!'; setTimeout(()=>btn.textContent='Copiar',1500);} 
+              try { 
+                await navigator.clipboard.writeText(input.value); 
+                btn.textContent = 'Copiado!'; 
+                setTimeout(()=>btn.textContent='Copiar', 1500);
+              } catch(e){ 
+                input.select(); 
+                document.execCommand('copy'); 
+                btn.textContent='Copiado!'; 
+                setTimeout(()=>btn.textContent='Copiar',1500);
+              } 
             });
           }
         }
@@ -194,9 +229,204 @@
     }
   }
 
+  // Manejador para crear administradores
+  function initCreateAdminModal(){
+    const btnOpen = document.getElementById('btnOpenCreateAdmin');
+    const modal = document.getElementById('modalCreateAdmin');
+    const form = document.getElementById('formCreateAdmin');
+    if(!btnOpen || !modal || !form) return;
+
+    btnOpen.addEventListener('click', () => {
+      modal.classList.add('show');
+      modal.setAttribute('aria-hidden', 'false');
+      form.reset();
+    });
+
+    modal.addEventListener('click', (e) => {
+      if(e.target === modal || e.target.closest('[data-modal-close]')){
+        modal.classList.remove('show');
+        modal.setAttribute('aria-hidden', 'true');
+      }
+    });
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const first_name = form.first_name.value.trim();
+      const last_name = form.last_name.value.trim();
+      const email = form.email.value.trim();
+      const password = form.password.value;
+      const password_confirm = form.password_confirm.value;
+
+      const validaciones = [
+        ()=> validarNombre(first_name, 'nombre', 2, 30),
+        ()=> validarNombre(last_name, 'apellido', 2, 30),
+        ()=> validarEmail(email, 'email', 100),
+        ()=> validarPassword(password, 'contraseña', 8, 128),
+        ()=> (password !== password_confirm ? ['Las contraseñas no coinciden'] : [])
+      ];
+
+      if(!validarFormulario(validaciones, 'Errores al crear administrador')){ return; }
+
+      const formData = new FormData(form);
+      const csrf = getCookie('csrftoken');
+      
+      try {
+        const res = await fetch(form.getAttribute('data-endpoint'), {
+          method: 'POST',
+          headers: { 'X-CSRFToken': csrf },
+          body: formData
+        });
+        const data = await res.json();
+        if(!res.ok || !data.success){
+          const errs = data && data.errors ? data.errors : ['Error desconocido'];
+          return mostrarErroresValidacion(errs, 'No se pudo crear');
+        }
+        modal.classList.remove('show');
+        modal.setAttribute('aria-hidden', 'true');
+        mostrarExitoValidacion('Administrador creado correctamente');
+        setTimeout(() => location.reload(), 1000);
+      } catch(e){
+        mostrarErroresValidacion(['Error al crear administrador']);
+      }
+    });
+  }
+
+  // Manejador para crear repartidores
+  function initCreateDeliveryModal(){
+    const btnOpen = document.getElementById('btnOpenCreateDelivery');
+    const modal = document.getElementById('modalCreateDelivery');
+    const form = document.getElementById('formCreateDelivery');
+    if(!btnOpen || !modal || !form) return;
+
+    btnOpen.addEventListener('click', () => {
+      modal.classList.add('show');
+      modal.setAttribute('aria-hidden', 'false');
+      form.reset();
+    });
+
+    modal.addEventListener('click', (e) => {
+      if(e.target === modal || e.target.closest('[data-modal-close]')){
+        modal.classList.remove('show');
+        modal.setAttribute('aria-hidden', 'true');
+      }
+    });
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const first_name = form.first_name.value.trim();
+      const last_name = form.last_name.value.trim();
+      const email = form.email.value.trim();
+      const password = form.password.value;
+      const password_confirm = form.password_confirm.value;
+      const telefono = form.telefono.value.trim();
+
+      const validaciones = [
+        ()=> validarNombre(first_name, 'nombre', 2, 30),
+        ()=> validarNombre(last_name, 'apellido', 2, 30),
+        ()=> validarEmail(email, 'email', 100),
+        ()=> validarPassword(password, 'contraseña', 8, 128),
+        ()=> (password !== password_confirm ? ['Las contraseñas no coinciden'] : []),
+        ()=> (telefono ? validarTelefonoChileno(telefono, 'teléfono', false) : [])
+      ];
+
+      if(!validarFormulario(validaciones, 'Errores al crear repartidor')){ return; }
+
+      const formData = new FormData(form);
+      const csrf = getCookie('csrftoken');
+      
+      try {
+        const res = await fetch(form.getAttribute('data-endpoint'), {
+          method: 'POST',
+          headers: { 'X-CSRFToken': csrf },
+          body: formData
+        });
+        const data = await res.json();
+        if(!res.ok || !data.success){
+          const errs = data && data.errors ? data.errors : ['Error desconocido'];
+          return mostrarErroresValidacion(errs, 'No se pudo crear');
+        }
+        modal.classList.remove('show');
+        modal.setAttribute('aria-hidden', 'true');
+        mostrarExitoValidacion('Repartidor creado correctamente');
+        setTimeout(() => location.reload(), 1000);
+      } catch(e){
+        mostrarErroresValidacion(['Error al crear repartidor']);
+      }
+    });
+  }
+
+  // Manejador para crear clientes
+  function initCreateClienteModal(){
+    const btnOpen = document.getElementById('btnOpenCreateCliente');
+    const modal = document.getElementById('modalCreateCliente');
+    const form = document.getElementById('formCreateCliente');
+    if(!btnOpen || !modal || !form) return;
+
+    btnOpen.addEventListener('click', () => {
+      modal.classList.add('show');
+      modal.setAttribute('aria-hidden', 'false');
+      form.reset();
+    });
+
+    modal.addEventListener('click', (e) => {
+      if(e.target === modal || e.target.closest('[data-modal-close]')){
+        modal.classList.remove('show');
+        modal.setAttribute('aria-hidden', 'true');
+      }
+    });
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const first_name = form.first_name.value.trim();
+      const last_name = form.last_name.value.trim();
+      const email = form.email.value.trim();
+      const telefono = form.telefono.value.trim();
+      const rut = form.rut.value.trim();
+
+      const validaciones = [
+        ()=> validarNombre(first_name, 'nombre', 2, 30),
+        ()=> validarNombre(last_name, 'apellido', 2, 30),
+        ()=> validarEmail(email, 'email', 100),
+        ()=> (telefono ? validarTelefonoChileno(telefono, 'teléfono', false) : []),
+        ()=> (function(){
+          const errs = [];
+          if(!/^\d{7,8}-[\dkK]$/.test(rut)){
+            errs.push('El RUT debe tener el formato 12345678-9 o 1234567-K');
+          }
+          return errs;
+        })()
+      ];
+
+      if(!validarFormulario(validaciones, 'Errores al crear cliente')){ return; }
+
+      const formData = new FormData(form);
+      const csrf = getCookie('csrftoken');
+      
+      try {
+        const res = await fetch(form.getAttribute('data-endpoint'), {
+          method: 'POST',
+          headers: { 'X-CSRFToken': csrf },
+          body: formData
+        });
+        const data = await res.json();
+        if(!res.ok || !data.success){
+          const errs = data && data.errors ? data.errors : ['Error desconocido'];
+          return mostrarErroresValidacion(errs, 'No se pudo crear');
+        }
+        modal.classList.remove('show');
+        modal.setAttribute('aria-hidden', 'true');
+        mostrarExitoValidacion('Cliente creado correctamente');
+        setTimeout(() => location.reload(), 1000);
+      } catch(e){
+        mostrarErroresValidacion(['Error al crear cliente']);
+      }
+    });
+  }
+
   document.addEventListener('DOMContentLoaded', function(){
     const container = document.getElementById('usersPage');
     if(!container) return;
+    
     const endpoints = {
       detail: container.getAttribute('data-users-base') || '/panel/users/',
       update: container.getAttribute('data-users-base') || '/panel/users/',
@@ -216,7 +446,10 @@
     const btnShareDelivery = document.getElementById('btnShareDelivery');
     if(btnShareAdmin){ btnShareAdmin.addEventListener('click', ()=> openShare('admin', endpoints)); }
     if(btnShareDelivery){ btnShareDelivery.addEventListener('click', ()=> openShare('delivery', endpoints)); }
+    
+    // Inicializar modales de creación
+    initCreateAdminModal();
+    initCreateDeliveryModal();
+    initCreateClienteModal();
   });
 })();
-
-

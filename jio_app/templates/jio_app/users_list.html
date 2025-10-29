@@ -99,6 +99,45 @@
     <div class="modal-backdrop" data-modal-close></div>
   </div>
 
+  <!-- Modal de edición para usuarios -->
+  <div id="modalEditUsuario" class="modal" aria-hidden="true">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Editar usuario</h2>
+        <button class="modal-close" data-modal-close>&times;</button>
+      </div>
+      <form id="formEditUsuario" class="form-grid" data-endpoint-base="/panel/users/">
+        {% csrf_token %}
+        <input type="hidden" name="user_id" id="editUsuarioId">
+        <label>
+          Usuario
+          <input type="text" name="username" id="editUsuarioUsername" readonly style="background-color: #f5f5f5; cursor: not-allowed;">
+        </label>
+        <label>
+          Nombre
+          <input type="text" name="first_name" id="editUsuarioFirst" required>
+        </label>
+        <label>
+          Apellido
+          <input type="text" name="last_name" id="editUsuarioLast" required>
+        </label>
+        <label>
+          Email
+          <input type="email" name="email" id="editUsuarioEmail" required>
+        </label>
+        <label>
+          Teléfono
+          <input type="text" name="telefono" id="editUsuarioTelefono">
+        </label>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" data-modal-close>Cancelar</button>
+          <button type="submit" class="btn btn-primary">Guardar</button>
+        </div>
+      </form>
+    </div>
+    <div class="modal-backdrop" data-modal-close></div>
+  </div>
+
   <div class="form-card" id="usersPage" data-users-base="/panel/users/" data-share-admin="/panel/admin/share-invite/" data-share-delivery="/panel/delivery/share-invite/">
     <form method="get" class="form-grid" style="grid-template-columns: 1fr auto;align-items: end;">
       <label>Buscar
@@ -186,6 +225,48 @@
         {% empty %}
         <tr>
           <td colspan="8">No hay repartidores que coincidan.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="form-card" style="overflow:auto; margin-top:1rem;">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:.75rem;">
+      <h2 class="panel-title" style="font-size:1.25rem; color:#2E7D32; margin:0;">Clientes</h2>
+      <div class="actions-wrap" style="gap:.5rem;">
+        <button type="button" id="btnOpenCreateCliente" class="btn btn-primary"><i class="fas fa-user"></i> Agregar</button>
+      </div>
+    </div>
+    <table class="table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Nombre</th>
+          <th>Email</th>
+          <th>Teléfono</th>
+          <th>RUT</th>
+          <th>Tipo</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in clientes %}
+        <tr>
+          <td>{{ u.id }}</td>
+          <td>{{ u.get_full_name }}</td>
+          <td>{{ u.email }}</td>
+          <td>{{ u.telefono|default:'-' }}</td>
+          <td>{{ u.cliente.rut }}</td>
+          <td>{{ u.cliente.get_tipo_cliente_display }}</td>
+          <td style="white-space:nowrap;">
+            <button class="btn btn-secondary" data-edit-user="{{ u.id }}">Editar</button>
+            <button class="btn btn-danger" data-delete-user="{{ u.id }}">Eliminar</button>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="8">No hay clientes que coincidan.</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -281,6 +362,50 @@
         <label>
           Vehículo (opcional)
           <input type="text" name="vehiculo">
+        </label>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" data-modal-close>Cancelar</button>
+          <button type="submit" class="btn btn-primary">Crear</button>
+        </div>
+      </form>
+    </div>
+    <div class="modal-backdrop" data-modal-close></div>
+  </div>
+
+  <div id="modalCreateCliente" class="modal" aria-hidden="true">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Nuevo cliente</h2>
+        <button class="modal-close" data-modal-close>&times;</button>
+      </div>
+      <form id="formCreateCliente" class="form-grid" data-endpoint="{% url 'jio_app:create_cliente' %}">
+        {% csrf_token %}
+        <label>
+          Nombre
+          <input type="text" name="first_name" required>
+        </label>
+        <label>
+          Apellido
+          <input type="text" name="last_name" required>
+        </label>
+        <label>
+          Email
+          <input type="email" name="email" required>
+        </label>
+        <label>
+          Teléfono (opcional)
+          <input type="text" name="telefono">
+        </label>
+        <label>
+          RUT
+          <input type="text" name="rut" required placeholder="12345678-9">
+        </label>
+        <label>
+          Tipo de cliente
+          <select name="tipo_cliente" required>
+            <option value="particular">Particular</option>
+            <option value="empresa">Empresa</option>
+          </select>
         </label>
         <div class="form-actions">
           <button type="button" class="btn btn-secondary" data-modal-close>Cancelar</button>
