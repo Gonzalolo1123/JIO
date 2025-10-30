@@ -184,10 +184,13 @@
 
 .juego-box img {
   width: 100%;
-  height: 150px;
-  object-fit: cover;
+  height: 220px;
+  object-fit: contain;
   border-radius: 15px;
   margin-bottom: 20px;
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  padding: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
 .juego-box h3 {

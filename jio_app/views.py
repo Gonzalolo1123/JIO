@@ -34,8 +34,8 @@ def calendario_reservas(request):
     """
     Vista para el calendario de reservas
     """
-    # Obtener todos los juegos disponibles para mostrar en el calendario
-    juegos_disponibles = Juego.objects.filter(estado='disponible')
+    # Obtener todos los juegos habilitados para mostrar en el calendario
+    juegos_disponibles = Juego.objects.filter(estado='habilitado')
     
     context = {
         'juegos_disponibles': juegos_disponibles,
