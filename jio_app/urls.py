@@ -43,4 +43,11 @@ urlpatterns = [
     path('delivery/instalacion/<int:instalacion_id>/detalle/', views.detalle_instalacion_json, name='detalle_instalacion_json'),
     path('delivery/retiro/<int:retiro_id>/detalle/', views.detalle_retiro_json, name='detalle_retiro_json'),
     path('delivery/<str:tipo_reparto>/<int:reparto_id>/marcar-realizado/', views.marcar_reparto_realizado, name='marcar_reparto_realizado'),
+    
+    # CRUD de juegos inflables
+    path('panel/juegos/', views.juegos_list, name='juegos_list'),
+    path('panel/juegos/create/', views.juego_create_json, name='juego_create_json'),
+    path('panel/juegos/<int:juego_id>/json/', views.juego_detail_json, name='juego_detail_json'),
+    path('panel/juegos/<int:juego_id>/update/', views.juego_update_json, name='juego_update_json'),
+    path('panel/juegos/<int:juego_id>/delete/', views.juego_delete_json, name='juego_delete_json'),
 ]
