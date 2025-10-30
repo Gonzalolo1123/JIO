@@ -90,19 +90,14 @@ class Juego(models.Model):
     Modelo para los juegos inflables disponibles
     """
     CATEGORIA_CHOICES = [
-        ('castillo', 'Castillo'),
-        ('tobogan', 'Tobogán'),
-        ('obstaculos', 'Obstáculos'),
-        ('combo', 'Combo'),
-        ('deportivo', 'Deportivo'),
-        ('infantil', 'Infantil'),
+        ('Pequeño', 'Pequeño'),
+        ('Mediano', 'Mediano'),
+        ('Grande', 'Grande'),
     ]
     
     ESTADO_CHOICES = [
-        ('disponible', 'Disponible'),
-        ('mantenimiento', 'En Mantenimiento'),
-        ('reservado', 'Reservado'),
-        ('no_disponible', 'No Disponible'),
+        ('habilitado', 'Habilitado'),
+        ('deshabilitado', 'Deshabilitado'),
     ]
     
     nombre = models.CharField(max_length=100)
@@ -112,11 +107,11 @@ class Juego(models.Model):
     capacidad_personas = models.PositiveIntegerField()
     peso_maximo = models.PositiveIntegerField(help_text="Peso máximo en kg")
     precio_base = models.PositiveIntegerField()
-    foto = models.CharField(max_length=200, blank=True, null=True, help_text="URL de la imagen del juego")
+    foto = models.ImageField(upload_to='juegos/', blank=True, null=True, help_text="Imagen del juego inflable")
     estado = models.CharField(
         max_length=20, 
         choices=ESTADO_CHOICES, 
-        default='disponible',
+        default='habilitado',
         help_text="Estado actual del juego inflable"
     )
     

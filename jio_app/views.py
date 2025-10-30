@@ -22,11 +22,11 @@ def index(request):
     """
     Vista para la página principal del sitio público
     """
-    # Obtener algunos juegos destacados para mostrar
-    juegos_destacados = Juego.objects.filter(estado='disponible')[:6]
+    # Obtener todos los juegos disponibles ordenados por categoría y nombre
+    juegos_disponibles = Juego.objects.filter(estado='disponible').order_by('categoria', 'nombre')
     
     context = {
-        'juegos_destacados': juegos_destacados,
+        'juegos_disponibles': juegos_disponibles,
     }
     return render(request, 'jio_app/index.html', context)
 
@@ -1069,6 +1069,9 @@ def juego_detail_json(request, juego_id: int):
     
     try:
         juego = Juego.objects.get(id=juego_id)
+        # Obtener URL completa de la imagen si existe
+        foto_url = request.build_absolute_uri(juego.foto.url) if juego.foto else ''
+        
         return JsonResponse({
             'id': juego.id,
             'nombre': juego.nombre,
@@ -1078,7 +1081,7 @@ def juego_detail_json(request, juego_id: int):
             'capacidad_personas': juego.capacidad_personas,
             'peso_maximo': juego.peso_maximo,
             'precio_base': int(juego.precio_base),
-            'foto': juego.foto or '',
+            'foto': foto_url,
             'estado': juego.estado,
             'categoria_choices': Juego.CATEGORIA_CHOICES,
             'estado_choices': Juego.ESTADO_CHOICES,
@@ -1104,7 +1107,7 @@ def juego_create_json(request):
     capacidad_personas = request.POST.get('capacidad_personas', '').strip()
     peso_maximo = request.POST.get('peso_maximo', '').strip()
     precio_base = request.POST.get('precio_base', '').strip()
-    foto = request.POST.get('foto', '').strip()
+    foto = request.FILES.get('foto')  # Cambio: Ahora recibimos un archivo
     estado = request.POST.get('estado', 'disponible').strip()
 
     errors = []
@@ -1147,8 +1150,16 @@ def juego_create_json(request):
     except (ValueError, TypeError):
         errors.append('El precio base debe ser un número entero válido')
     
-    if len(foto) > 200:
-        errors.append('La URL de la foto no puede exceder 200 caracteres')
+    # Validar foto si se proporciona
+    if foto:
+        # Validar tamaño (máximo 5MB)
+        if foto.size > 5 * 1024 * 1024:
+            errors.append('La imagen no puede exceder 5MB')
+        
+        # Validar tipo de archivo
+        allowed_types = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp']
+        if foto.content_type not in allowed_types:
+            errors.append('Formato de imagen no válido. Use JPG, PNG, GIF o WEBP')
     
     if estado not in [choice[0] for choice in Juego.ESTADO_CHOICES]:
         errors.append('Estado inválido')
@@ -1168,7 +1179,7 @@ def juego_create_json(request):
             capacidad_personas=capacidad,
             peso_maximo=peso,
             precio_base=precio,
-            foto=foto or None,
+            foto=foto if foto else None,
             estado=estado,
         )
         return JsonResponse({
@@ -1801,7 +1812,8 @@ def juego_update_json(request, juego_id: int):
     capacidad_personas = request.POST.get('capacidad_personas', '').strip()
     peso_maximo = request.POST.get('peso_maximo', '').strip()
     precio_base = request.POST.get('precio_base', '').strip()
-    foto = request.POST.get('foto', '').strip()
+    foto = request.FILES.get('foto')  # Cambio: Ahora recibimos un archivo
+    eliminar_foto = request.POST.get('eliminar_foto') == 'true'  # Para eliminar foto existente
     estado = request.POST.get('estado', '').strip()
 
     errors = []
@@ -1846,8 +1858,16 @@ def juego_update_json(request, juego_id: int):
     except (ValueError, TypeError):
         errors.append('El precio base debe ser un número entero válido')
     
-    if len(foto) > 200:
-        errors.append('La URL de la foto no puede exceder 200 caracteres')
+    # Validar foto si se proporciona una nueva
+    if foto:
+        # Validar tamaño (máximo 5MB)
+        if foto.size > 5 * 1024 * 1024:
+            errors.append('La imagen no puede exceder 5MB')
+        
+        # Validar tipo de archivo
+        allowed_types = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp']
+        if foto.content_type not in allowed_types:
+            errors.append('Formato de imagen no válido. Use JPG, PNG, GIF o WEBP')
     
     if not estado:
         errors.append('El estado es obligatorio')
@@ -1868,7 +1888,20 @@ def juego_update_json(request, juego_id: int):
         juego.capacidad_personas = capacidad
         juego.peso_maximo = peso
         juego.precio_base = precio
-        juego.foto = foto or None
+        
+        # Manejar la foto
+        if foto:
+            # Si hay una foto anterior, eliminarla
+            if juego.foto:
+                juego.foto.delete(save=False)
+            juego.foto = foto
+        elif eliminar_foto:
+            # Eliminar la foto si se solicitó
+            if juego.foto:
+                juego.foto.delete(save=False)
+            juego.foto = None
+        # Si no hay foto nueva ni se solicita eliminar, mantener la existente
+        
         juego.estado = estado
         juego.save()
         

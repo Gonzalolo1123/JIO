@@ -20,7 +20,6 @@ document.addEventListener('DOMContentLoaded', function() {
         const capacidad = form.querySelector('input[name="capacidad_personas"]')?.value || '';
         const peso = form.querySelector('input[name="peso_maximo"]')?.value || '';
         const precio = form.querySelector('input[name="precio_base"]')?.value || '';
-        const foto = form.querySelector('input[name="foto"]')?.value?.trim() || '';
         const estado = form.querySelector('select[name="estado"]')?.value || '';
         
         // Validaciones
@@ -60,21 +59,8 @@ document.addEventListener('DOMContentLoaded', function() {
         
         validaciones.push(() => validarPrecioChileno(precio, 'precio base', 1, 999999999));
         
-        // URL de foto es opcional, pero si se proporciona debe ser válida
-        if (foto) {
-            validaciones.push(() => {
-                const errores = [];
-                if (foto.length > 200) {
-                    errores.push('La URL de la foto no puede exceder los 200 caracteres');
-                }
-                try {
-                    new URL(foto);
-                } catch {
-                    errores.push('La URL de la foto no tiene un formato válido');
-                }
-                return errores;
-            });
-        }
+        // La validación de foto (archivo) se hace en el servidor
+        // No se valida aquí porque es un archivo, no una URL
         
         validaciones.push(() => validarSeleccion(estado, 'estado'));
         
@@ -111,7 +97,30 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('editJuegoCapacidad').value = juego.capacidad_personas;
         document.getElementById('editJuegoPeso').value = juego.peso_maximo;
         document.getElementById('editJuegoPrecio').value = juego.precio_base;
-        document.getElementById('editJuegoFoto').value = juego.foto || '';
+        
+        // Manejar preview de foto existente
+        const previewDiv = document.getElementById('editJuegoFotoPreview');
+        const eliminarContainer = document.getElementById('editJuegoEliminarFotoContainer');
+        const fotoInput = document.getElementById('editJuegoFoto');
+        
+        // Limpiar input de archivo y checkbox
+        fotoInput.value = '';
+        const eliminarCheckbox = document.getElementById('editJuegoEliminarFoto');
+        if (eliminarCheckbox) eliminarCheckbox.checked = false;
+        
+        if (juego.foto) {
+            previewDiv.innerHTML = `
+                <div style="position: relative; display: inline-block;">
+                    <img src="${juego.foto}" alt="Imagen actual" style="max-width: 300px; max-height: 200px; border-radius: 8px; border: 2px solid #e0e0e0;">
+                    <p style="margin-top: 0.5rem; color: #666; font-size: 0.9rem;">Imagen actual</p>
+                </div>
+            `;
+            if (eliminarContainer) eliminarContainer.style.display = 'block';
+        } else {
+            previewDiv.innerHTML = '<p style="color: #999;">Sin imagen</p>';
+            if (eliminarContainer) eliminarContainer.style.display = 'none';
+        }
+        
         document.getElementById('editJuegoEstado').value = juego.estado;
     }
     
@@ -127,7 +136,94 @@ document.addEventListener('DOMContentLoaded', function() {
     if (btnOpenCreate) {
         btnOpenCreate.addEventListener('click', function() {
             clearForm(formCreate);
+            // Limpiar preview al abrir el modal
+            const createPreview = document.getElementById('createJuegoFotoPreview');
+            if (createPreview) createPreview.innerHTML = '';
             openModal(modalCreate);
+        });
+    }
+    
+    // Preview de imagen al seleccionar archivo en CREAR
+    const createFotoInput = document.getElementById('createJuegoFoto');
+    const createPreviewDiv = document.getElementById('createJuegoFotoPreview');
+    
+    if (createFotoInput && createPreviewDiv) {
+        createFotoInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                // Validar tamaño (5MB)
+                if (file.size > 5 * 1024 * 1024) {
+                    mostrarErroresValidacion(['La imagen no puede exceder 5MB'], 'Imagen muy grande');
+                    this.value = '';
+                    createPreviewDiv.innerHTML = '';
+                    return;
+                }
+                
+                // Validar tipo
+                const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+                if (!allowedTypes.includes(file.type)) {
+                    mostrarErroresValidacion(['Formato no válido. Use JPG, PNG, GIF o WEBP'], 'Formato inválido');
+                    this.value = '';
+                    createPreviewDiv.innerHTML = '';
+                    return;
+                }
+                
+                // Mostrar preview
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    createPreviewDiv.innerHTML = `
+                        <div style="position: relative; display: inline-block;">
+                            <img src="${e.target.result}" alt="Preview" style="max-width: 300px; max-height: 200px; border-radius: 8px; border: 2px solid #4CAF50;">
+                            <p style="margin-top: 0.5rem; color: #4CAF50; font-size: 0.9rem;">✓ Nueva imagen seleccionada</p>
+                        </div>
+                    `;
+                };
+                reader.readAsDataURL(file);
+            } else {
+                createPreviewDiv.innerHTML = '';
+            }
+        });
+    }
+    
+    // Preview de imagen al seleccionar archivo en EDITAR
+    const editFotoInput = document.getElementById('editJuegoFoto');
+    const editPreviewDiv = document.getElementById('editJuegoFotoPreview');
+    
+    if (editFotoInput && editPreviewDiv) {
+        editFotoInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                // Validar tamaño (5MB)
+                if (file.size > 5 * 1024 * 1024) {
+                    mostrarErroresValidacion(['La imagen no puede exceder 5MB'], 'Imagen muy grande');
+                    this.value = '';
+                    return;
+                }
+                
+                // Validar tipo
+                const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+                if (!allowedTypes.includes(file.type)) {
+                    mostrarErroresValidacion(['Formato no válido. Use JPG, PNG, GIF o WEBP'], 'Formato inválido');
+                    this.value = '';
+                    return;
+                }
+                
+                // Mostrar preview de la nueva imagen
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    editPreviewDiv.innerHTML = `
+                        <div style="position: relative; display: inline-block;">
+                            <img src="${e.target.result}" alt="Nueva imagen" style="max-width: 300px; max-height: 200px; border-radius: 8px; border: 2px solid #4CAF50;">
+                            <p style="margin-top: 0.5rem; color: #4CAF50; font-size: 0.9rem;">✓ Nueva imagen seleccionada (reemplazará la actual)</p>
+                        </div>
+                    `;
+                };
+                reader.readAsDataURL(file);
+                
+                // Desmarcar el checkbox de eliminar si existe
+                const eliminarCheckbox = document.getElementById('editJuegoEliminarFoto');
+                if (eliminarCheckbox) eliminarCheckbox.checked = false;
+            }
         });
     }
     
@@ -158,6 +254,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (data.success) {
                     mostrarExitoValidacion(data.message, '¡Juego Creado!');
                     closeModal(modalCreate);
+                    // Recargar la página para ver el nuevo juego
+                    setTimeout(() => window.location.reload(), 1500);
                 } else {
                     mostrarErroresValidacion(data.errors || ['Error al crear el juego'], 'Error al Crear Juego');
                 }
@@ -180,6 +278,13 @@ document.addEventListener('DOMContentLoaded', function() {
             
             const juegoId = document.getElementById('editJuegoId').value;
             const formData = new FormData(this);
+            
+            // Agregar el valor del checkbox de eliminar foto si existe
+            const eliminarCheckbox = document.getElementById('editJuegoEliminarFoto');
+            if (eliminarCheckbox && eliminarCheckbox.checked) {
+                formData.set('eliminar_foto', 'true');
+            }
+            
             const endpoint = `${juegosBase}${juegoId}/update/`;
             
             try {
@@ -196,6 +301,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (data.success) {
                     mostrarExitoValidacion(data.message, '¡Juego Actualizado!');
                     closeModal(modalEdit);
+                    // Recargar la página para ver los cambios
+                    setTimeout(() => window.location.reload(), 1500);
                 } else {
                     mostrarErroresValidacion(data.errors || ['Error al actualizar el juego'], 'Error al Actualizar Juego');
                 }
@@ -314,24 +421,14 @@ style.textContent = `
         letter-spacing: 0.5px;
     }
     
-    .status-disponible {
+    .status-habilitado {
         background-color: #e8f5e8;
         color: #2e7d32;
     }
     
-    .status-mantenimiento {
-        background-color: #fff3e0;
-        color: #f57c00;
-    }
-    
-    .status-reservado {
-        background-color: #e3f2fd;
-        color: #1976d2;
-    }
-    
-    .status-no_disponible {
-        background-color: #ffebee;
-        color: #d32f2f;
+    .status-deshabilitado {
+        background-color:rgb(255, 224, 224);
+        color:rgb(245, 0, 0);
     }
     
     .modal {
