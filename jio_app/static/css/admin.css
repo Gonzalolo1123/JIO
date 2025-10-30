@@ -487,6 +487,65 @@ body {
     font-size: 0.95rem;
 }
 
+/* Estilos globales para todos los select, textarea e inputs */
+select,
+textarea,
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="time"],
+input[type="date"],
+input[type="number"],
+input[type="tel"],
+input[type="url"],
+input[type="search"] {
+    padding: 0.7rem 0.9rem;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+    background-color: white;
+}
+
+select:focus,
+textarea:focus,
+input[type="text"]:focus,
+input[type="email"]:focus,
+input[type="password"]:focus,
+input[type="time"]:focus,
+input[type="date"]:focus,
+input[type="number"]:focus,
+input[type="tel"]:focus,
+input[type="url"]:focus,
+input[type="search"]:focus {
+    outline: none;
+    border-color: #2E7D32;
+    box-shadow: 0 0 0 3px rgba(46, 125, 50, 0.1);
+}
+
+/* Estilos para select con flecha personalizada */
+select {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%232c3e50' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.9rem center;
+    background-size: 12px;
+    padding-right: 2.5rem;
+    cursor: pointer;
+}
+
+select:hover {
+    border-color: #2E7D32;
+}
+
+/* Estilos para textarea */
+textarea {
+    resize: vertical;
+    min-height: 80px;
+    line-height: 1.5;
+}
+
 .form-card {
     margin-top: 1.5rem;
     background: #fff;
@@ -508,13 +567,29 @@ body {
     font-weight: 600;
 }
 
-.form-grid input[type="text"],
-.form-grid input[type="email"],
-.form-grid input[type="password"] {
-    padding: 0.7rem 0.9rem;
-    border: 1px solid #e0e0e0;
-    border-radius: 8px;
-    font-size: 0.95rem;
+/* Los estilos de inputs, select y textarea ya están definidos globalmente arriba */
+
+/* Estilos adicionales específicos para file input */
+input[type="file"] {
+    padding: 0.5rem 0.9rem;
+    cursor: pointer;
+}
+
+input[type="file"]::file-selector-button {
+    padding: 0.4rem 0.8rem;
+    margin-right: 0.75rem;
+    background: linear-gradient(135deg, #2E7D32, #4CAF50);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+
+input[type="file"]::file-selector-button:hover {
+    background: linear-gradient(135deg, #256628, #3ea043);
 }
 
 .form-actions {
@@ -570,8 +645,12 @@ body {
     z-index: 1201;
     background: #fff;
     width: min(700px, 92%);
+    max-height: 90vh;
     border-radius: 14px;
     box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
 }
 
 .modal-header {
@@ -580,6 +659,7 @@ body {
     justify-content: space-between;
     padding: 1rem 1.25rem;
     border-bottom: 1px solid #eee;
+    flex-shrink: 0;
 }
 
 .modal-header h2 {
@@ -595,14 +675,40 @@ body {
     cursor: pointer;
 }
 
-.modal .form-grid { padding: 1rem 1.25rem; }
-.modal .form-actions { justify-content: flex-end; }
+.modal .form-grid { 
+    padding: 1rem 1.25rem; 
+    overflow-y: auto;
+    flex: 1;
+}
+.modal .form-actions { 
+    justify-content: flex-end; 
+    flex-shrink: 0;
+}
+
+/* Smooth scroll para modales */
+.modal .form-grid,
+#detalleInstalacionContent,
+#detalleRetiroContent {
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: smooth;
+}
 
 /* Asegurar que las alertas SweetAlert2 queden por encima de cualquier modal propio */
 .swal2-container { z-index: 5000 !important; }
 
 /* Responsive */
 @media (max-width: 768px) {
+    .modal-content {
+        width: 95%;
+        max-height: 95vh;
+        margin: auto;
+    }
+    
+    #detalleInstalacionContent,
+    #detalleRetiroContent {
+        max-height: calc(95vh - 60px);
+    }
+    
     .navbar {
         padding: 1rem;
     }
@@ -741,5 +847,256 @@ body {
 
     .module-arrow {
         font-size: 1rem;
+    }
+}
+
+/* ===== ESTILOS PARA GESTIÓN DE REPARTOS ===== */
+
+/* Badges */
+.badge {
+    display: inline-block;
+    padding: 0.35rem 0.75rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    line-height: 1;
+    border-radius: 6px;
+    text-align: center;
+}
+
+.badge-success {
+    background-color: #d4edda;
+    color: #155724;
+}
+
+.badge-warning {
+    background-color: #fff3cd;
+    color: #856404;
+}
+
+.badge-danger {
+    background-color: #f8d7da;
+    color: #721c24;
+}
+
+.badge-info {
+    background-color: #d1ecf1;
+    color: #0c5460;
+}
+
+.badge-primary {
+    background-color: #cce5ff;
+    color: #004085;
+}
+
+/* Agenda Grid */
+.agenda-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+    gap: 1.5rem;
+    margin-top: 1rem;
+}
+
+.agenda-section {
+    background: #f8f9fa;
+    border-radius: 12px;
+    padding: 1.25rem;
+}
+
+.agenda-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #2c3e50;
+    margin: 0 0 1rem 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.agenda-card {
+    background: white;
+    border-radius: 10px;
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    transition: all 0.3s ease;
+    border-left: 4px solid transparent;
+}
+
+.agenda-card:hover {
+    transform: translateX(4px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.agenda-instalacion {
+    border-left-color: #2ecc71;
+}
+
+.agenda-retiro {
+    border-left-color: #e74c3c;
+}
+
+.agenda-time {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #2E7D32;
+    min-width: 60px;
+    text-align: center;
+}
+
+.agenda-info {
+    flex: 1;
+}
+
+.agenda-info strong {
+    display: block;
+    color: #2c3e50;
+    margin-bottom: 0.25rem;
+}
+
+.agenda-info p {
+    margin: 0;
+    font-size: 0.9rem;
+    color: #7f8c8d;
+}
+
+.agenda-repartidor {
+    display: inline-block;
+    margin-top: 0.5rem;
+    font-size: 0.85rem;
+    color: #555;
+    padding: 0.25rem 0.5rem;
+    background: #e8f5e9;
+    border-radius: 4px;
+}
+
+.agenda-repartidor i {
+    margin-right: 0.25rem;
+}
+
+.agenda-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+/* Botones de icono */
+.btn-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-size: 1rem;
+}
+
+.btn-icon:hover {
+    transform: scale(1.1);
+}
+
+.btn-icon.btn-primary {
+    background: linear-gradient(135deg, #3498db, #2980b9);
+    color: white;
+}
+
+.btn-icon.btn-secondary {
+    background: linear-gradient(135deg, #95a5a6, #7f8c8d);
+    color: white;
+}
+
+.btn-icon.btn-warning {
+    background: linear-gradient(135deg, #f39c12, #e67e22);
+    color: white;
+}
+
+/* Botones pequeños */
+.btn-sm {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.85rem;
+}
+
+.btn-sm i {
+    font-size: 0.9rem;
+}
+
+/* Tabla mejorada */
+.table {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+}
+
+.table thead {
+    background: #f8f9fa;
+}
+
+.table th {
+    padding: 0.875rem;
+    text-align: left;
+    font-weight: 600;
+    color: #2c3e50;
+    border-bottom: 2px solid #dee2e6;
+    font-size: 0.9rem;
+}
+
+.table td {
+    padding: 0.875rem;
+    border-bottom: 1px solid #dee2e6;
+    color: #495057;
+    font-size: 0.9rem;
+}
+
+.table tbody tr:hover {
+    background-color: #f8f9fa;
+}
+
+/* Responsive para repartos */
+@media (max-width: 768px) {
+    .agenda-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .agenda-card {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .agenda-time {
+        font-size: 1rem;
+    }
+
+    .agenda-actions {
+        width: 100%;
+        justify-content: flex-end;
+    }
+
+    .table {
+        font-size: 0.85rem;
+    }
+
+    .table th,
+    .table td {
+        padding: 0.5rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .btn-icon {
+        width: 32px;
+        height: 32px;
+        font-size: 0.9rem;
+    }
+
+    .agenda-section {
+        padding: 1rem;
+    }
+
+    .agenda-card {
+        padding: 0.75rem;
     }
 }

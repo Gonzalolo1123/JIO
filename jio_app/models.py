@@ -227,6 +227,12 @@ class Instalacion(models.Model):
         ('cancelada', 'Cancelada'),
     ]
     
+    METODO_PAGO_CHOICES = [
+        ('efectivo', 'Efectivo'),
+        ('transferencia', 'Transferencia'),
+        ('otro', 'Otro'),
+    ]
+    
     reserva = models.OneToOneField(Reserva, on_delete=models.CASCADE, related_name='instalacion')
     repartidor = models.ForeignKey(Repartidor, on_delete=models.SET_NULL, null=True, blank=True)
     fecha_instalacion = models.DateField()
@@ -239,6 +245,10 @@ class Instalacion(models.Model):
         default='programada'
     )
     observaciones_instalacion = models.TextField(blank=True, null=True)
+    
+    # Información de pago
+    metodo_pago = models.CharField(max_length=20, choices=METODO_PAGO_CHOICES, blank=True, null=True)
+    comprobante_pago = models.ImageField(upload_to='comprobantes/', blank=True, null=True)
     
     class Meta:
         verbose_name = 'Instalación'

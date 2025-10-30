@@ -31,4 +31,16 @@ urlpatterns = [
     path('panel/users/<int:user_id>/json/', views.user_detail_json, name='user_detail_json'),
     path('panel/users/<int:user_id>/update/', views.user_update_json, name='user_update_json'),
     path('panel/users/<int:user_id>/delete/', views.user_delete_json, name='user_delete_json'),
+
+    # Gestión de Repartos
+    path('panel/repartos/', views.repartos_list, name='repartos_list'),
+    path('panel/repartos/<str:tipo_reparto>/<int:reparto_id>/asignar/', views.asignar_repartidor, name='asignar_repartidor'),
+    path('panel/repartos/<str:tipo_reparto>/<int:reparto_id>/cambiar-estado/', views.cambiar_estado_reparto, name='cambiar_estado_reparto'),
+    path('panel/repartos/<str:tipo_reparto>/<int:reparto_id>/registrar-incidente/', views.registrar_incidente, name='registrar_incidente'),
+
+    # Endpoints para Repartidores
+    path('delivery/cambiar-estado/', views.cambiar_estado_repartidor, name='cambiar_estado_repartidor'),
+    path('delivery/instalacion/<int:instalacion_id>/detalle/', views.detalle_instalacion_json, name='detalle_instalacion_json'),
+    path('delivery/retiro/<int:retiro_id>/detalle/', views.detalle_retiro_json, name='detalle_retiro_json'),
+    path('delivery/<str:tipo_reparto>/<int:reparto_id>/marcar-realizado/', views.marcar_reparto_realizado, name='marcar_reparto_realizado'),
 ]
