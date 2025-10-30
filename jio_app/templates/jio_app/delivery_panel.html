@@ -203,10 +203,8 @@
                 <label>
                     Nuevo Estado
                     <select name="nuevo_estado" required>
-                        <option value="disponible" {% if user.repartidor.estado == 'disponible' %}selected{% endif %}>Disponible</option>
-                        <option value="en_ruta" {% if user.repartidor.estado == 'en_ruta' %}selected{% endif %}>En Ruta</option>
-                        <option value="ocupado" {% if user.repartidor.estado == 'ocupado' %}selected{% endif %}>Ocupado</option>
-                        <option value="inactivo" {% if user.repartidor.estado == 'inactivo' %}selected{% endif %}>Inactivo</option>
+                        <option value="Habilitado" {% if user.repartidor.estado == 'Habilitado' %}selected{% endif %}>Habilitado</option>
+                        <option value="Deshabilitado" {% if user.repartidor.estado == 'Deshabilitado' %}selected{% endif %}>Deshabilitado</option>
                     </select>
                 </label>
                 <div class="form-actions">

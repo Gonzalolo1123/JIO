@@ -62,10 +62,8 @@ class Repartidor(models.Model):
     Información específica de los repartidores
     """
     ESTADO_CHOICES = [
-        ('disponible', 'Disponible'),
-        ('en_ruta', 'En Ruta'),
-        ('ocupado', 'Ocupado'),
-        ('inactivo', 'Inactivo'),
+        ('Habilitado', 'Habilitado'),
+        ('Deshabilitado', 'Deshabilitado'),
     ]
     
     usuario = models.OneToOneField(Usuario, on_delete=models.CASCADE, related_name='repartidor')
@@ -74,7 +72,7 @@ class Repartidor(models.Model):
     estado = models.CharField(
         max_length=20, 
         choices=ESTADO_CHOICES,
-        default='disponible'
+        default='Habilitado'
     )
     
     class Meta:
@@ -96,8 +94,8 @@ class Juego(models.Model):
     ]
     
     ESTADO_CHOICES = [
-        ('habilitado', 'Habilitado'),
-        ('deshabilitado', 'Deshabilitado'),
+        ('Habilitado', 'Habilitado'),
+        ('Deshabilitado', 'Deshabilitado'),
     ]
     
     nombre = models.CharField(max_length=100)
@@ -111,7 +109,7 @@ class Juego(models.Model):
     estado = models.CharField(
         max_length=20, 
         choices=ESTADO_CHOICES, 
-        default='habilitado',
+        default='Habilitado',
         help_text="Estado actual del juego inflable"
     )
     
@@ -127,9 +125,9 @@ class PrecioTemporada(models.Model):
     Precios por temporada para cada juego
     """
     TEMPORADA_CHOICES = [
-        ('alta', 'Temporada Alta'),
-        ('baja', 'Temporada Baja'),
-        ('especial', 'Temporada Especial'),
+        ('Alta', 'Temporada Alta'),
+        ('Baja', 'Temporada Baja'),
+        ('Especial', 'Temporada Especial'),
     ]
     
     juego = models.ForeignKey(Juego, on_delete=models.CASCADE, related_name='precios_temporada')
@@ -158,8 +156,8 @@ class Reserva(models.Model):
     Reservas de juegos inflables
     """
     ESTADO_CHOICES = [
-        ('pendiente', 'Pendiente'),
-        ('confirmada', 'Confirmada'),
+        ('Pendiente', 'Pendiente'),
+        ('Confirmada', 'Confirmada'),
         ('cancelada', 'Cancelada'),
         ('completada', 'Completada'),
     ]

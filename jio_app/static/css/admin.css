@@ -1,4 +1,6 @@
 /* Estilos para Paneles Administrativos - Sin Bootstrap */
+/* Importar paleta de colores */
+@import url('colors.css');
 
 * {
     margin: 0;
@@ -8,20 +10,20 @@
 
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background-color: #f8f9fa;
-    color: #333;
+    background-color: var(--color-gray-lighter);
+    color: var(--color-black);
     line-height: 1.6;
 }
 
 /* Navbar */
 .navbar {
-    background: linear-gradient(135deg, #2E7D32, #4CAF50);
+    background: var(--bg-gradient-header);
     color: white;
     padding: 1rem 2rem;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    box-shadow: var(--shadow-sm);
     position: fixed;
     top: 0;
     left: 0;
@@ -143,11 +145,11 @@ body {
 }
 
 .panel-header {
-    background: linear-gradient(135deg, #2E7D32, #4CAF50);
+    background: var(--bg-gradient-primary);
     color: white;
     padding: 3rem 2rem;
     border-radius: 15px;
-    box-shadow: 0 4px 20px rgba(46, 125, 50, 0.3);
+    box-shadow: var(--shadow-md);
     text-align: center;
     margin-top: 2rem;
 }
@@ -223,38 +225,38 @@ body {
 
 /* Colores para stat-card */
 .stat-primary {
-    border-left-color: #3498db;
+    border-left-color: var(--color-primary);
 }
 
 .stat-primary .stat-icon {
-    background: linear-gradient(135deg, #3498db, #2980b9);
+    background: var(--bg-gradient-primary);
     color: white;
 }
 
 .stat-success {
-    border-left-color: #2ecc71;
+    border-left-color: var(--color-accent-green);
 }
 
 .stat-success .stat-icon {
-    background: linear-gradient(135deg, #2ecc71, #27ae60);
+    background: var(--bg-gradient-green);
     color: white;
 }
 
 .stat-warning {
-    border-left-color: #f39c12;
+    border-left-color: var(--color-secondary);
 }
 
 .stat-warning .stat-icon {
-    background: linear-gradient(135deg, #f39c12, #e67e22);
-    color: white;
+    background: var(--bg-gradient-secondary);
+    color: var(--color-black);
 }
 
 .stat-info {
-    border-left-color: #1abc9c;
+    border-left-color: var(--color-accent-orange);
 }
 
 .stat-info .stat-icon {
-    background: linear-gradient(135deg, #1abc9c, #16a085);
+    background: var(--bg-gradient-orange);
     color: white;
 }
 
@@ -358,39 +360,41 @@ body {
 
 /* Colores para module-card */
 .module-primary {
-    --module-color-from: #3498db;
-    --module-color-to: #2980b9;
+    --module-color-from: var(--color-primary);
+    --module-color-to: var(--color-primary-dark);
 }
 
 .module-primary .module-icon {
-    background: linear-gradient(135deg, #3498db, #2980b9);
+    background: var(--bg-gradient-primary);
 }
 
 .module-success {
-    --module-color-from: #2ecc71;
-    --module-color-to: #27ae60;
+    --module-color-from: var(--color-accent-green);
+    --module-color-to: var(--color-accent-green-dark);
 }
 
 .module-success .module-icon {
-    background: linear-gradient(135deg, #2ecc71, #27ae60);
+    background: var(--bg-gradient-green);
+    color: white;
 }
 
 .module-warning {
-    --module-color-from: #f39c12;
-    --module-color-to: #e67e22;
+    --module-color-from: var(--color-secondary);
+    --module-color-to: var(--color-secondary-dark);
 }
 
 .module-warning .module-icon {
-    background: linear-gradient(135deg, #f39c12, #e67e22);
+    background: var(--bg-gradient-secondary);
+    color: var(--color-black);
 }
 
 .module-info {
-    --module-color-from: #1abc9c;
-    --module-color-to: #16a085;
+    --module-color-from: var(--color-accent-orange);
+    --module-color-to: var(--color-accent-orange-dark);
 }
 
 .module-info .module-icon {
-    background: linear-gradient(135deg, #1abc9c, #16a085);
+    background: var(--bg-gradient-orange);
 }
 
 .module-purple {
@@ -442,24 +446,24 @@ body {
 }
 
 .btn-primary {
-    background: linear-gradient(135deg, #2E7D32, #4CAF50);
+    background: var(--bg-gradient-primary);
     color: #fff;
-    box-shadow: 0 4px 14px rgba(76, 175, 80, 0.35);
+    box-shadow: 0 4px 14px rgba(25, 118, 210, 0.35);
 }
 
 .btn-primary:hover {
-    background: linear-gradient(135deg, #256628, #3ea043);
+    background: linear-gradient(135deg, var(--color-primary-dark), #0D47A1);
 }
 
 .btn-secondary {
     background: #ffffff;
-    color: #2E7D32;
-    border-color: #c8e6c9;
-    box-shadow: 0 4px 14px rgba(46, 125, 50, 0.15);
+    color: var(--color-gray-dark);
+    border-color: var(--color-gray-light);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
 }
 
 .btn-secondary:hover {
-    background: #f6fff7;
+    background: var(--color-gray-lightest);
 }
 
 .btn-danger {
@@ -520,8 +524,8 @@ input[type="tel"]:focus,
 input[type="url"]:focus,
 input[type="search"]:focus {
     outline: none;
-    border-color: #2E7D32;
-    box-shadow: 0 0 0 3px rgba(46, 125, 50, 0.1);
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px rgba(25, 118, 210, 0.1);
 }
 
 /* Estilos para select con flecha personalizada */
@@ -536,7 +540,7 @@ select {
 }
 
 select:hover {
-    border-color: #2E7D32;
+    border-color: var(--color-primary);
 }
 
 /* Estilos para textarea */
@@ -578,8 +582,8 @@ input[type="file"] {
 input[type="file"]::file-selector-button {
     padding: 0.4rem 0.8rem;
     margin-right: 0.75rem;
-    background: linear-gradient(135deg, #2E7D32, #4CAF50);
-    color: white;
+    background: var(--bg-gradient-secondary);
+    color: var(--color-black);
     border: none;
     border-radius: 6px;
     cursor: pointer;
@@ -589,7 +593,7 @@ input[type="file"]::file-selector-button {
 }
 
 input[type="file"]::file-selector-button:hover {
-    background: linear-gradient(135deg, #256628, #3ea043);
+    background: linear-gradient(135deg, var(--color-secondary-dark), #E6A800);
 }
 
 .form-actions {
@@ -612,9 +616,9 @@ input[type="file"]::file-selector-button:hover {
 }
 
 .table thead th {
-    background: #f6fff7;
-    color: #2E7D32;
-    border-bottom: 2px solid #c8e6c9;
+    background: var(--color-gray-lighter);
+    color: var(--color-gray-dark);
+    border-bottom: 2px solid var(--color-gray-light);
     font-weight: 700;
 }
 
@@ -931,17 +935,17 @@ input[type="file"]::file-selector-button:hover {
 }
 
 .agenda-instalacion {
-    border-left-color: #2ecc71;
+    border-left-color: var(--color-accent-green);
 }
 
 .agenda-retiro {
-    border-left-color: #e74c3c;
+    border-left-color: var(--color-primary);
 }
 
 .agenda-time {
     font-size: 1.1rem;
     font-weight: 700;
-    color: #2E7D32;
+    color: var(--color-gray-dark);
     min-width: 60px;
     text-align: center;
 }
@@ -1139,8 +1143,8 @@ input[type="file"]::file-selector-button:hover {
 }
 
 .status-habilitado {
-    background-color: #e8f5e8;
-    color: #2e7d32;
+    background-color: var(--color-accent-green-light);
+    color: var(--color-accent-green-dark);
 }
 
 .status-deshabilitado {
