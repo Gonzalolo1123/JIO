@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('jio_app', '0006_alter_juego_categoria_alter_juego_foto'),
+        ('jio_app', '0002_alter_juego_precio_base'),
     ]
 
     operations = [
