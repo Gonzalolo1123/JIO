@@ -22,8 +22,8 @@ def index(request):
     """
     Vista para la página principal del sitio público
     """
-    # Obtener todos los juegos disponibles ordenados por categoría y nombre
-    juegos_disponibles = Juego.objects.filter(estado='disponible').order_by('categoria', 'nombre')
+    # Obtener todos los juegos habilitados ordenados por categoría y nombre
+    juegos_disponibles = Juego.objects.filter(estado='habilitado').order_by('categoria', 'nombre')
     
     context = {
         'juegos_disponibles': juegos_disponibles,
@@ -34,8 +34,8 @@ def calendario_reservas(request):
     """
     Vista para el calendario de reservas
     """
-    # Obtener todos los juegos disponibles para mostrar en el calendario
-    juegos_disponibles = Juego.objects.filter(estado='disponible')
+    # Obtener todos los juegos habilitados para mostrar en el calendario
+    juegos_disponibles = Juego.objects.filter(estado='habilitado')
     
     context = {
         'juegos_disponibles': juegos_disponibles,
@@ -1108,7 +1108,7 @@ def juego_create_json(request):
     peso_maximo = request.POST.get('peso_maximo', '').strip()
     precio_base = request.POST.get('precio_base', '').strip()
     foto = request.FILES.get('foto')  # Cambio: Ahora recibimos un archivo
-    estado = request.POST.get('estado', 'disponible').strip()
+    estado = request.POST.get('estado', 'habilitado').strip()
 
     errors = []
     

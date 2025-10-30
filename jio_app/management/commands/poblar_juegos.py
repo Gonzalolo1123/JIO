@@ -12,79 +12,79 @@ class Command(BaseCommand):
             {
                 'nombre': 'Juego 2en1',
                 'descripcion': 'Doble diversión en un solo juego. Perfecto para espacios reducidos y eventos íntimos.',
-                'categoria': 'pequeños',
+                'categoria': 'Pequeño',
                 'dimensiones': '4.5m x 3m x 2m',
                 'capacidad_personas': 6,
-                'peso_maximo': 180.0,
-                'precio_base': 25000.00,
+                'peso_maximo': 180,
+                'precio_base': 25000,
                 'foto_nombre': 'JI_2en1.jpg',
-                'estado': 'disponible'
+                'estado': 'habilitado'
             },
             {
                 'nombre': 'Juego 3en1',
                 'descripcion': 'Triple diversión combinada. Ideal para eventos pequeños con máxima variedad de entretenimiento.',
-                'categoria': 'pequeños',
+                'categoria': 'Pequeño',
                 'dimensiones': '3m x 3m x 2m',
                 'capacidad_personas': 8,
-                'peso_maximo': 240.0,
-                'precio_base': 30000.00,
+                'peso_maximo': 240,
+                'precio_base': 30000,
                 'foto_nombre': 'JI_3en1.jpg',
-                'estado': 'disponible'
+                'estado': 'habilitado'
             },
             {
                 'nombre': 'Juego Block',
                 'descripcion': 'Desafíos y construcción en un juego inflable. Desarrolla la creatividad y coordinación de los niños.',
-                'categoria': 'medianos',
+                'categoria': 'Mediano',
                 'dimensiones': '4m x 3m x 3.5m',
                 'capacidad_personas': 10,
-                'peso_maximo': 300.0,
-                'precio_base': 35000.00,
+                'peso_maximo': 300,
+                'precio_base': 35000,
                 'foto_nombre': 'JI_block.jpg',
-                'estado': 'disponible'
+                'estado': 'habilitado'
             },
             {
                 'nombre': 'Juego Fantasía',
                 'descripcion': 'Un mundo mágico de diversión donde los niños pueden explorar y soñar sin límites.',
-                'categoria': 'medianos',
+                'categoria': 'Mediano',
                 'dimensiones': '6m x 4m x 4m',
                 'capacidad_personas': 12,
-                'peso_maximo': 360.0,
-                'precio_base': 40000.00,
+                'peso_maximo': 360,
+                'precio_base': 40000,
                 'foto_nombre': 'JI_fantasia.jpg',
-                'estado': 'disponible'
+                'estado': 'habilitado'
             },
             {
                 'nombre': 'Juego Candy',
                 'descripcion': 'Dulce diversión con colores vibrantes. Perfecto para fiestas temáticas y celebraciones coloridas.',
-                'categoria': 'medianos',
+                'categoria': 'Mediano',
                 'dimensiones': '4m x 3m x 4m',
                 'capacidad_personas': 10,
-                'peso_maximo': 300.0,
-                'precio_base': 35000.00,
+                'peso_maximo': 300,
+                'precio_base': 35000,
                 'foto_nombre': 'JI_candy.jpg',
-                'estado': 'disponible'
+                'estado': 'habilitado'
             },
             {
                 'nombre': 'Juego Túnel',
                 'descripcion': 'Emoción y aventura en cada paso. Un túnel de diversión que desafía la imaginación de los niños.',
-                'categoria': 'grandes',
+                'categoria': 'Grande',
                 'dimensiones': '7m x 5m x 5m',
                 'capacidad_personas': 15,
-                'peso_maximo': 450.0,
-                'precio_base': 50000.00,
+                'peso_maximo': 450,
+                'precio_base': 50000,
                 'foto_nombre': 'JI_tunel.jpg',
-                'estado': 'disponible'
+                'estado': 'habilitado'
             },
             {
                 'nombre': 'Juego Arco',
                 'descripcion': 'Diversión en forma de arco con múltiples actividades. Ideal para eventos grandes y espacios amplios.',
-                'categoria': 'grandes',
+                'categoria': 'Grande',
                 'dimensiones': '6m x 4m x 5m',
                 'capacidad_personas': 20,
-                'peso_maximo': 600.0,
-                'precio_base': 60000.00,
+                'peso_maximo': 600,
+                'precio_base': 60000,
                 'foto_nombre': 'JI_arco.jpg',
-                'estado': 'disponible'
+                'estado': 'habilitado'
             },
         ]
 

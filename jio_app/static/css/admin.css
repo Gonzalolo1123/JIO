@@ -1100,3 +1100,71 @@ input[type="file"]::file-selector-button:hover {
         padding: 0.75rem;
     }
 }
+
+/* ============================================
+   ESTILOS PARA JUEGOS LIST
+   ============================================ */
+
+/* Animaciones para notificaciones y modales */
+@keyframes slideIn {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes slideOut {
+    from {
+        transform: translateX(0);
+        opacity: 1;
+    }
+    to {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+}
+
+/* Badges de estado para juegos */
+.status-badge {
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.status-habilitado {
+    background-color: #e8f5e8;
+    color: #2e7d32;
+}
+
+.status-deshabilitado {
+    background-color: #ffebee;
+    color: #d32f2f;
+}
+
+/* Estilos legacy para compatibilidad (por si hay estados antiguos) */
+.status-disponible {
+    background-color: #e8f5e8;
+    color: #2e7d32;
+}
+
+.status-mantenimiento {
+    background-color: #fff3e0;
+    color: #f57c00;
+}
+
+.status-reservado {
+    background-color: #e3f2fd;
+    color: #1976d2;
+}
+
+.status-no_disponible {
+    background-color: #ffebee;
+    color: #d32f2f;
+}
