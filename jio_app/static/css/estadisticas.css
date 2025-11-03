@@ -1,0 +1,143 @@
+/* Estilos para página de Estadísticas */
+
+.content {
+  padding: 2rem;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.section {
+  background: white;
+  border-radius: 8px;
+  padding: 2rem;
+  margin-bottom: 2rem;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.section h2 {
+  color: #2E7D32;
+  margin-bottom: 1.5rem;
+  font-size: 1.5rem;
+  border-bottom: 2px solid #2E7D32;
+  padding-bottom: 0.5rem;
+}
+
+.button-group {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.button-group label {
+  font-weight: 600;
+  color: #555;
+  margin-right: 0.5rem;
+}
+
+/* Estilos base para botones */
+.button-group button {
+  padding: 0.5rem 1rem;
+  border: 2px solid #2E7D32;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.3s ease;
+}
+
+/* Estado por defecto: botones inactivos (blanco) */
+.button-group button:not(.active) {
+  background: white !important;
+  color: #2E7D32 !important;
+  border-color: #2E7D32 !important;
+}
+
+/* Hover solo para botones inactivos */
+.button-group button:not(.active):hover {
+  background: #4CAF50 !important;
+  border-color: #4CAF50 !important;
+  color: white !important;
+}
+
+/* Estado activo: botón seleccionado (verde oscuro) */
+.button-group button.active {
+  background: #2E7D32 !important;
+  color: white !important;
+  border-color: #2E7D32 !important;
+  font-weight: 600;
+  box-shadow: 0 2px 4px rgba(46, 125, 50, 0.3);
+}
+
+#view-mode-group {
+  margin-bottom: 2rem;
+  justify-content: flex-end;
+}
+
+.view-mode-btn {
+  min-width: 100px;
+}
+
+/* Tamaños de gráficos */
+.chart-small {
+  max-height: 300px;
+}
+
+.chart-medium {
+  max-height: 400px;
+}
+
+.chart-large {
+  max-height: 500px;
+}
+
+/* Contenedor de gráficos */
+.chart-container {
+  position: relative;
+  width: 100%;
+  height: 400px; /* Altura por defecto (mediano) */
+  margin-top: 1rem;
+}
+
+.chart-container.small {
+  height: 300px;
+}
+
+.chart-container.medium {
+  height: 400px;
+}
+
+.chart-container.large {
+  height: 500px;
+}
+
+/* Canvas para los gráficos */
+canvas {
+  max-width: 100%;
+  max-height: 100%;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .content {
+    padding: 1rem;
+  }
+
+  .section {
+    padding: 1rem;
+  }
+
+  .button-group {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .button-group button {
+    width: 100%;
+  }
+
+  .button-group label {
+    margin-bottom: 0.5rem;
+  }
+}
+
