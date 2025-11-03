@@ -92,7 +92,7 @@ DATABASES = {
         'ENGINE': 'django.db.backends.postgresql',
         'NAME': 'jio_db',
         'USER': 'postgres',
-        'PASSWORD': 'hola1234',
+        'PASSWORD': 'compuvi',
         'HOST': 'localhost',
         'PORT': '5432',
     }
