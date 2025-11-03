@@ -180,6 +180,8 @@ class Reserva(models.Model):
         default='pendiente'
     )
     observaciones = models.TextField(blank=True, null=True)
+    distancia_km = models.PositiveIntegerField(default=0, help_text="Kilómetros fuera de Osorno")
+    precio_distancia = models.DecimalField(max_digits=10, decimal_places=2, default=0, help_text="Precio por distancia (km * precio por km)")
     total_reserva = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     fecha_creacion = models.DateTimeField(auto_now_add=True)
     fecha_modificacion = models.DateTimeField(auto_now=True)
