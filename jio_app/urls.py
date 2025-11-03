@@ -51,4 +51,7 @@ urlpatterns = [
     path('panel/juegos/<int:juego_id>/json/', views.juego_detail_json, name='juego_detail_json'),
     path('panel/juegos/<int:juego_id>/update/', views.juego_update_json, name='juego_update_json'),
     path('panel/juegos/<int:juego_id>/delete/', views.juego_delete_json, name='juego_delete_json'),
+
+    #Estadisticas   
+    path('panel/estadisticas/', views.estadisticas, name='estadisticas'),
 ]

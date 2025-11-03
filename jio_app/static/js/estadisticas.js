@@ -164,14 +164,14 @@ function initCategoryChart() {
     if (!ctx) return;
 
     const categories = getDataFromElement('categorias-unicas');
-    const dailyData = getDataFromElement('ventas-categoria-diarias-data');
+    const weeklyData = getDataFromElement('ventas-categoria-semanales-data');
 
     // Validar datos
     if (!Array.isArray(categories) || categories.length === 0) {
         console.warn('No hay categorías disponibles');
         return;
     }
-    if (!Array.isArray(dailyData)) {
+    if (!Array.isArray(weeklyData)) {
         console.warn('No hay datos de categorías');
         return;
     }
@@ -209,7 +209,7 @@ function initCategoryChart() {
             labels: categories,
             datasets: [{
                 label: 'Ventas por categoría ($)',
-                data: dailyData,
+                data: weeklyData,
                 backgroundColor: bgColors,
                 borderColor: borderColors,
                 borderWidth: 1
@@ -244,7 +244,7 @@ function initCategoryChart() {
         }
     });
 
-    // Activar botón diario por defecto y desactivar otros
+    // Activar botón semanal por defecto y desactivar otros
     const buttons = document.querySelectorAll('#category-filter button');
     buttons.forEach(btn => {
         btn.classList.remove('active');
@@ -256,7 +256,7 @@ function initCategoryChart() {
 }
 
 // Actualizar gráfico de categorías según período
-let categoryPeriod = 'daily';
+let categoryPeriod = 'weekly';
 function setCategoryPeriod(period, buttonElement) {
     if (!categoryChart) {
         console.error('Category chart no inicializado');
@@ -267,9 +267,6 @@ function setCategoryPeriod(period, buttonElement) {
     let data;
 
     switch (period) {
-        case 'daily':
-            data = getDataFromElement('ventas-categoria-diarias-data');
-            break;
         case 'weekly':
             data = getDataFromElement('ventas-categoria-semanales-data');
             break;
@@ -280,7 +277,7 @@ function setCategoryPeriod(period, buttonElement) {
             data = getDataFromElement('ventas-categoria-anuales-data');
             break;
         default:
-            data = getDataFromElement('ventas-categoria-diarias-data');
+            data = getDataFromElement('ventas-categoria-semanales-data');
     }
 
     // Validar que hay datos

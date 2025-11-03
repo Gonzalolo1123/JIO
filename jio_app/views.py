@@ -5,7 +5,7 @@ from django.contrib import messages
 from django.http import JsonResponse
 from django.core.exceptions import PermissionDenied
 from django.urls import reverse
-from .models import Juego, Usuario, Repartidor, Cliente, Instalacion, Retiro, Reserva
+from .models import Juego, Usuario, Repartidor, Cliente, Instalacion, Retiro, Reserva, DetalleReserva
 from django.views.decorators.http import require_http_methods
 from django.core import signing
 from django.utils import timezone
@@ -1942,3 +1942,227 @@ def juego_delete_json(request, juego_id: int):
             'success': False, 
             'errors': [f'Error al eliminar el juego: {str(e)}']
         }, status=500)
+
+@login_required
+def estadisticas(request):
+    """
+    Muestra las estadísticas de la aplicación
+    """
+    if not request.user.tipo_usuario == 'administrador':
+        raise PermissionDenied("Solo los administradores pueden acceder a este recurso.")
+    
+    from datetime import datetime, timedelta
+    from collections import defaultdict
+    import json
+    from django.db.models import Sum, Count, Q
+    
+    # Obtener reservas confirmadas y completadas (no canceladas)
+    reservas = Reserva.objects.filter(
+        Q(estado='Confirmada') | Q(estado='confirmada') | Q(estado='completada')
+    ).select_related('cliente__usuario').prefetch_related('detalles__juego')
+    
+    hoy = datetime.now().date()
+    
+    # ========== VENTAS SEMANALES ==========
+    ventas_semanales = defaultdict(float)
+    ventas_semanales_labels = []
+    
+    # Últimas 8 semanas
+    for i in range(7, -1, -1):
+        semana_inicio = hoy - timedelta(days=hoy.weekday() + (i * 7))
+        semana_fin = semana_inicio + timedelta(days=6)
+        semana_key = semana_inicio.strftime('%d/%m')
+        
+        total_semana = reservas.filter(
+            fecha_evento__gte=semana_inicio,
+            fecha_evento__lte=semana_fin
+        ).aggregate(total=Sum('total_reserva'))['total'] or 0
+        
+        ventas_semanales[semana_key] = float(total_semana)
+        ventas_semanales_labels.append(semana_key)
+    
+    ventas_semanales_data = [ventas_semanales[label] for label in ventas_semanales_labels]
+    
+    # ========== VENTAS MENSUALES ==========
+    # Mapeo de meses en español
+    meses_espanol = {
+        1: 'Ene', 2: 'Feb', 3: 'Mar', 4: 'Abr', 5: 'May', 6: 'Jun',
+        7: 'Jul', 8: 'Ago', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dic'
+    }
+    
+    ventas_mensuales = defaultdict(float)
+    ventas_mensuales_labels = []
+    
+    # Últimos 12 meses
+    for i in range(11, -1, -1):
+        fecha = hoy - timedelta(days=i * 30)
+        mes_nombre = meses_espanol[fecha.month]
+        mes_key = f'{mes_nombre} {fecha.year}'
+        
+        # Filtrar reservas del mes
+        total_mes = reservas.filter(
+            fecha_evento__year=fecha.year,
+            fecha_evento__month=fecha.month
+        ).aggregate(total=Sum('total_reserva'))['total'] or 0
+        
+        ventas_mensuales[mes_key] = float(total_mes)
+        ventas_mensuales_labels.append(mes_key)
+    
+    ventas_mensuales_data = [ventas_mensuales[label] for label in ventas_mensuales_labels]
+    
+    # ========== VENTAS ANUALES ==========
+    ventas_anuales = defaultdict(float)
+    ventas_anuales_labels = []
+    
+    # Últimos 5 años
+    año_actual = hoy.year
+    for i in range(4, -1, -1):
+        año = año_actual - i
+        año_key = str(año)
+        
+        total_año = reservas.filter(
+            fecha_evento__year=año
+        ).aggregate(total=Sum('total_reserva'))['total'] or 0
+        
+        ventas_anuales[año_key] = float(total_año)
+        ventas_anuales_labels.append(año_key)
+    
+    ventas_anuales_data = [ventas_anuales[label] for label in ventas_anuales_labels]
+    
+    # ========== VENTAS POR CATEGORÍA ==========
+    # Obtener categorías ordenadas según el modelo
+    categorias_orden = ['Pequeño', 'Mediano', 'Grande']
+    categorias_db = Juego.objects.values_list('categoria', flat=True).distinct()
+    # Ordenar las categorías según el orden definido, agregando las que no estén en la lista
+    categorias_unicas = []
+    for cat in categorias_orden:
+        if cat in categorias_db:
+            categorias_unicas.append(cat)
+    # Agregar cualquier categoría que no esté en la lista ordenada
+    for cat in categorias_db:
+        if cat not in categorias_unicas:
+            categorias_unicas.append(cat)
+    
+    # Ventas por categoría - DIARIAS (últimos 7 días)
+    ventas_categoria_diarias = defaultdict(lambda: defaultdict(float))
+    for i in range(6, -1, -1):
+        fecha = hoy - timedelta(days=i)
+        reservas_dia = reservas.filter(fecha_evento=fecha)
+        
+        for reserva in reservas_dia:
+            for detalle in reserva.detalles.all():
+                categoria = detalle.juego.categoria
+                ventas_categoria_diarias[categoria][fecha.strftime('%d/%m')] += float(detalle.subtotal)
+    
+    ventas_categoria_diarias_data = []
+    for categoria in categorias_unicas:
+        if categoria in ventas_categoria_diarias:
+            total_cat = sum(ventas_categoria_diarias[categoria].values())
+            ventas_categoria_diarias_data.append(total_cat)
+        else:
+            ventas_categoria_diarias_data.append(0)
+    
+    # Ventas por categoría - SEMANALES (últimas 4 semanas)
+    ventas_categoria_semanales = defaultdict(float)
+    semana_inicio = hoy - timedelta(days=hoy.weekday() + (3 * 7))
+    semana_fin = hoy
+    reservas_semana = reservas.filter(fecha_evento__gte=semana_inicio, fecha_evento__lte=semana_fin)
+    
+    for reserva in reservas_semana:
+        for detalle in reserva.detalles.all():
+            categoria = detalle.juego.categoria
+            ventas_categoria_semanales[categoria] += float(detalle.subtotal)
+    
+    ventas_categoria_semanales_data = [
+        ventas_categoria_semanales.get(cat, 0) for cat in categorias_unicas
+    ]
+    
+    # Ventas por categoría - MENSUALES (últimos 6 meses)
+    ventas_categoria_mensuales = defaultdict(float)
+    fecha_inicio = hoy - timedelta(days=180)
+    reservas_mes = reservas.filter(fecha_evento__gte=fecha_inicio)
+    
+    for reserva in reservas_mes:
+        for detalle in reserva.detalles.all():
+            categoria = detalle.juego.categoria
+            ventas_categoria_mensuales[categoria] += float(detalle.subtotal)
+    
+    ventas_categoria_mensuales_data = [
+        ventas_categoria_mensuales.get(cat, 0) for cat in categorias_unicas
+    ]
+    
+    # Ventas por categoría - ANUALES (último año)
+    ventas_categoria_anuales = defaultdict(float)
+    año_inicio = hoy - timedelta(days=365)
+    reservas_año = reservas.filter(fecha_evento__gte=año_inicio)
+    
+    for reserva in reservas_año:
+        for detalle in reserva.detalles.all():
+            categoria = detalle.juego.categoria
+            ventas_categoria_anuales[categoria] += float(detalle.subtotal)
+    
+    ventas_categoria_anuales_data = [
+        ventas_categoria_anuales.get(cat, 0) for cat in categorias_unicas
+    ]
+    
+    # ========== DÍAS CON MAYOR DEMANDA ==========
+    dias_semana_nombres = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+    
+    # Semanal - Últimas 4 semanas
+    demanda_semanal = defaultdict(int)
+    semana_inicio = hoy - timedelta(days=hoy.weekday() + (3 * 7))
+    reservas_semana_dias = reservas.filter(fecha_evento__gte=semana_inicio, fecha_evento__lte=hoy)
+    
+    for reserva in reservas_semana_dias:
+        dia_semana = reserva.fecha_evento.weekday()
+        demanda_semanal[dias_semana_nombres[dia_semana]] += 1
+    
+    dias_semana_semanales_labels = dias_semana_nombres
+    dias_semana_semanales_data = [demanda_semanal.get(dia, 0) for dia in dias_semana_nombres]
+    
+    # Mensual - Últimos 3 meses
+    demanda_mensual = defaultdict(int)
+    fecha_inicio = hoy - timedelta(days=90)
+    reservas_mes_dias = reservas.filter(fecha_evento__gte=fecha_inicio)
+    
+    for reserva in reservas_mes_dias:
+        dia_semana = reserva.fecha_evento.weekday()
+        demanda_mensual[dias_semana_nombres[dia_semana]] += 1
+    
+    dias_semana_mensuales_labels = dias_semana_nombres
+    dias_semana_mensuales_data = [demanda_mensual.get(dia, 0) for dia in dias_semana_nombres]
+    
+    # Anual - Último año
+    demanda_anual = defaultdict(int)
+    año_inicio = hoy - timedelta(days=365)
+    reservas_año_dias = reservas.filter(fecha_evento__gte=año_inicio)
+    
+    for reserva in reservas_año_dias:
+        dia_semana = reserva.fecha_evento.weekday()
+        demanda_anual[dias_semana_nombres[dia_semana]] += 1
+    
+    dias_semana_anuales_labels = dias_semana_nombres
+    dias_semana_anuales_data = [demanda_anual.get(dia, 0) for dia in dias_semana_nombres]
+    
+    # Preparar contexto con datos JSON
+    context = {
+        'ventas_semanales_labels': json.dumps(ventas_semanales_labels),
+        'ventas_semanales_data': json.dumps(ventas_semanales_data),
+        'ventas_mensuales_labels': json.dumps(ventas_mensuales_labels),
+        'ventas_mensuales_data': json.dumps(ventas_mensuales_data),
+        'ventas_anuales_labels': json.dumps(ventas_anuales_labels),
+        'ventas_anuales_data': json.dumps(ventas_anuales_data),
+        'ventas_categoria_diarias_data': json.dumps(ventas_categoria_diarias_data),
+        'ventas_categoria_semanales_data': json.dumps(ventas_categoria_semanales_data),
+        'ventas_categoria_mensuales_data': json.dumps(ventas_categoria_mensuales_data),
+        'ventas_categoria_anuales_data': json.dumps(ventas_categoria_anuales_data),
+        'categorias_unicas': json.dumps(categorias_unicas),
+        'dias_semana_semanales_labels': json.dumps(dias_semana_semanales_labels),
+        'dias_semana_semanales_data': json.dumps(dias_semana_semanales_data),
+        'dias_semana_mensuales_labels': json.dumps(dias_semana_mensuales_labels),
+        'dias_semana_mensuales_data': json.dumps(dias_semana_mensuales_data),
+        'dias_semana_anuales_labels': json.dumps(dias_semana_anuales_labels),
+        'dias_semana_anuales_data': json.dumps(dias_semana_anuales_data),
+    }
+    
+    return render(request, 'jio_app/estadisticas.html', context)
