@@ -5,7 +5,7 @@ from django.contrib import messages
 from django.http import JsonResponse
 from django.core.exceptions import PermissionDenied
 from django.urls import reverse
-from .models import Juego, Usuario, Repartidor, Cliente
+from .models import Juego, Usuario, Repartidor, Cliente, Instalacion, Retiro, Reserva
 from django.views.decorators.http import require_http_methods
 from django.core import signing
 from django.utils import timezone
@@ -22,13 +22,25 @@ def index(request):
     """
     Vista para la página principal del sitio público
     """
-    # Obtener algunos juegos destacados para mostrar
-    juegos_destacados = Juego.objects.filter(estado='disponible')[:6]
+    # Obtener todos los juegos habilitados ordenados por categoría y nombre
+    juegos_disponibles = Juego.objects.filter(estado='habilitado').order_by('categoria', 'nombre')
     
     context = {
-        'juegos_destacados': juegos_destacados,
+        'juegos_disponibles': juegos_disponibles,
     }
     return render(request, 'jio_app/index.html', context)
+
+def calendario_reservas(request):
+    """
+    Vista para el calendario de reservas
+    """
+    # Obtener todos los juegos habilitados para mostrar en el calendario
+    juegos_disponibles = Juego.objects.filter(estado='habilitado')
+    
+    context = {
+        'juegos_disponibles': juegos_disponibles,
+    }
+    return render(request, 'jio_app/calendario_reservas.html', context)
 
 def login_view(request):
     """
@@ -147,13 +159,47 @@ def admin_panel(request):
 @login_required
 def delivery_panel(request):
     """
-    Panel de repartidor
+    Panel de repartidor - Ver sus repartos asignados
     """
     if not request.user.tipo_usuario == 'repartidor':
         raise PermissionDenied("Solo los repartidores pueden acceder a este panel.")
     
+    from datetime import date
+    fecha_hoy = date.today()
+    
+    # Obtener el repartidor actual
+    try:
+        repartidor = request.user.repartidor
+    except:
+        raise PermissionDenied("Usuario no tiene perfil de repartidor.")
+    
+    # Instalaciones asignadas al repartidor
+    instalaciones_hoy = Instalacion.objects.filter(
+        repartidor=repartidor,
+        fecha_instalacion=fecha_hoy
+    ).select_related('reserva__cliente__usuario').order_by('hora_instalacion')
+    
+    instalaciones_todas = Instalacion.objects.filter(
+        repartidor=repartidor
+    ).select_related('reserva__cliente__usuario').order_by('-fecha_instalacion', '-hora_instalacion')[:20]
+    
+    # Retiros asignados al repartidor
+    retiros_hoy = Retiro.objects.filter(
+        repartidor=repartidor,
+        fecha_retiro=fecha_hoy
+    ).select_related('reserva__cliente__usuario').order_by('hora_retiro')
+    
+    retiros_todos = Retiro.objects.filter(
+        repartidor=repartidor
+    ).select_related('reserva__cliente__usuario').order_by('-fecha_retiro', '-hora_retiro')[:20]
+    
     context = {
         'user': request.user,
+        'fecha_hoy': fecha_hoy,
+        'instalaciones_hoy': instalaciones_hoy,
+        'instalaciones_todas': instalaciones_todas,
+        'retiros_hoy': retiros_hoy,
+        'retiros_todos': retiros_todos,
     }
     return render(request, 'jio_app/delivery_panel.html', context)
 
@@ -706,6 +752,273 @@ def user_delete_json(request, user_id: int):
     return JsonResponse({'success': True})
 
 
+# --------- Gestión de Repartos (solo administrador) ---------
+
+@login_required
+def repartos_list(request):
+    """Vista principal para gestión de repartos"""
+    if request.user.tipo_usuario != 'administrador':
+        raise PermissionDenied("Solo los administradores pueden acceder a este recurso.")
+
+    query = request.GET.get('q', '').strip()
+    estado_filter = request.GET.get('estado', '').strip()
+    
+    # Obtener fecha de hoy
+    from datetime import date
+    fecha_hoy = date.today()
+    
+    # Filtrar instalaciones
+    instalaciones_qs = Instalacion.objects.select_related(
+        'reserva__cliente__usuario', 'repartidor__usuario'
+    ).order_by('fecha_instalacion', 'hora_instalacion')
+    
+    if query:
+        instalaciones_qs = instalaciones_qs.filter(
+            Q(reserva__cliente__usuario__first_name__icontains=query) |
+            Q(reserva__cliente__usuario__last_name__icontains=query) |
+            Q(repartidor__usuario__first_name__icontains=query) |
+            Q(repartidor__usuario__last_name__icontains=query) |
+            Q(direccion_instalacion__icontains=query)
+        )
+    
+    if estado_filter:
+        instalaciones_qs = instalaciones_qs.filter(estado_instalacion=estado_filter)
+    
+    # Filtrar retiros
+    retiros_qs = Retiro.objects.select_related(
+        'reserva__cliente__usuario', 'repartidor__usuario'
+    ).order_by('fecha_retiro', 'hora_retiro')
+    
+    if query:
+        retiros_qs = retiros_qs.filter(
+            Q(reserva__cliente__usuario__first_name__icontains=query) |
+            Q(reserva__cliente__usuario__last_name__icontains=query) |
+            Q(repartidor__usuario__first_name__icontains=query) |
+            Q(repartidor__usuario__last_name__icontains=query)
+        )
+    
+    if estado_filter:
+        # Mapear estados (instalacion usa _instalacion, retiro usa _retiro)
+        estado_map = {
+            'programada': 'programado',
+            'realizada': 'realizado',
+            'cancelada': 'cancelado'
+        }
+        estado_retiro = estado_map.get(estado_filter, estado_filter)
+        retiros_qs = retiros_qs.filter(estado_retiro=estado_retiro)
+    
+    # Agenda de hoy
+    instalaciones_hoy = instalaciones_qs.filter(fecha_instalacion=fecha_hoy)
+    retiros_hoy = retiros_qs.filter(fecha_retiro=fecha_hoy)
+    
+    # Repartidores disponibles
+    repartidores_disponibles = Usuario.objects.filter(
+        tipo_usuario='repartidor',
+        is_active=True
+    ).select_related('repartidor')
+    
+    context = {
+        'query': query,
+        'estado_filter': estado_filter,
+        'fecha_hoy': fecha_hoy,
+        'instalaciones': instalaciones_qs[:50],  # Limitar resultados
+        'retiros': retiros_qs[:50],
+        'instalaciones_hoy': instalaciones_hoy,
+        'retiros_hoy': retiros_hoy,
+        'repartidores_disponibles': repartidores_disponibles,
+    }
+    
+    return render(request, 'jio_app/repartos_list.html', context)
+
+
+@login_required
+@require_http_methods(["POST"])
+def asignar_repartidor(request, tipo_reparto: str, reparto_id: int):
+    """Asignar un repartidor a una instalación o retiro"""
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    repartidor_id = request.POST.get('repartidor_id')
+    observaciones = request.POST.get('observaciones', '')
+    
+    if not repartidor_id:
+        return JsonResponse({'success': False, 'errors': ['Debe seleccionar un repartidor']}, status=400)
+    
+    try:
+        repartidor = Repartidor.objects.get(usuario_id=repartidor_id)
+    except Repartidor.DoesNotExist:
+        return JsonResponse({'success': False, 'errors': ['Repartidor no encontrado']}, status=404)
+    
+    try:
+        if tipo_reparto == 'instalacion':
+            instalacion = Instalacion.objects.get(id=reparto_id)
+            instalacion.repartidor = repartidor
+            if observaciones:
+                instalacion.observaciones_instalacion = observaciones
+            instalacion.save()
+            message = f'Repartidor {repartidor.usuario.get_full_name()} asignado a la instalación'
+        elif tipo_reparto == 'retiro':
+            retiro = Retiro.objects.get(id=reparto_id)
+            retiro.repartidor = repartidor
+            if observaciones:
+                retiro.observaciones_retiro = observaciones
+            retiro.save()
+            message = f'Repartidor {repartidor.usuario.get_full_name()} asignado al retiro'
+        else:
+            return JsonResponse({'success': False, 'errors': ['Tipo de reparto inválido']}, status=400)
+        
+        return JsonResponse({'success': True, 'message': message})
+    
+    except (Instalacion.DoesNotExist, Retiro.DoesNotExist):
+        return JsonResponse({'success': False, 'errors': ['Reparto no encontrado']}, status=404)
+
+
+# --------- Endpoints para Repartidores ---------
+
+@login_required
+@require_http_methods(["POST"])
+def cambiar_estado_repartidor(request):
+    """Cambiar el estado del repartidor actual"""
+    if request.user.tipo_usuario != 'repartidor':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    nuevo_estado = request.POST.get('nuevo_estado')
+    
+    if not nuevo_estado:
+        return JsonResponse({'success': False, 'errors': ['Debe seleccionar un estado']}, status=400)
+    
+    try:
+        repartidor = request.user.repartidor
+        # Validar estado
+        estados_validos = [choice[0] for choice in repartidor._meta.get_field('estado').choices]
+        if nuevo_estado not in estados_validos:
+            return JsonResponse({'success': False, 'errors': ['Estado inválido']}, status=400)
+        
+        repartidor.estado = nuevo_estado
+        repartidor.save()
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'Estado actualizado a: {repartidor.get_estado_display()}'
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'errors': [str(e)]}, status=400)
+
+
+@login_required
+@require_http_methods(["GET"])
+def detalle_instalacion_json(request, instalacion_id: int):
+    """Obtener detalles de una instalación"""
+    if request.user.tipo_usuario not in ['administrador', 'repartidor']:
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    try:
+        instalacion = Instalacion.objects.select_related(
+            'reserva__cliente__usuario',
+            'repartidor__usuario'
+        ).get(id=instalacion_id)
+        
+        # Si es repartidor, solo puede ver sus propias instalaciones
+        if request.user.tipo_usuario == 'repartidor' and instalacion.repartidor != request.user.repartidor:
+            return JsonResponse({'error': 'No autorizado'}, status=403)
+        
+        # Obtener juegos de la reserva
+        juegos = []
+        precio_juegos_total = 0.0
+        for detalle in instalacion.reserva.detalles.all():
+            subtotal_juego = float(detalle.cantidad * detalle.precio_unitario)
+            precio_juegos_total += subtotal_juego
+            
+            # Intentar obtener URL de imagen del juego
+            imagen_url = None
+            if detalle.juego.foto:
+                imagen_url = detalle.juego.foto
+            
+            juegos.append({
+                'nombre': detalle.juego.nombre,
+                'cantidad': detalle.cantidad,
+                'precio': str(detalle.precio_unitario),
+                'imagen_url': imagen_url
+            })
+        
+        # Calcular precio de distancia (total - precio juegos)
+        total_reserva = float(instalacion.reserva.total_reserva)
+        precio_distancia = total_reserva - precio_juegos_total
+        kilometros = None
+        
+        # Si hay precio de distancia, calcular kilómetros ($1.000 por km)
+        if precio_distancia > 0:
+            kilometros = int(precio_distancia / 1000)
+        
+        data = {
+            'id': instalacion.id,
+            'fecha': instalacion.fecha_instalacion.strftime('%d/%m/%Y'),
+            'hora': instalacion.hora_instalacion.strftime('%H:%M'),
+            'direccion': instalacion.direccion_instalacion,
+            'telefono': instalacion.telefono_cliente,
+            'estado': instalacion.estado_instalacion,
+            'estado_display': instalacion.get_estado_instalacion_display(),
+            'observaciones': instalacion.observaciones_instalacion or '',
+            'cliente': {
+                'nombre': instalacion.reserva.cliente.usuario.get_full_name(),
+                'email': instalacion.reserva.cliente.usuario.email,
+                'telefono': instalacion.reserva.cliente.usuario.telefono or instalacion.telefono_cliente,
+            },
+            'repartidor': {
+                'nombre': instalacion.repartidor.usuario.get_full_name() if instalacion.repartidor else 'Sin asignar'
+            },
+            'juegos': juegos,
+            'precio_juegos': str(int(precio_juegos_total)),
+            'precio_distancia': str(int(precio_distancia)) if precio_distancia > 0 else '0',
+            'kilometros': kilometros,
+            'total': str(int(total_reserva)),
+            'mapa_url': None  # Puede agregarse en el futuro si se guarda en el modelo
+        }
+        
+        return JsonResponse(data)
+    except Instalacion.DoesNotExist:
+        return JsonResponse({'error': 'Instalación no encontrada'}, status=404)
+
+
+@login_required
+@require_http_methods(["GET"])
+def detalle_retiro_json(request, retiro_id: int):
+    """Obtener detalles de un retiro"""
+    if request.user.tipo_usuario not in ['administrador', 'repartidor']:
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    try:
+        retiro = Retiro.objects.select_related(
+            'reserva__cliente__usuario',
+            'repartidor__usuario'
+        ).get(id=retiro_id)
+        
+        # Si es repartidor, solo puede ver sus propios retiros
+        if request.user.tipo_usuario == 'repartidor' and retiro.repartidor != request.user.repartidor:
+            return JsonResponse({'error': 'No autorizado'}, status=403)
+        
+        data = {
+            'id': retiro.id,
+            'fecha': retiro.fecha_retiro.strftime('%d/%m/%Y'),
+            'hora': retiro.hora_retiro.strftime('%H:%M'),
+            'direccion': retiro.reserva.direccion_evento,
+            'estado': retiro.estado_retiro,
+            'estado_display': retiro.get_estado_retiro_display(),
+            'observaciones': retiro.observaciones_retiro or '',
+            'cliente': {
+                'nombre': retiro.reserva.cliente.usuario.get_full_name(),
+                'email': retiro.reserva.cliente.usuario.email,
+                'telefono': retiro.reserva.cliente.usuario.telefono or '-',
+            },
+            'repartidor': {
+                'nombre': retiro.repartidor.usuario.get_full_name() if retiro.repartidor else 'Sin asignar'
+            }
+        }
+        
+        return JsonResponse(data)
+    except Retiro.DoesNotExist:
+        return JsonResponse({'error': 'Retiro no encontrado'}, status=404)
+
 # --------- CRUD de Juegos Inflables (solo administrador) ---------
 
 @login_required
@@ -756,6 +1069,9 @@ def juego_detail_json(request, juego_id: int):
     
     try:
         juego = Juego.objects.get(id=juego_id)
+        # Obtener URL completa de la imagen si existe
+        foto_url = request.build_absolute_uri(juego.foto.url) if juego.foto else ''
+        
         return JsonResponse({
             'id': juego.id,
             'nombre': juego.nombre,
@@ -765,13 +1081,14 @@ def juego_detail_json(request, juego_id: int):
             'capacidad_personas': juego.capacidad_personas,
             'peso_maximo': juego.peso_maximo,
             'precio_base': int(juego.precio_base),
-            'foto': juego.foto or '',
+            'foto': foto_url,
             'estado': juego.estado,
             'categoria_choices': Juego.CATEGORIA_CHOICES,
             'estado_choices': Juego.ESTADO_CHOICES,
         })
     except Juego.DoesNotExist:
         return JsonResponse({'error': 'Juego no encontrado'}, status=404)
+
 
 
 @login_required
@@ -790,10 +1107,13 @@ def juego_create_json(request):
     capacidad_personas = request.POST.get('capacidad_personas', '').strip()
     peso_maximo = request.POST.get('peso_maximo', '').strip()
     precio_base = request.POST.get('precio_base', '').strip()
-    foto = request.POST.get('foto', '').strip()
-    estado = request.POST.get('estado', 'disponible').strip()
+    foto = request.FILES.get('foto')  # Cambio: Ahora recibimos un archivo
+    estado = request.POST.get('estado', 'habilitado').strip()
 
     errors = []
+    capacidad = None
+    peso = None
+    precio = None
     
     # Validaciones
     if not nombre:
@@ -804,37 +1124,54 @@ def juego_create_json(request):
     if len(descripcion) > 1000:
         errors.append('La descripción no puede exceder 1000 caracteres')
     
-    if categoria not in [choice[0] for choice in Juego.CATEGORIA_CHOICES]:
-        errors.append('Categoría inválida')
+    if not categoria or categoria not in [choice[0] for choice in Juego.CATEGORIA_CHOICES]:
+        errors.append('Categoría inválida o no seleccionada')
     
     if not dimensiones:
         errors.append('Las dimensiones son obligatorias')
     elif len(dimensiones) > 50:
         errors.append('Las dimensiones no pueden exceder 50 caracteres')
     
-    try:
-        capacidad = int(capacidad_personas)
-        if capacidad <= 0:
-            errors.append('La capacidad debe ser mayor a 0')
-    except (ValueError, TypeError):
-        errors.append('La capacidad debe ser un número válido')
+    if not capacidad_personas:
+        errors.append('La capacidad de personas es obligatoria')
+    else:
+        try:
+            capacidad = int(capacidad_personas)
+            if capacidad <= 0:
+                errors.append('La capacidad debe ser mayor a 0')
+        except (ValueError, TypeError):
+            errors.append('La capacidad debe ser un número válido')
     
-    try:
-        peso = int(peso_maximo)
-        if peso <= 0:
-            errors.append('El peso máximo debe ser mayor a 0')
-    except (ValueError, TypeError):
-        errors.append('El peso máximo debe ser un número válido')
+    if not peso_maximo:
+        errors.append('El peso máximo es obligatorio')
+    else:
+        try:
+            peso = int(peso_maximo)
+            if peso <= 0:
+                errors.append('El peso máximo debe ser mayor a 0')
+        except (ValueError, TypeError):
+            errors.append('El peso máximo debe ser un número válido')
     
-    try:
-        precio = int(precio_base)
-        if precio < 1:
-            errors.append('El precio base debe ser un número entero mayor a 0')
-    except (ValueError, TypeError):
-        errors.append('El precio base debe ser un número entero válido')
+    if not precio_base:
+        errors.append('El precio base es obligatorio')
+    else:
+        try:
+            precio = int(precio_base)
+            if precio < 1:
+                errors.append('El precio base debe ser un número entero mayor a 0')
+        except (ValueError, TypeError):
+            errors.append('El precio base debe ser un número entero válido')
     
-    if len(foto) > 200:
-        errors.append('La URL de la foto no puede exceder 200 caracteres')
+    # Validar foto si se proporciona
+    if foto:
+        # Validar tamaño (máximo 5MB)
+        if foto.size > 5 * 1024 * 1024:
+            errors.append('La imagen no puede exceder 5MB')
+        
+        # Validar tipo de archivo
+        allowed_types = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp']
+        if foto.content_type not in allowed_types:
+            errors.append('Formato de imagen no válido. Use JPG, PNG, GIF o WEBP')
     
     if estado not in [choice[0] for choice in Juego.ESTADO_CHOICES]:
         errors.append('Estado inválido')
@@ -854,7 +1191,7 @@ def juego_create_json(request):
             capacidad_personas=capacidad,
             peso_maximo=peso,
             precio_base=precio,
-            foto=foto or None,
+            foto=foto if foto else None,
             estado=estado,
         )
         return JsonResponse({
@@ -871,6 +1208,603 @@ def juego_create_json(request):
 
 @login_required
 @require_http_methods(["POST"])
+def cambiar_estado_reparto(request, tipo_reparto: str, reparto_id: int):
+    """Cambiar el estado de una instalación o retiro"""
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    nuevo_estado = request.POST.get('nuevo_estado')
+    observaciones = request.POST.get('observaciones', '')
+    
+    if not nuevo_estado:
+        return JsonResponse({'success': False, 'errors': ['Debe seleccionar un estado']}, status=400)
+    
+    try:
+        if tipo_reparto == 'instalacion':
+            instalacion = Instalacion.objects.get(id=reparto_id)
+            # Validar estado
+            estados_validos = [choice[0] for choice in instalacion._meta.get_field('estado_instalacion').choices]
+            if nuevo_estado not in estados_validos:
+                return JsonResponse({'success': False, 'errors': ['Estado inválido']}, status=400)
+            
+            instalacion.estado_instalacion = nuevo_estado
+            if observaciones:
+                obs_actual = instalacion.observaciones_instalacion or ''
+                instalacion.observaciones_instalacion = f"{obs_actual}\n[{timezone.now().strftime('%d/%m/%Y %H:%M')}] {observaciones}".strip()
+            instalacion.save()
+            message = 'Estado de instalación actualizado correctamente'
+            
+        elif tipo_reparto == 'retiro':
+            retiro = Retiro.objects.get(id=reparto_id)
+            # Validar estado
+            estados_validos = [choice[0] for choice in retiro._meta.get_field('estado_retiro').choices]
+            if nuevo_estado not in estados_validos:
+                return JsonResponse({'success': False, 'errors': ['Estado inválido']}, status=400)
+            
+            retiro.estado_retiro = nuevo_estado
+            if observaciones:
+                obs_actual = retiro.observaciones_retiro or ''
+                retiro.observaciones_retiro = f"{obs_actual}\n[{timezone.now().strftime('%d/%m/%Y %H:%M')}] {observaciones}".strip()
+            retiro.save()
+            message = 'Estado de retiro actualizado correctamente'
+        else:
+            return JsonResponse({'success': False, 'errors': ['Tipo de reparto inválido']}, status=400)
+        
+        return JsonResponse({'success': True, 'message': message})
+    
+    except (Instalacion.DoesNotExist, Retiro.DoesNotExist):
+        return JsonResponse({'success': False, 'errors': ['Reparto no encontrado']}, status=404)
+
+
+# --------- Endpoints para Repartidores ---------
+
+@login_required
+@require_http_methods(["POST"])
+def cambiar_estado_repartidor(request):
+    """Cambiar el estado del repartidor actual"""
+    if request.user.tipo_usuario != 'repartidor':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    nuevo_estado = request.POST.get('nuevo_estado')
+    
+    if not nuevo_estado:
+        return JsonResponse({'success': False, 'errors': ['Debe seleccionar un estado']}, status=400)
+    
+    try:
+        repartidor = request.user.repartidor
+        # Validar estado
+        estados_validos = [choice[0] for choice in repartidor._meta.get_field('estado').choices]
+        if nuevo_estado not in estados_validos:
+            return JsonResponse({'success': False, 'errors': ['Estado inválido']}, status=400)
+        
+        repartidor.estado = nuevo_estado
+        repartidor.save()
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'Estado actualizado a: {repartidor.get_estado_display()}'
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'errors': [str(e)]}, status=400)
+
+
+@login_required
+@require_http_methods(["GET"])
+def detalle_instalacion_json(request, instalacion_id: int):
+    """Obtener detalles de una instalación"""
+    if request.user.tipo_usuario not in ['administrador', 'repartidor']:
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    try:
+        instalacion = Instalacion.objects.select_related(
+            'reserva__cliente__usuario',
+            'repartidor__usuario'
+        ).get(id=instalacion_id)
+        
+        # Si es repartidor, solo puede ver sus propias instalaciones
+        if request.user.tipo_usuario == 'repartidor' and instalacion.repartidor != request.user.repartidor:
+            return JsonResponse({'error': 'No autorizado'}, status=403)
+        
+        # Obtener juegos de la reserva
+        juegos = []
+        precio_juegos_total = 0.0
+        for detalle in instalacion.reserva.detalles.all():
+            subtotal_juego = float(detalle.cantidad * detalle.precio_unitario)
+            precio_juegos_total += subtotal_juego
+            
+            # Intentar obtener URL de imagen del juego
+            imagen_url = None
+            if detalle.juego.foto:
+                imagen_url = detalle.juego.foto
+            
+            juegos.append({
+                'nombre': detalle.juego.nombre,
+                'cantidad': detalle.cantidad,
+                'precio': str(detalle.precio_unitario),
+                'imagen_url': imagen_url
+            })
+        
+        # Calcular precio de distancia (total - precio juegos)
+        total_reserva = float(instalacion.reserva.total_reserva)
+        precio_distancia = total_reserva - precio_juegos_total
+        kilometros = None
+        
+        # Si hay precio de distancia, calcular kilómetros ($1.000 por km)
+        if precio_distancia > 0:
+            kilometros = int(precio_distancia / 1000)
+        
+        data = {
+            'id': instalacion.id,
+            'fecha': instalacion.fecha_instalacion.strftime('%d/%m/%Y'),
+            'hora': instalacion.hora_instalacion.strftime('%H:%M'),
+            'direccion': instalacion.direccion_instalacion,
+            'telefono': instalacion.telefono_cliente,
+            'estado': instalacion.estado_instalacion,
+            'estado_display': instalacion.get_estado_instalacion_display(),
+            'observaciones': instalacion.observaciones_instalacion or '',
+            'cliente': {
+                'nombre': instalacion.reserva.cliente.usuario.get_full_name(),
+                'email': instalacion.reserva.cliente.usuario.email,
+                'telefono': instalacion.reserva.cliente.usuario.telefono or instalacion.telefono_cliente,
+            },
+            'repartidor': {
+                'nombre': instalacion.repartidor.usuario.get_full_name() if instalacion.repartidor else 'Sin asignar'
+            },
+            'juegos': juegos,
+            'precio_juegos': str(int(precio_juegos_total)),
+            'precio_distancia': str(int(precio_distancia)) if precio_distancia > 0 else '0',
+            'kilometros': kilometros,
+            'total': str(int(total_reserva)),
+            'mapa_url': None  # Puede agregarse en el futuro si se guarda en el modelo
+        }
+        
+        return JsonResponse(data)
+    except Instalacion.DoesNotExist:
+        return JsonResponse({'error': 'Instalación no encontrada'}, status=404)
+
+
+@login_required
+@require_http_methods(["GET"])
+def detalle_retiro_json(request, retiro_id: int):
+    """Obtener detalles de un retiro"""
+    if request.user.tipo_usuario not in ['administrador', 'repartidor']:
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    try:
+        retiro = Retiro.objects.select_related(
+            'reserva__cliente__usuario',
+            'repartidor__usuario'
+        ).get(id=retiro_id)
+        
+        # Si es repartidor, solo puede ver sus propios retiros
+        if request.user.tipo_usuario == 'repartidor' and retiro.repartidor != request.user.repartidor:
+            return JsonResponse({'error': 'No autorizado'}, status=403)
+        
+        data = {
+            'id': retiro.id,
+            'fecha': retiro.fecha_retiro.strftime('%d/%m/%Y'),
+            'hora': retiro.hora_retiro.strftime('%H:%M'),
+            'direccion': retiro.reserva.direccion_evento,
+            'estado': retiro.estado_retiro,
+            'estado_display': retiro.get_estado_retiro_display(),
+            'observaciones': retiro.observaciones_retiro or '',
+            'cliente': {
+                'nombre': retiro.reserva.cliente.usuario.get_full_name(),
+                'email': retiro.reserva.cliente.usuario.email,
+                'telefono': retiro.reserva.cliente.usuario.telefono or '-',
+            },
+            'repartidor': {
+                'nombre': retiro.repartidor.usuario.get_full_name() if retiro.repartidor else 'Sin asignar'
+            }
+        }
+        
+        return JsonResponse(data)
+    except Retiro.DoesNotExist:
+        return JsonResponse({'error': 'Retiro no encontrado'}, status=404)
+
+
+@login_required
+@require_http_methods(["POST"])
+def actualizar_estado_reparto_repartidor(request, tipo_reparto: str, reparto_id: int):
+    """Actualizar estado de reparto por el repartidor"""
+    if request.user.tipo_usuario != 'repartidor':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    nuevo_estado = request.POST.get('nuevo_estado')
+    observaciones = request.POST.get('observaciones', '')
+    
+    if not nuevo_estado:
+        return JsonResponse({'success': False, 'errors': ['Debe seleccionar un estado']}, status=400)
+    
+    try:
+        if tipo_reparto == 'instalacion':
+            instalacion = Instalacion.objects.get(id=reparto_id)
+            
+            # Verificar que el repartidor sea el asignado
+            if instalacion.repartidor != request.user.repartidor:
+                return JsonResponse({'success': False, 'errors': ['No autorizado para actualizar esta instalación']}, status=403)
+            
+            # Validar estado
+            estados_validos = [choice[0] for choice in instalacion._meta.get_field('estado_instalacion').choices]
+            if nuevo_estado not in estados_validos:
+                return JsonResponse({'success': False, 'errors': ['Estado inválido']}, status=400)
+            
+            instalacion.estado_instalacion = nuevo_estado
+            if observaciones:
+                obs_actual = instalacion.observaciones_instalacion or ''
+                instalacion.observaciones_instalacion = f"{obs_actual}\n[{timezone.now().strftime('%d/%m/%Y %H:%M')}] {observaciones}".strip()
+            instalacion.save()
+            message = 'Estado de instalación actualizado'
+            
+        elif tipo_reparto == 'retiro':
+            retiro = Retiro.objects.get(id=reparto_id)
+            
+            # Verificar que el repartidor sea el asignado
+            if retiro.repartidor != request.user.repartidor:
+                return JsonResponse({'success': False, 'errors': ['No autorizado para actualizar este retiro']}, status=403)
+            
+            # Validar estado
+            estados_validos = [choice[0] for choice in retiro._meta.get_field('estado_retiro').choices]
+            if nuevo_estado not in estados_validos:
+                return JsonResponse({'success': False, 'errors': ['Estado inválido']}, status=400)
+            
+            retiro.estado_retiro = nuevo_estado
+            if observaciones:
+                obs_actual = retiro.observaciones_retiro or ''
+                retiro.observaciones_retiro = f"{obs_actual}\n[{timezone.now().strftime('%d/%m/%Y %H:%M')}] {observaciones}".strip()
+            retiro.save()
+            message = 'Estado de retiro actualizado'
+        else:
+            return JsonResponse({'success': False, 'errors': ['Tipo de reparto inválido']}, status=400)
+        
+        return JsonResponse({'success': True, 'message': message})
+    
+    except (Instalacion.DoesNotExist, Retiro.DoesNotExist):
+        return JsonResponse({'success': False, 'errors': ['Reparto no encontrado']}, status=404)
+
+
+@login_required
+@require_http_methods(["POST"])
+def marcar_reparto_realizado(request, tipo_reparto: str, reparto_id: int):
+    """Marcar reparto como realizado con información de pago (solo repartidores)"""
+    if request.user.tipo_usuario != 'repartidor':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    observaciones = request.POST.get('observaciones', '')
+    
+    try:
+        if tipo_reparto == 'instalacion':
+            instalacion = Instalacion.objects.get(id=reparto_id)
+            
+            # Verificar que el repartidor sea el asignado
+            if instalacion.repartidor != request.user.repartidor:
+                return JsonResponse({'success': False, 'errors': ['No autorizado para actualizar esta instalación']}, status=403)
+            
+            # Validar campos de pago (requeridos para instalación)
+            metodo_pago = request.POST.get('metodo_pago')
+            comprobante_pago = request.FILES.get('comprobante_pago')
+            hora_retiro = request.POST.get('hora_retiro')
+            
+            if not metodo_pago:
+                return JsonResponse({'success': False, 'errors': ['Debe seleccionar un método de pago']}, status=400)
+            
+            # Solo requerir comprobante si el método de pago es transferencia
+            if metodo_pago == 'transferencia' and not comprobante_pago:
+                return JsonResponse({'success': False, 'errors': ['Debe adjuntar el comprobante de transferencia']}, status=400)
+            
+            # Actualizar instalación
+            instalacion.estado_instalacion = 'realizada'
+            instalacion.metodo_pago = metodo_pago
+            if comprobante_pago:
+                instalacion.comprobante_pago = comprobante_pago
+            
+            # Actualizar hora de retiro si se proporcionó
+            if hora_retiro:
+                try:
+                    # Buscar el retiro asociado a esta reserva
+                    retiro = Retiro.objects.filter(reserva=instalacion.reserva).first()
+                    if retiro:
+                        from datetime import datetime
+                        hora_obj = datetime.strptime(hora_retiro, '%H:%M').time()
+                        retiro.hora_retiro = hora_obj
+                        retiro.save()
+                        obs_adicional = f"\nHora de retiro actualizada: {hora_retiro}"
+                    else:
+                        obs_adicional = f"\nHora de retiro solicitada: {hora_retiro} (retiro no encontrado)"
+                except Exception as e:
+                    obs_adicional = f"\nError al actualizar hora de retiro: {str(e)}"
+            else:
+                obs_adicional = ""
+            
+            if observaciones:
+                obs_actual = instalacion.observaciones_instalacion or ''
+                instalacion.observaciones_instalacion = f"{obs_actual}\n[{timezone.now().strftime('%d/%m/%Y %H:%M')}] Realizado por {request.user.get_full_name()}\nMétodo de pago: {instalacion.get_metodo_pago_display()}\n{observaciones}{obs_adicional}".strip()
+            else:
+                obs_actual = instalacion.observaciones_instalacion or ''
+                instalacion.observaciones_instalacion = f"{obs_actual}\n[{timezone.now().strftime('%d/%m/%Y %H:%M')}] Realizado por {request.user.get_full_name()}\nMétodo de pago: {instalacion.get_metodo_pago_display()}{obs_adicional}".strip()
+            
+            instalacion.save()
+            message = 'Instalación marcada como realizada'
+            if hora_retiro:
+                message += f'. Hora de retiro actualizada: {hora_retiro}'
+            
+        elif tipo_reparto == 'retiro':
+            retiro = Retiro.objects.get(id=reparto_id)
+            
+            # Verificar que el repartidor sea el asignado
+            if retiro.repartidor != request.user.repartidor:
+                return JsonResponse({'success': False, 'errors': ['No autorizado para actualizar este retiro']}, status=403)
+            
+            # Actualizar retiro
+            retiro.estado_retiro = 'realizado'
+            
+            if observaciones:
+                obs_actual = retiro.observaciones_retiro or ''
+                retiro.observaciones_retiro = f"{obs_actual}\n[{timezone.now().strftime('%d/%m/%Y %H:%M')}] Realizado por {request.user.get_full_name()}\n{observaciones}".strip()
+            else:
+                obs_actual = retiro.observaciones_retiro or ''
+                retiro.observaciones_retiro = f"{obs_actual}\n[{timezone.now().strftime('%d/%m/%Y %H:%M')}] Realizado por {request.user.get_full_name()}".strip()
+            
+            retiro.save()
+            message = 'Retiro marcado como realizado'
+        else:
+            return JsonResponse({'success': False, 'errors': ['Tipo de reparto inválido']}, status=400)
+        
+        return JsonResponse({'success': True, 'message': message})
+    
+    except (Instalacion.DoesNotExist, Retiro.DoesNotExist):
+        return JsonResponse({'success': False, 'errors': ['Reparto no encontrado']}, status=404)
+
+
+@login_required
+@require_http_methods(["POST"])
+def registrar_incidente(request, tipo_reparto: str, reparto_id: int):
+    """Registrar un incidente en una instalación o retiro"""
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    tipo_incidente = request.POST.get('tipo_incidente')
+    descripcion = request.POST.get('descripcion', '').strip()
+    solucion = request.POST.get('solucion', '').strip()
+    
+    if not tipo_incidente or not descripcion:
+        return JsonResponse({'success': False, 'errors': ['Complete todos los campos obligatorios']}, status=400)
+    
+    # Formatear el incidente
+    timestamp = timezone.now().strftime('%d/%m/%Y %H:%M')
+    incidente_texto = f"\n--- INCIDENTE [{timestamp}] ---\nTipo: {tipo_incidente}\nDescripción: {descripcion}"
+    if solucion:
+        incidente_texto += f"\nSolución: {solucion}"
+    incidente_texto += "\n"
+    
+    try:
+        if tipo_reparto == 'instalacion':
+            instalacion = Instalacion.objects.get(id=reparto_id)
+            obs_actual = instalacion.observaciones_instalacion or ''
+            instalacion.observaciones_instalacion = (obs_actual + incidente_texto).strip()
+            instalacion.save()
+            message = 'Incidente registrado en la instalación'
+            
+        elif tipo_reparto == 'retiro':
+            retiro = Retiro.objects.get(id=reparto_id)
+            obs_actual = retiro.observaciones_retiro or ''
+            retiro.observaciones_retiro = (obs_actual + incidente_texto).strip()
+            retiro.save()
+            message = 'Incidente registrado en el retiro'
+        else:
+            return JsonResponse({'success': False, 'errors': ['Tipo de reparto inválido']}, status=400)
+        
+        return JsonResponse({'success': True, 'message': message})
+    
+    except (Instalacion.DoesNotExist, Retiro.DoesNotExist):
+        return JsonResponse({'success': False, 'errors': ['Reparto no encontrado']}, status=404)
+
+
+# --------- Endpoints para Repartidores ---------
+
+@login_required
+@require_http_methods(["POST"])
+def cambiar_estado_repartidor(request):
+    """Cambiar el estado del repartidor actual"""
+    if request.user.tipo_usuario != 'repartidor':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    nuevo_estado = request.POST.get('nuevo_estado')
+    
+    if not nuevo_estado:
+        return JsonResponse({'success': False, 'errors': ['Debe seleccionar un estado']}, status=400)
+    
+    try:
+        repartidor = request.user.repartidor
+        # Validar estado
+        estados_validos = [choice[0] for choice in repartidor._meta.get_field('estado').choices]
+        if nuevo_estado not in estados_validos:
+            return JsonResponse({'success': False, 'errors': ['Estado inválido']}, status=400)
+        
+        repartidor.estado = nuevo_estado
+        repartidor.save()
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'Estado actualizado a: {repartidor.get_estado_display()}'
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'errors': [str(e)]}, status=400)
+
+
+@login_required
+@require_http_methods(["GET"])
+def detalle_instalacion_json(request, instalacion_id: int):
+    """Obtener detalles de una instalación"""
+    if request.user.tipo_usuario not in ['administrador', 'repartidor']:
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    try:
+        instalacion = Instalacion.objects.select_related(
+            'reserva__cliente__usuario',
+            'repartidor__usuario'
+        ).get(id=instalacion_id)
+        
+        # Si es repartidor, solo puede ver sus propias instalaciones
+        if request.user.tipo_usuario == 'repartidor' and instalacion.repartidor != request.user.repartidor:
+            return JsonResponse({'error': 'No autorizado'}, status=403)
+        
+        # Obtener juegos de la reserva
+        juegos = []
+        precio_juegos_total = 0.0
+        for detalle in instalacion.reserva.detalles.all():
+            subtotal_juego = float(detalle.cantidad * detalle.precio_unitario)
+            precio_juegos_total += subtotal_juego
+            
+            # Intentar obtener URL de imagen del juego
+            imagen_url = None
+            if detalle.juego.foto:
+                imagen_url = detalle.juego.foto
+            
+            juegos.append({
+                'nombre': detalle.juego.nombre,
+                'cantidad': detalle.cantidad,
+                'precio': str(detalle.precio_unitario),
+                'imagen_url': imagen_url
+            })
+        
+        # Calcular precio de distancia (total - precio juegos)
+        total_reserva = float(instalacion.reserva.total_reserva)
+        precio_distancia = total_reserva - precio_juegos_total
+        kilometros = None
+        
+        # Si hay precio de distancia, calcular kilómetros ($1.000 por km)
+        if precio_distancia > 0:
+            kilometros = int(precio_distancia / 1000)
+        
+        data = {
+            'id': instalacion.id,
+            'fecha': instalacion.fecha_instalacion.strftime('%d/%m/%Y'),
+            'hora': instalacion.hora_instalacion.strftime('%H:%M'),
+            'direccion': instalacion.direccion_instalacion,
+            'telefono': instalacion.telefono_cliente,
+            'estado': instalacion.estado_instalacion,
+            'estado_display': instalacion.get_estado_instalacion_display(),
+            'observaciones': instalacion.observaciones_instalacion or '',
+            'cliente': {
+                'nombre': instalacion.reserva.cliente.usuario.get_full_name(),
+                'email': instalacion.reserva.cliente.usuario.email,
+                'telefono': instalacion.reserva.cliente.usuario.telefono or instalacion.telefono_cliente,
+            },
+            'repartidor': {
+                'nombre': instalacion.repartidor.usuario.get_full_name() if instalacion.repartidor else 'Sin asignar'
+            },
+            'juegos': juegos,
+            'precio_juegos': str(int(precio_juegos_total)),
+            'precio_distancia': str(int(precio_distancia)) if precio_distancia > 0 else '0',
+            'kilometros': kilometros,
+            'total': str(int(total_reserva)),
+            'mapa_url': None  # Puede agregarse en el futuro si se guarda en el modelo
+        }
+        
+        return JsonResponse(data)
+    except Instalacion.DoesNotExist:
+        return JsonResponse({'error': 'Instalación no encontrada'}, status=404)
+
+
+@login_required
+@require_http_methods(["GET"])
+def detalle_retiro_json(request, retiro_id: int):
+    """Obtener detalles de un retiro"""
+    if request.user.tipo_usuario not in ['administrador', 'repartidor']:
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    try:
+        retiro = Retiro.objects.select_related(
+            'reserva__cliente__usuario',
+            'repartidor__usuario'
+        ).get(id=retiro_id)
+        
+        # Si es repartidor, solo puede ver sus propios retiros
+        if request.user.tipo_usuario == 'repartidor' and retiro.repartidor != request.user.repartidor:
+            return JsonResponse({'error': 'No autorizado'}, status=403)
+        
+        data = {
+            'id': retiro.id,
+            'fecha': retiro.fecha_retiro.strftime('%d/%m/%Y'),
+            'hora': retiro.hora_retiro.strftime('%H:%M'),
+            'direccion': retiro.reserva.direccion_evento,
+            'estado': retiro.estado_retiro,
+            'estado_display': retiro.get_estado_retiro_display(),
+            'observaciones': retiro.observaciones_retiro or '',
+            'cliente': {
+                'nombre': retiro.reserva.cliente.usuario.get_full_name(),
+                'email': retiro.reserva.cliente.usuario.email,
+                'telefono': retiro.reserva.cliente.usuario.telefono or '-',
+            },
+            'repartidor': {
+                'nombre': retiro.repartidor.usuario.get_full_name() if retiro.repartidor else 'Sin asignar'
+            }
+        }
+        
+        return JsonResponse(data)
+    except Retiro.DoesNotExist:
+        return JsonResponse({'error': 'Retiro no encontrado'}, status=404)
+
+
+@login_required
+@require_http_methods(["POST"])
+def actualizar_estado_reparto_repartidor(request, tipo_reparto: str, reparto_id: int):
+    """Actualizar estado de reparto por el repartidor"""
+    if request.user.tipo_usuario != 'repartidor':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    nuevo_estado = request.POST.get('nuevo_estado')
+    observaciones = request.POST.get('observaciones', '')
+    
+    if not nuevo_estado:
+        return JsonResponse({'success': False, 'errors': ['Debe seleccionar un estado']}, status=400)
+    
+    try:
+        if tipo_reparto == 'instalacion':
+            instalacion = Instalacion.objects.get(id=reparto_id)
+            
+            # Verificar que el repartidor sea el asignado
+            if instalacion.repartidor != request.user.repartidor:
+                return JsonResponse({'success': False, 'errors': ['No autorizado para actualizar esta instalación']}, status=403)
+            
+            # Validar estado
+            estados_validos = [choice[0] for choice in instalacion._meta.get_field('estado_instalacion').choices]
+            if nuevo_estado not in estados_validos:
+                return JsonResponse({'success': False, 'errors': ['Estado inválido']}, status=400)
+            
+            instalacion.estado_instalacion = nuevo_estado
+            if observaciones:
+                obs_actual = instalacion.observaciones_instalacion or ''
+                instalacion.observaciones_instalacion = f"{obs_actual}\n[{timezone.now().strftime('%d/%m/%Y %H:%M')}] {observaciones}".strip()
+            instalacion.save()
+            message = 'Estado de instalación actualizado'
+            
+        elif tipo_reparto == 'retiro':
+            retiro = Retiro.objects.get(id=reparto_id)
+            
+            # Verificar que el repartidor sea el asignado
+            if retiro.repartidor != request.user.repartidor:
+                return JsonResponse({'success': False, 'errors': ['No autorizado para actualizar este retiro']}, status=403)
+            
+            # Validar estado
+            estados_validos = [choice[0] for choice in retiro._meta.get_field('estado_retiro').choices]
+            if nuevo_estado not in estados_validos:
+                return JsonResponse({'success': False, 'errors': ['Estado inválido']}, status=400)
+            
+            retiro.estado_retiro = nuevo_estado
+            if observaciones:
+                obs_actual = retiro.observaciones_retiro or ''
+                retiro.observaciones_retiro = f"{obs_actual}\n[{timezone.now().strftime('%d/%m/%Y %H:%M')}] {observaciones}".strip()
+            retiro.save()
+            message = 'Estado de retiro actualizado'
+        else:
+            return JsonResponse({'success': False, 'errors': ['Tipo de reparto inválido']}, status=400)
+        
+        return JsonResponse({'success': True, 'message': message})
+    
+    except (Instalacion.DoesNotExist, Retiro.DoesNotExist):
+        return JsonResponse({'success': False, 'errors': ['Reparto no encontrado']}, status=404)
 def juego_update_json(request, juego_id: int):
     """
     Actualiza un juego inflable existente
@@ -890,7 +1824,8 @@ def juego_update_json(request, juego_id: int):
     capacidad_personas = request.POST.get('capacidad_personas', '').strip()
     peso_maximo = request.POST.get('peso_maximo', '').strip()
     precio_base = request.POST.get('precio_base', '').strip()
-    foto = request.POST.get('foto', '').strip()
+    foto = request.FILES.get('foto')  # Cambio: Ahora recibimos un archivo
+    eliminar_foto = request.POST.get('eliminar_foto') == 'true'  # Para eliminar foto existente
     estado = request.POST.get('estado', '').strip()
 
     errors = []
@@ -935,8 +1870,16 @@ def juego_update_json(request, juego_id: int):
     except (ValueError, TypeError):
         errors.append('El precio base debe ser un número entero válido')
     
-    if len(foto) > 200:
-        errors.append('La URL de la foto no puede exceder 200 caracteres')
+    # Validar foto si se proporciona una nueva
+    if foto:
+        # Validar tamaño (máximo 5MB)
+        if foto.size > 5 * 1024 * 1024:
+            errors.append('La imagen no puede exceder 5MB')
+        
+        # Validar tipo de archivo
+        allowed_types = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp']
+        if foto.content_type not in allowed_types:
+            errors.append('Formato de imagen no válido. Use JPG, PNG, GIF o WEBP')
     
     if not estado:
         errors.append('El estado es obligatorio')
@@ -957,7 +1900,20 @@ def juego_update_json(request, juego_id: int):
         juego.capacidad_personas = capacidad
         juego.peso_maximo = peso
         juego.precio_base = precio
-        juego.foto = foto or None
+        
+        # Manejar la foto
+        if foto:
+            # Si hay una foto anterior, eliminarla
+            if juego.foto:
+                juego.foto.delete(save=False)
+            juego.foto = foto
+        elif eliminar_foto:
+            # Eliminar la foto si se solicitó
+            if juego.foto:
+                juego.foto.delete(save=False)
+            juego.foto = None
+        # Si no hay foto nueva ni se solicita eliminar, mantener la existente
+        
         juego.estado = estado
         juego.save()
         

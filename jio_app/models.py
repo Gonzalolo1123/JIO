@@ -62,10 +62,8 @@ class Repartidor(models.Model):
     Información específica de los repartidores
     """
     ESTADO_CHOICES = [
-        ('disponible', 'Disponible'),
-        ('en_ruta', 'En Ruta'),
-        ('ocupado', 'Ocupado'),
-        ('inactivo', 'Inactivo'),
+        ('Habilitado', 'Habilitado'),
+        ('Deshabilitado', 'Deshabilitado'),
     ]
     
     usuario = models.OneToOneField(Usuario, on_delete=models.CASCADE, related_name='repartidor')
@@ -74,7 +72,7 @@ class Repartidor(models.Model):
     estado = models.CharField(
         max_length=20, 
         choices=ESTADO_CHOICES,
-        default='disponible'
+        default='Habilitado'
     )
     
     class Meta:
@@ -90,19 +88,14 @@ class Juego(models.Model):
     Modelo para los juegos inflables disponibles
     """
     CATEGORIA_CHOICES = [
-        ('castillo', 'Castillo'),
-        ('tobogan', 'Tobogán'),
-        ('obstaculos', 'Obstáculos'),
-        ('combo', 'Combo'),
-        ('deportivo', 'Deportivo'),
-        ('infantil', 'Infantil'),
+        ('Pequeño', 'Pequeño'),
+        ('Mediano', 'Mediano'),
+        ('Grande', 'Grande'),
     ]
     
     ESTADO_CHOICES = [
-        ('disponible', 'Disponible'),
-        ('mantenimiento', 'En Mantenimiento'),
-        ('reservado', 'Reservado'),
-        ('no_disponible', 'No Disponible'),
+        ('Habilitado', 'Habilitado'),
+        ('Deshabilitado', 'Deshabilitado'),
     ]
     
     nombre = models.CharField(max_length=100)
@@ -112,11 +105,11 @@ class Juego(models.Model):
     capacidad_personas = models.PositiveIntegerField()
     peso_maximo = models.PositiveIntegerField(help_text="Peso máximo en kg")
     precio_base = models.PositiveIntegerField()
-    foto = models.CharField(max_length=200, blank=True, null=True, help_text="URL de la imagen del juego")
+    foto = models.ImageField(upload_to='juegos/', blank=True, null=True, help_text="Imagen del juego inflable")
     estado = models.CharField(
         max_length=20, 
         choices=ESTADO_CHOICES, 
-        default='disponible',
+        default='Habilitado',
         help_text="Estado actual del juego inflable"
     )
     
@@ -132,9 +125,9 @@ class PrecioTemporada(models.Model):
     Precios por temporada para cada juego
     """
     TEMPORADA_CHOICES = [
-        ('alta', 'Temporada Alta'),
-        ('baja', 'Temporada Baja'),
-        ('especial', 'Temporada Especial'),
+        ('Alta', 'Temporada Alta'),
+        ('Baja', 'Temporada Baja'),
+        ('Especial', 'Temporada Especial'),
     ]
     
     juego = models.ForeignKey(Juego, on_delete=models.CASCADE, related_name='precios_temporada')
@@ -163,8 +156,8 @@ class Reserva(models.Model):
     Reservas de juegos inflables
     """
     ESTADO_CHOICES = [
-        ('pendiente', 'Pendiente'),
-        ('confirmada', 'Confirmada'),
+        ('Pendiente', 'Pendiente'),
+        ('Confirmada', 'Confirmada'),
         ('cancelada', 'Cancelada'),
         ('completada', 'Completada'),
     ]
@@ -227,6 +220,12 @@ class Instalacion(models.Model):
         ('cancelada', 'Cancelada'),
     ]
     
+    METODO_PAGO_CHOICES = [
+        ('efectivo', 'Efectivo'),
+        ('transferencia', 'Transferencia'),
+        ('otro', 'Otro'),
+    ]
+    
     reserva = models.OneToOneField(Reserva, on_delete=models.CASCADE, related_name='instalacion')
     repartidor = models.ForeignKey(Repartidor, on_delete=models.SET_NULL, null=True, blank=True)
     fecha_instalacion = models.DateField()
@@ -239,6 +238,10 @@ class Instalacion(models.Model):
         default='programada'
     )
     observaciones_instalacion = models.TextField(blank=True, null=True)
+    
+    # Información de pago
+    metodo_pago = models.CharField(max_length=20, choices=METODO_PAGO_CHOICES, blank=True, null=True)
+    comprobante_pago = models.ImageField(upload_to='comprobantes/', blank=True, null=True)
     
     class Meta:
         verbose_name = 'Instalación'

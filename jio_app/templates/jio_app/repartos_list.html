@@ -1,0 +1,362 @@
+{% extends 'jio_app/base_admin.html' %}
+{% load static %}
+
+{% block title %}Gestión de Repartos - JIO{% endblock %}
+
+{% block content %}
+<div class="panel-container">
+  <div class="panel-header">
+    <h1 class="panel-title">Gestión de Repartos</h1>
+  </div>
+
+  <!-- Filtros y búsqueda -->
+  <div class="form-card">
+    <form method="get" class="form-grid" style="grid-template-columns: 1fr 1fr auto; align-items: end;">
+      <label>Buscar
+        <input type="text" name="q" value="{{ query }}" placeholder="Cliente, repartidor o dirección">
+      </label>
+      <label>Estado
+        <select name="estado">
+          <option value="">Todos</option>
+          <option value="programada" {% if estado_filter == 'programada' %}selected{% endif %}>Programada</option>
+          <option value="en_ruta" {% if estado_filter == 'en_ruta' %}selected{% endif %}>En ruta</option>
+          <option value="realizada" {% if estado_filter == 'realizada' %}selected{% endif %}>Realizada</option>
+          <option value="cancelada" {% if estado_filter == 'cancelada' %}selected{% endif %}>Cancelada</option>
+        </select>
+      </label>
+      <button class="btn btn-secondary" type="submit">Filtrar</button>
+    </form>
+  </div>
+
+  <!-- Agenda del día -->
+  <div class="form-card" style="margin-top: 1rem;">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:.75rem;">
+      <h2 class="panel-title" style="font-size:1.25rem; color:#2E7D32; margin:0;">
+        <i class="fas fa-calendar-day"></i> Agenda de Hoy
+      </h2>
+      <span class="badge badge-info">{{ fecha_hoy|date:"d/m/Y" }}</span>
+    </div>
+    <div class="agenda-grid">
+      <!-- Instalaciones de hoy -->
+      <div class="agenda-section">
+        <h3 class="agenda-title">
+          <i class="fas fa-truck-loading"></i> Instalaciones ({{ instalaciones_hoy|length }})
+        </h3>
+        {% for inst in instalaciones_hoy %}
+        <div class="agenda-card agenda-instalacion">
+          <div class="agenda-time">{{ inst.hora_instalacion }}</div>
+          <div class="agenda-info">
+            <strong>{{ inst.reserva.cliente.usuario.get_full_name }}</strong>
+            <p>{{ inst.direccion_instalacion }}</p>
+            <span class="agenda-repartidor">
+              {% if inst.repartidor %}
+                <i class="fas fa-user"></i> {{ inst.repartidor.usuario.get_full_name }}
+              {% else %}
+                <i class="fas fa-exclamation-triangle"></i> Sin asignar
+              {% endif %}
+            </span>
+          </div>
+          <div class="agenda-actions">
+            <button class="btn-icon btn-primary" data-asignar-instalacion="{{ inst.id }}" title="Asignar repartidor">
+              <i class="fas fa-user-plus"></i>
+            </button>
+            <button class="btn-icon btn-secondary" data-ver-detalle="{{ inst.id }}" data-tipo="instalacion" title="Ver detalle">
+              <i class="fas fa-eye"></i>
+            </button>
+          </div>
+        </div>
+        {% empty %}
+        <p style="color:#7f8c8d; text-align:center; padding:1rem;">No hay instalaciones programadas para hoy</p>
+        {% endfor %}
+      </div>
+
+      <!-- Retiros de hoy -->
+      <div class="agenda-section">
+        <h3 class="agenda-title">
+          <i class="fas fa-truck-pickup"></i> Retiros ({{ retiros_hoy|length }})
+        </h3>
+        {% for ret in retiros_hoy %}
+        <div class="agenda-card agenda-retiro">
+          <div class="agenda-time">{{ ret.hora_retiro }}</div>
+          <div class="agenda-info">
+            <strong>{{ ret.reserva.cliente.usuario.get_full_name }}</strong>
+            <p>{{ ret.reserva.direccion_evento }}</p>
+            <span class="agenda-repartidor">
+              {% if ret.repartidor %}
+                <i class="fas fa-user"></i> {{ ret.repartidor.usuario.get_full_name }}
+              {% else %}
+                <i class="fas fa-exclamation-triangle"></i> Sin asignar
+              {% endif %}
+            </span>
+          </div>
+          <div class="agenda-actions">
+            <button class="btn-icon btn-primary" data-asignar-retiro="{{ ret.id }}" title="Asignar repartidor">
+              <i class="fas fa-user-plus"></i>
+            </button>
+            <button class="btn-icon btn-secondary" data-ver-detalle="{{ ret.id }}" data-tipo="retiro" title="Ver detalle">
+              <i class="fas fa-eye"></i>
+            </button>
+          </div>
+        </div>
+        {% empty %}
+        <p style="color:#7f8c8d; text-align:center; padding:1rem;">No hay retiros programados para hoy</p>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Tabla de Instalaciones -->
+  <div class="form-card" style="overflow:auto; margin-top:1rem;">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:.75rem;">
+      <h2 class="panel-title" style="font-size:1.25rem; color:#2E7D32; margin:0;">
+        <i class="fas fa-truck-loading"></i> Instalaciones
+      </h2>
+    </div>
+    <table class="table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Fecha</th>
+          <th>Hora</th>
+          <th>Cliente</th>
+          <th>Dirección</th>
+          <th>Repartidor</th>
+          <th>Estado</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for inst in instalaciones %}
+        <tr>
+          <td>{{ inst.id }}</td>
+          <td>{{ inst.fecha_instalacion|date:"d/m/Y" }}</td>
+          <td>{{ inst.hora_instalacion }}</td>
+          <td>{{ inst.reserva.cliente.usuario.get_full_name }}</td>
+          <td>{{ inst.direccion_instalacion|truncatewords:5 }}</td>
+          <td>
+            {% if inst.repartidor %}
+              <span class="badge badge-success">{{ inst.repartidor.usuario.get_full_name }}</span>
+            {% else %}
+              <span class="badge badge-warning">Sin asignar</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if inst.estado_instalacion == 'programada' %}
+              <span class="badge badge-info">Programada</span>
+            {% elif inst.estado_instalacion == 'realizada' %}
+              <span class="badge badge-success">Realizada</span>
+            {% elif inst.estado_instalacion == 'cancelada' %}
+              <span class="badge badge-danger">Cancelada</span>
+            {% else %}
+              <span class="badge badge-warning">Pendiente</span>
+            {% endif %}
+          </td>
+          <td style="white-space:nowrap;">
+            <button class="btn btn-sm btn-primary" data-asignar-instalacion="{{ inst.id }}">
+              <i class="fas fa-user-plus"></i>
+            </button>
+            <button class="btn btn-sm btn-secondary" data-cambiar-estado-instalacion="{{ inst.id }}">
+              <i class="fas fa-sync"></i>
+            </button>
+            <button class="btn btn-sm btn-warning" data-registrar-incidente="{{ inst.id }}" data-tipo="instalacion">
+              <i class="fas fa-exclamation-circle"></i>
+            </button>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="8">No hay instalaciones que coincidan.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Tabla de Retiros -->
+  <div class="form-card" style="overflow:auto; margin-top:1rem;">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:.75rem;">
+      <h2 class="panel-title" style="font-size:1.25rem; color:#2E7D32; margin:0;">
+        <i class="fas fa-truck-pickup"></i> Retiros
+      </h2>
+    </div>
+    <table class="table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Fecha</th>
+          <th>Hora</th>
+          <th>Cliente</th>
+          <th>Dirección</th>
+          <th>Repartidor</th>
+          <th>Estado</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ret in retiros %}
+        <tr>
+          <td>{{ ret.id }}</td>
+          <td>{{ ret.fecha_retiro|date:"d/m/Y" }}</td>
+          <td>{{ ret.hora_retiro }}</td>
+          <td>{{ ret.reserva.cliente.usuario.get_full_name }}</td>
+          <td>{{ ret.reserva.direccion_evento|truncatewords:5 }}</td>
+          <td>
+            {% if ret.repartidor %}
+              <span class="badge badge-success">{{ ret.repartidor.usuario.get_full_name }}</span>
+            {% else %}
+              <span class="badge badge-warning">Sin asignar</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if ret.estado_retiro == 'programado' %}
+              <span class="badge badge-info">Programado</span>
+            {% elif ret.estado_retiro == 'realizado' %}
+              <span class="badge badge-success">Realizado</span>
+            {% elif ret.estado_retiro == 'cancelado' %}
+              <span class="badge badge-danger">Cancelado</span>
+            {% else %}
+              <span class="badge badge-warning">Pendiente</span>
+            {% endif %}
+          </td>
+          <td style="white-space:nowrap;">
+            <button class="btn btn-sm btn-primary" data-asignar-retiro="{{ ret.id }}">
+              <i class="fas fa-user-plus"></i>
+            </button>
+            <button class="btn btn-sm btn-secondary" data-cambiar-estado-retiro="{{ ret.id }}">
+              <i class="fas fa-sync"></i>
+            </button>
+            <button class="btn btn-sm btn-warning" data-registrar-incidente="{{ ret.id }}" data-tipo="retiro">
+              <i class="fas fa-exclamation-circle"></i>
+            </button>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="8">No hay retiros que coincidan.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Modal: Asignar Repartidor -->
+  <div id="modalAsignarRepartidor" class="modal" aria-hidden="true">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Asignar Repartidor</h2>
+        <button class="modal-close" data-modal-close>&times;</button>
+      </div>
+      <form id="formAsignarRepartidor" class="form-grid">
+        {% csrf_token %}
+        <input type="hidden" name="reparto_id" id="asignarRepartoId">
+        <input type="hidden" name="tipo_reparto" id="asignarTipoReparto">
+        
+        <label>
+          Repartidor
+          <select name="repartidor_id" id="asignarRepartidorSelect" required>
+            <option value="">Seleccione un repartidor</option>
+            {% for rep in repartidores_disponibles %}
+            <option value="{{ rep.id }}" data-estado="{{ rep.repartidor.estado }}">
+              {{ rep.get_full_name }} - {{ rep.repartidor.get_estado_display }}
+            </option>
+            {% endfor %}
+          </select>
+        </label>
+
+        <label>
+          Observaciones
+          <textarea name="observaciones" rows="3" placeholder="Instrucciones especiales para el repartidor"></textarea>
+        </label>
+
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" data-modal-close>Cancelar</button>
+          <button type="submit" class="btn btn-primary">Asignar</button>
+        </div>
+      </form>
+    </div>
+    <div class="modal-backdrop" data-modal-close></div>
+  </div>
+
+  <!-- Modal: Cambiar Estado -->
+  <div id="modalCambiarEstado" class="modal" aria-hidden="true">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Cambiar Estado</h2>
+        <button class="modal-close" data-modal-close>&times;</button>
+      </div>
+      <form id="formCambiarEstado" class="form-grid">
+        {% csrf_token %}
+        <input type="hidden" name="reparto_id" id="estadoRepartoId">
+        <input type="hidden" name="tipo_reparto" id="estadoTipoReparto">
+        
+        <label>
+          Nuevo Estado
+          <select name="nuevo_estado" id="nuevoEstadoSelect" required>
+            <option value="">Seleccione un estado</option>
+          </select>
+        </label>
+
+        <label>
+          Observaciones
+          <textarea name="observaciones" rows="3" placeholder="Comentarios sobre el cambio de estado"></textarea>
+        </label>
+
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" data-modal-close>Cancelar</button>
+          <button type="submit" class="btn btn-primary">Actualizar</button>
+        </div>
+      </form>
+    </div>
+    <div class="modal-backdrop" data-modal-close></div>
+  </div>
+
+  <!-- Modal: Registrar Incidente -->
+  <div id="modalRegistrarIncidente" class="modal" aria-hidden="true">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Registrar Incidente</h2>
+        <button class="modal-close" data-modal-close>&times;</button>
+      </div>
+      <form id="formRegistrarIncidente" class="form-grid">
+        {% csrf_token %}
+        <input type="hidden" name="reparto_id" id="incidenteRepartoId">
+        <input type="hidden" name="tipo_reparto" id="incidenteTipoReparto">
+        
+        <label>
+          Tipo de Incidente
+          <select name="tipo_incidente" required>
+            <option value="">Seleccione tipo</option>
+            <option value="retraso">Retraso</option>
+            <option value="daño">Daño en el juego</option>
+            <option value="cliente_ausente">Cliente ausente</option>
+            <option value="direccion_incorrecta">Dirección incorrecta</option>
+            <option value="acceso_dificil">Acceso difícil</option>
+            <option value="otro">Otro</option>
+          </select>
+        </label>
+
+        <label>
+          Descripción del Incidente
+          <textarea name="descripcion" rows="4" required placeholder="Describa detalladamente el incidente"></textarea>
+        </label>
+
+        <label>
+          Solución Aplicada
+          <textarea name="solucion" rows="3" placeholder="¿Cómo se resolvió o qué se hizo?"></textarea>
+        </label>
+
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" data-modal-close>Cancelar</button>
+          <button type="submit" class="btn btn-warning">Registrar</button>
+        </div>
+      </form>
+    </div>
+    <div class="modal-backdrop" data-modal-close></div>
+  </div>
+
+  {% block extra_scripts %}
+  <script src="{% static 'js/repartos_list.js' %}"></script>
+  {% endblock %}
+</div>
+{% endblock %}
+
