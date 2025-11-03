@@ -123,19 +123,19 @@
             
             <div style="display:flex; justify-content:space-between; margin-bottom:0.5rem;">
               <span>Precio Juegos:</span>
-              <span style="font-weight:600;">$${data.precio_juegos || data.total}</span>
+              <span style="font-weight:600;">${formatearPrecioChileno(data.precio_juegos || data.total)}</span>
             </div>
             
             ${data.precio_distancia && parseFloat(data.precio_distancia) > 0 ? `
             <div style="display:flex; justify-content:space-between; margin-bottom:0.5rem; padding-bottom:0.5rem; border-bottom:1px dashed #ccc;">
-              <span style="font-size:0.875rem; color:#666;">Distancia (${data.kilometros || '?'} km × $1.000):</span>
-              <span style="font-weight:600;">$${data.precio_distancia}</span>
+              <span style="font-size:0.875rem; color:#666;">Distancia (${data.kilometros || '?'} km × ${formatearPrecioChileno(1000)}):</span>
+              <span style="font-weight:600;">${formatearPrecioChileno(data.precio_distancia)}</span>
             </div>
             ` : ''}
             
             <div style="display:flex; justify-content:space-between; font-size:1.25rem; font-weight:700; color:#E65100; padding-top:0.5rem; border-top:2px solid #E65100;">
               <span>TOTAL:</span>
-              <span>$${data.total}</span>
+              <span>${formatearPrecioChileno(data.total)}</span>
             </div>
           </div>
 

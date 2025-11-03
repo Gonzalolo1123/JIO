@@ -23,7 +23,7 @@ def index(request):
     Vista para la página principal del sitio público
     """
     # Obtener todos los juegos habilitados ordenados por categoría y nombre
-    juegos_disponibles = Juego.objects.filter(estado='habilitado').order_by('categoria', 'nombre')
+    juegos_disponibles = Juego.objects.filter(estado__iexact='habilitado').order_by('categoria', 'nombre')
     
     context = {
         'juegos_disponibles': juegos_disponibles,
@@ -35,7 +35,7 @@ def calendario_reservas(request):
     Vista para el calendario de reservas
     """
     # Obtener todos los juegos habilitados para mostrar en el calendario
-    juegos_disponibles = Juego.objects.filter(estado='habilitado')
+    juegos_disponibles = Juego.objects.filter(estado__iexact='habilitado')
     
     context = {
         'juegos_disponibles': juegos_disponibles,
@@ -1033,7 +1033,34 @@ def juegos_list(request):
     categoria_filter = request.GET.get('categoria', '').strip()
     estado_filter = request.GET.get('estado', '').strip()
     
-    base_qs = Juego.objects.all().order_by('nombre')
+    # Parámetros de ordenamiento
+    order_by = request.GET.get('order_by', 'nombre').strip()
+    direction = request.GET.get('direction', 'asc').strip()
+    
+    # Campos válidos para ordenar
+    valid_order_fields = {
+        'id': 'id',
+        'nombre': 'nombre',
+        'categoria': 'categoria',
+        'capacidad_personas': 'capacidad_personas',
+        'precio_base': 'precio_base',
+        'estado': 'estado',
+    }
+    
+    # Validar campo de ordenamiento
+    if order_by not in valid_order_fields:
+        order_by = 'nombre'
+    
+    # Validar dirección
+    if direction not in ['asc', 'desc']:
+        direction = 'asc'
+    
+    # Aplicar ordenamiento
+    order_field = valid_order_fields[order_by]
+    if direction == 'desc':
+        order_field = '-' + order_field
+    
+    base_qs = Juego.objects.all().order_by(order_field)
     
     if query:
         base_qs = base_qs.filter(
@@ -1053,6 +1080,8 @@ def juegos_list(request):
         'query': query,
         'categoria_filter': categoria_filter,
         'estado_filter': estado_filter,
+        'order_by': order_by,
+        'direction': direction,
         'categoria_choices': Juego.CATEGORIA_CHOICES,
         'estado_choices': Juego.ESTADO_CHOICES,
     })
@@ -1077,7 +1106,10 @@ def juego_detail_json(request, juego_id: int):
             'nombre': juego.nombre,
             'descripcion': juego.descripcion or '',
             'categoria': juego.categoria,
-            'dimensiones': juego.dimensiones,
+            'dimension_largo': float(juego.dimension_largo),
+            'dimension_ancho': float(juego.dimension_ancho),
+            'dimension_alto': float(juego.dimension_alto),
+            'dimensiones': juego.dimensiones,  # Para compatibilidad
             'capacidad_personas': juego.capacidad_personas,
             'peso_maximo': juego.peso_maximo,
             'precio_base': int(juego.precio_base),
@@ -1103,7 +1135,9 @@ def juego_create_json(request):
     nombre = request.POST.get('nombre', '').strip()
     descripcion = request.POST.get('descripcion', '').strip()
     categoria = request.POST.get('categoria', '').strip()
-    dimensiones = request.POST.get('dimensiones', '').strip()
+    dimension_largo = request.POST.get('dimension_largo', '').strip()
+    dimension_ancho = request.POST.get('dimension_ancho', '').strip()
+    dimension_alto = request.POST.get('dimension_alto', '').strip()
     capacidad_personas = request.POST.get('capacidad_personas', '').strip()
     peso_maximo = request.POST.get('peso_maximo', '').strip()
     precio_base = request.POST.get('precio_base', '').strip()
@@ -1114,6 +1148,9 @@ def juego_create_json(request):
     capacidad = None
     peso = None
     precio = None
+    largo = None
+    ancho = None
+    alto = None
     
     # Validaciones
     if not nombre:
@@ -1127,10 +1164,36 @@ def juego_create_json(request):
     if not categoria or categoria not in [choice[0] for choice in Juego.CATEGORIA_CHOICES]:
         errors.append('Categoría inválida o no seleccionada')
     
-    if not dimensiones:
-        errors.append('Las dimensiones son obligatorias')
-    elif len(dimensiones) > 50:
-        errors.append('Las dimensiones no pueden exceder 50 caracteres')
+    # Validar dimensiones
+    if not dimension_largo:
+        errors.append('El largo es obligatorio')
+    else:
+        try:
+            largo = float(dimension_largo)
+            if largo <= 0:
+                errors.append('El largo debe ser mayor a 0')
+        except (ValueError, TypeError):
+            errors.append('El largo debe ser un número válido')
+    
+    if not dimension_ancho:
+        errors.append('El ancho es obligatorio')
+    else:
+        try:
+            ancho = float(dimension_ancho)
+            if ancho <= 0:
+                errors.append('El ancho debe ser mayor a 0')
+        except (ValueError, TypeError):
+            errors.append('El ancho debe ser un número válido')
+    
+    if not dimension_alto:
+        errors.append('El alto es obligatorio')
+    else:
+        try:
+            alto = float(dimension_alto)
+            if alto <= 0:
+                errors.append('El alto debe ser mayor a 0')
+        except (ValueError, TypeError):
+            errors.append('El alto debe ser un número válido')
     
     if not capacidad_personas:
         errors.append('La capacidad de personas es obligatoria')
@@ -1187,7 +1250,9 @@ def juego_create_json(request):
             nombre=nombre,
             descripcion=descripcion or None,
             categoria=categoria,
-            dimensiones=dimensiones,
+            dimension_largo=largo,
+            dimension_ancho=ancho,
+            dimension_alto=alto,
             capacidad_personas=capacidad,
             peso_maximo=peso,
             precio_base=precio,
@@ -1820,7 +1885,9 @@ def juego_update_json(request, juego_id: int):
     nombre = request.POST.get('nombre', '').strip()
     descripcion = request.POST.get('descripcion', '').strip()
     categoria = request.POST.get('categoria', '').strip()
-    dimensiones = request.POST.get('dimensiones', '').strip()
+    dimension_largo = request.POST.get('dimension_largo', '').strip()
+    dimension_ancho = request.POST.get('dimension_ancho', '').strip()
+    dimension_alto = request.POST.get('dimension_alto', '').strip()
     capacidad_personas = request.POST.get('capacidad_personas', '').strip()
     peso_maximo = request.POST.get('peso_maximo', '').strip()
     precio_base = request.POST.get('precio_base', '').strip()
@@ -1829,6 +1896,9 @@ def juego_update_json(request, juego_id: int):
     estado = request.POST.get('estado', '').strip()
 
     errors = []
+    largo = None
+    ancho = None
+    alto = None
     
     # Validaciones
     if not nombre:
@@ -1844,10 +1914,36 @@ def juego_update_json(request, juego_id: int):
     elif categoria not in [choice[0] for choice in Juego.CATEGORIA_CHOICES]:
         errors.append('Categoría inválida')
     
-    if not dimensiones:
-        errors.append('Las dimensiones son obligatorias')
-    elif len(dimensiones) > 50:
-        errors.append('Las dimensiones no pueden exceder 50 caracteres')
+    # Validar dimensiones
+    if not dimension_largo:
+        errors.append('El largo es obligatorio')
+    else:
+        try:
+            largo = float(dimension_largo)
+            if largo <= 0:
+                errors.append('El largo debe ser mayor a 0')
+        except (ValueError, TypeError):
+            errors.append('El largo debe ser un número válido')
+    
+    if not dimension_ancho:
+        errors.append('El ancho es obligatorio')
+    else:
+        try:
+            ancho = float(dimension_ancho)
+            if ancho <= 0:
+                errors.append('El ancho debe ser mayor a 0')
+        except (ValueError, TypeError):
+            errors.append('El ancho debe ser un número válido')
+    
+    if not dimension_alto:
+        errors.append('El alto es obligatorio')
+    else:
+        try:
+            alto = float(dimension_alto)
+            if alto <= 0:
+                errors.append('El alto debe ser mayor a 0')
+        except (ValueError, TypeError):
+            errors.append('El alto debe ser un número válido')
     
     try:
         capacidad = int(capacidad_personas)
@@ -1896,7 +1992,9 @@ def juego_update_json(request, juego_id: int):
         juego.nombre = nombre
         juego.descripcion = descripcion or None
         juego.categoria = categoria
-        juego.dimensiones = dimensiones
+        juego.dimension_largo = largo
+        juego.dimension_ancho = ancho
+        juego.dimension_alto = alto
         juego.capacidad_personas = capacidad
         juego.peso_maximo = peso
         juego.precio_base = precio

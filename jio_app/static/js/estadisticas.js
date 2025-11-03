@@ -66,7 +66,7 @@ function initMoneyChart() {
                 tooltip: {
                     callbacks: {
                         label: function(context) {
-                            return 'Ventas: $' + context.parsed.y.toLocaleString('es-CL');
+                            return 'Ventas: ' + formatearPrecioChileno(context.parsed.y);
                         }
                     }
                 }
@@ -76,7 +76,7 @@ function initMoneyChart() {
                     beginAtZero: true,
                     ticks: {
                         callback: function(value) {
-                            return '$' + value.toLocaleString('es-CL');
+                            return formatearPrecioChileno(value);
                         }
                     }
                 }
@@ -226,7 +226,7 @@ function initCategoryChart() {
                 tooltip: {
                     callbacks: {
                         label: function(context) {
-                            return 'Ventas: $' + context.parsed.y.toLocaleString('es-CL');
+                            return 'Ventas: ' + formatearPrecioChileno(context.parsed.y);
                         }
                     }
                 }
@@ -236,7 +236,7 @@ function initCategoryChart() {
                     beginAtZero: true,
                     ticks: {
                         callback: function(value) {
-                            return '$' + value.toLocaleString('es-CL');
+                            return formatearPrecioChileno(value);
                         }
                     }
                 }

@@ -54,7 +54,9 @@
             const nombre = form.querySelector('input[name="nombre"]')?.value?.trim() || '';
             const descripcion = form.querySelector('textarea[name="descripcion"]')?.value?.trim() || '';
             const categoria = form.querySelector('select[name="categoria"]')?.value || '';
-            const dimensiones = form.querySelector('input[name="dimensiones"]')?.value?.trim() || '';
+            const dimension_largo = form.querySelector('input[name="dimension_largo"]')?.value?.trim() || '';
+            const dimension_ancho = form.querySelector('input[name="dimension_ancho"]')?.value?.trim() || '';
+            const dimension_alto = form.querySelector('input[name="dimension_alto"]')?.value?.trim() || '';
             const capacidad = form.querySelector('input[name="capacidad_personas"]')?.value || '';
             const peso = form.querySelector('input[name="peso_maximo"]')?.value || '';
             const precio = form.querySelector('input[name="precio_base"]')?.value || '';
@@ -79,14 +81,32 @@
             
             validaciones.push(() => validarSeleccion(categoria, 'categoría'));
             
+            // Validar dimensiones (float)
             validaciones.push(() => {
                 const errores = [];
-                if (!dimensiones) {
-                    errores.push('Las dimensiones son obligatorias');
-                } else if (dimensiones.length > 50) {
-                    errores.push('Las dimensiones no pueden exceder los 50 caracteres');
-                } else if (!/^[A-Za-zÑñÁÉÍÓÚáéíóú0-9\s\-.,()&xX]+$/.test(dimensiones)) {
-                    errores.push('Las dimensiones contienen caracteres no permitidos');
+                if (!dimension_largo) {
+                    errores.push('El largo es obligatorio');
+                } else {
+                    const largoNum = parseFloat(dimension_largo);
+                    if (isNaN(largoNum) || largoNum <= 0) {
+                        errores.push('El largo debe ser un número mayor a 0');
+                    }
+                }
+                if (!dimension_ancho) {
+                    errores.push('El ancho es obligatorio');
+                } else {
+                    const anchoNum = parseFloat(dimension_ancho);
+                    if (isNaN(anchoNum) || anchoNum <= 0) {
+                        errores.push('El ancho debe ser un número mayor a 0');
+                    }
+                }
+                if (!dimension_alto) {
+                    errores.push('El alto es obligatorio');
+                } else {
+                    const altoNum = parseFloat(dimension_alto);
+                    if (isNaN(altoNum) || altoNum <= 0) {
+                        errores.push('El alto debe ser un número mayor a 0');
+                    }
                 }
                 return errores;
             });
@@ -131,7 +151,9 @@
             document.getElementById('editJuegoNombre').value = juego.nombre;
             document.getElementById('editJuegoDescripcion').value = juego.descripcion || '';
             document.getElementById('editJuegoCategoria').value = juego.categoria;
-            document.getElementById('editJuegoDimensiones').value = juego.dimensiones;
+            document.getElementById('editJuegoDimensionLargo').value = juego.dimension_largo || '';
+            document.getElementById('editJuegoDimensionAncho').value = juego.dimension_ancho || '';
+            document.getElementById('editJuegoDimensionAlto').value = juego.dimension_alto || '';
             document.getElementById('editJuegoCapacidad').value = juego.capacidad_personas;
             document.getElementById('editJuegoPeso').value = juego.peso_maximo;
             document.getElementById('editJuegoPrecio').value = juego.precio_base;

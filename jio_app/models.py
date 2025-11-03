@@ -101,7 +101,9 @@ class Juego(models.Model):
     nombre = models.CharField(max_length=100)
     descripcion = models.TextField(blank=True, null=True)
     categoria = models.CharField(max_length=20, choices=CATEGORIA_CHOICES)
-    dimensiones = models.CharField(max_length=50, help_text="Ej: 5m x 3m x 2m")
+    dimension_largo = models.FloatField(help_text="Largo en metros", default=0.0)
+    dimension_ancho = models.FloatField(help_text="Ancho en metros", default=0.0)
+    dimension_alto = models.FloatField(help_text="Alto en metros", default=0.0)
     capacidad_personas = models.PositiveIntegerField()
     peso_maximo = models.PositiveIntegerField(help_text="Peso máximo en kg")
     precio_base = models.PositiveIntegerField()
@@ -117,6 +119,11 @@ class Juego(models.Model):
         verbose_name = 'Juego Inflable'
         verbose_name_plural = 'Juegos Inflables'
         ordering = ['nombre']
+    
+    @property
+    def dimensiones(self):
+        """Devuelve las dimensiones formateadas como string para compatibilidad"""
+        return f"{self.dimension_largo}m x {self.dimension_ancho}m x {self.dimension_alto}m"
     
     def __str__(self):
         return f"{self.nombre} - {self.get_categoria_display()}"
