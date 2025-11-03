@@ -1111,9 +1111,6 @@ def juego_create_json(request):
     estado = request.POST.get('estado', 'habilitado').strip()
 
     errors = []
-    capacidad = None
-    peso = None
-    precio = None
     
     # Validaciones
     if not nombre:
@@ -1124,43 +1121,34 @@ def juego_create_json(request):
     if len(descripcion) > 1000:
         errors.append('La descripción no puede exceder 1000 caracteres')
     
-    if not categoria or categoria not in [choice[0] for choice in Juego.CATEGORIA_CHOICES]:
-        errors.append('Categoría inválida o no seleccionada')
+    if categoria not in [choice[0] for choice in Juego.CATEGORIA_CHOICES]:
+        errors.append('Categoría inválida')
     
     if not dimensiones:
         errors.append('Las dimensiones son obligatorias')
     elif len(dimensiones) > 50:
         errors.append('Las dimensiones no pueden exceder 50 caracteres')
     
-    if not capacidad_personas:
-        errors.append('La capacidad de personas es obligatoria')
-    else:
-        try:
-            capacidad = int(capacidad_personas)
-            if capacidad <= 0:
-                errors.append('La capacidad debe ser mayor a 0')
-        except (ValueError, TypeError):
-            errors.append('La capacidad debe ser un número válido')
+    try:
+        capacidad = int(capacidad_personas)
+        if capacidad <= 0:
+            errors.append('La capacidad debe ser mayor a 0')
+    except (ValueError, TypeError):
+        errors.append('La capacidad debe ser un número válido')
     
-    if not peso_maximo:
-        errors.append('El peso máximo es obligatorio')
-    else:
-        try:
-            peso = int(peso_maximo)
-            if peso <= 0:
-                errors.append('El peso máximo debe ser mayor a 0')
-        except (ValueError, TypeError):
-            errors.append('El peso máximo debe ser un número válido')
+    try:
+        peso = int(peso_maximo)
+        if peso <= 0:
+            errors.append('El peso máximo debe ser mayor a 0')
+    except (ValueError, TypeError):
+        errors.append('El peso máximo debe ser un número válido')
     
-    if not precio_base:
-        errors.append('El precio base es obligatorio')
-    else:
-        try:
-            precio = int(precio_base)
-            if precio < 1:
-                errors.append('El precio base debe ser un número entero mayor a 0')
-        except (ValueError, TypeError):
-            errors.append('El precio base debe ser un número entero válido')
+    try:
+        precio = int(precio_base)
+        if precio < 1:
+            errors.append('El precio base debe ser un número entero mayor a 0')
+    except (ValueError, TypeError):
+        errors.append('El precio base debe ser un número entero válido')
     
     # Validar foto si se proporciona
     if foto:
