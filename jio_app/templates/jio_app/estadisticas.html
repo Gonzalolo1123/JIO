@@ -1,0 +1,150 @@
+{% extends 'jio_app/base_admin.html' %}
+
+{% load static %}
+
+{% block title %}Estadísticas - JIO{% endblock %}
+
+{% block extra_head %}
+
+<link rel="stylesheet" href="{% static 'css/estadisticas.css' %}">
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+{% endblock %}
+
+{% block content %}
+
+<div class="content">
+
+  <div class="button-group" id="view-mode-group">
+
+    <label>Vista de gráficos:</label>
+
+    <button type="button" id="btn-small" class="view-mode-btn">Pequeño</button>
+
+    <button type="button" id="btn-medium" class="view-mode-btn active">Mediano</button>
+
+    <button type="button" id="btn-large" class="view-mode-btn">Grande</button>
+
+  </div>
+
+  <!-- Sección de Ventas -->
+
+  <div class="section">
+
+    <h2>Ventas</h2>
+
+    <div class="button-group" id="time-filter">
+
+      <button onclick="updateMoneyChart('weekly', this)">Semanal</button>
+
+      <button onclick="updateMoneyChart('monthly', this)">Mensual</button>
+
+      <button onclick="updateMoneyChart('yearly', this)">Anual</button>
+
+    </div>
+
+    <div class="chart-container">
+      <canvas id="moneyChart"></canvas>
+    </div>
+
+  </div>
+
+    <!-- Sección de Ventas por Categoría de Juego -->
+
+    <div class="section">
+
+      <h2>Ventas por categoría de juego</h2>
+
+      <div class="button-group" id="category-filter">
+
+        <button onclick="setCategoryPeriod('daily', this)">Diario</button>
+
+        <button onclick="setCategoryPeriod('weekly', this)">Semanal</button>
+
+        <button onclick="setCategoryPeriod('monthly', this)">Mensual</button>
+
+        <button onclick="setCategoryPeriod('yearly', this)">Anual</button>
+
+      </div>
+
+    <div class="chart-container">
+      <canvas id="categoryChart"></canvas>
+    </div>
+
+  </div>
+
+    <!-- Sección de Días con Mayor Demanda de Reservas -->
+
+    <div class="section">
+
+      <h2>Días con mayor demanda de reservas</h2>
+
+      <div class="button-group" id="days-filter">
+
+        <button onclick="updateDaysChart('weekly', this)">Semanal</button>
+
+        <button onclick="updateDaysChart('monthly', this)">Mensual</button>
+
+        <button onclick="updateDaysChart('yearly', this)">Anual</button>
+
+      </div>
+
+    <div class="chart-container">
+      <canvas id="daysChart"></canvas>
+    </div>
+
+  </div>
+
+</div>
+
+<!-- Datos ocultos para JavaScript -->
+
+<!-- Datos de ventas -->
+
+<div id="ventas-semanales-labels" style="display: none;">{{ ventas_semanales_labels|safe }}</div>
+
+<div id="ventas-semanales-data" style="display: none;">{{ ventas_semanales_data|safe }}</div>
+
+<div id="ventas-mensuales-labels" style="display: none;">{{ ventas_mensuales_labels|safe }}</div>
+
+<div id="ventas-mensuales-data" style="display: none;">{{ ventas_mensuales_data|safe }}</div>
+
+<div id="ventas-anuales-labels" style="display: none;">{{ ventas_anuales_labels|safe }}</div>
+
+<div id="ventas-anuales-data" style="display: none;">{{ ventas_anuales_data|safe }}</div>
+
+<!-- Datos de ventas por categoría -->
+
+<div id="ventas-categoria-diarias-data" style="display: none;">{{ ventas_categoria_diarias_data|safe }}</div>
+
+<div id="ventas-categoria-semanales-data" style="display: none;">{{ ventas_categoria_semanales_data|safe }}</div>
+
+<div id="ventas-categoria-mensuales-data" style="display: none;">{{ ventas_categoria_mensuales_data|safe }}</div>
+
+<div id="ventas-categoria-anuales-data" style="display: none;">{{ ventas_categoria_anuales_data|safe }}</div>
+
+<div id="categorias-unicas" style="display: none;">{{ categorias_unicas|safe }}</div>
+
+<!-- Datos de días con mayor demanda de reservas -->
+
+<div id="dias-semana-semanales-labels" style="display: none;">{{ dias_semana_semanales_labels|safe }}</div>
+
+<div id="dias-semana-semanales-data" style="display: none;">{{ dias_semana_semanales_data|safe }}</div>
+
+<div id="dias-semana-mensuales-labels" style="display: none;">{{ dias_semana_mensuales_labels|safe }}</div>
+
+<div id="dias-semana-mensuales-data" style="display: none;">{{ dias_semana_mensuales_data|safe }}</div>
+
+<div id="dias-semana-anuales-labels" style="display: none;">{{ dias_semana_anuales_labels|safe }}</div>
+
+<div id="dias-semana-anuales-data" style="display: none;">{{ dias_semana_anuales_data|safe }}</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+
+<script src="{% static 'js/estadisticas.js' %}"></script>
+
+{% endblock %}
+
