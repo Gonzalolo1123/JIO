@@ -2276,3 +2276,630 @@ def estadisticas(request):
     }
     
     return render(request, 'jio_app/estadisticas.html', context)
+
+
+# --------- CRUD de Arriendos (solo administrador) ---------
+
+@login_required
+def arriendos_list(request):
+    """
+    Lista todos los arriendos (reservas) con filtros de búsqueda
+    """
+    if not request.user.tipo_usuario == 'administrador':
+        raise PermissionDenied("Solo los administradores pueden acceder a este recurso.")
+
+    query = request.GET.get('q', '').strip()
+    estado_filter = request.GET.get('estado', '').strip()
+    fecha_desde = request.GET.get('fecha_desde', '').strip()
+    fecha_hasta = request.GET.get('fecha_hasta', '').strip()
+    
+    # Parámetros de ordenamiento
+    order_by = request.GET.get('order_by', '-fecha_creacion').strip()
+    direction = request.GET.get('direction', 'desc').strip()
+    
+    # Campos válidos para ordenar
+    valid_order_fields = {
+        'id': 'id',
+        'fecha_creacion': 'fecha_creacion',
+        'fecha_evento': 'fecha_evento',
+        'total_reserva': 'total_reserva',
+        'estado': 'estado',
+        'cliente': 'cliente__usuario__last_name',
+    }
+    
+    # Validar campo de ordenamiento
+    if order_by.lstrip('-') not in valid_order_fields:
+        order_by = '-fecha_creacion'
+    
+    # Validar dirección
+    if direction not in ['asc', 'desc']:
+        direction = 'desc'
+    
+    # Aplicar ordenamiento
+    order_field = valid_order_fields.get(order_by.lstrip('-'), 'fecha_creacion')
+    if order_by.startswith('-'):
+        order_field = '-' + order_field
+    elif direction == 'desc':
+        order_field = '-' + order_field
+    
+    base_qs = Reserva.objects.all().select_related('cliente__usuario').prefetch_related('detalles__juego').order_by(order_field)
+    
+    if query:
+        base_qs = base_qs.filter(
+            Q(cliente__usuario__first_name__icontains=query) |
+            Q(cliente__usuario__last_name__icontains=query) |
+            Q(cliente__usuario__email__icontains=query) |
+            Q(direccion_evento__icontains=query) |
+            Q(id__icontains=query)
+        )
+    
+    if estado_filter:
+        base_qs = base_qs.filter(estado=estado_filter)
+    
+    if fecha_desde:
+        try:
+            from datetime import datetime
+            fecha_desde_obj = datetime.strptime(fecha_desde, '%Y-%m-%d').date()
+            base_qs = base_qs.filter(fecha_evento__gte=fecha_desde_obj)
+        except ValueError:
+            pass
+    
+    if fecha_hasta:
+        try:
+            from datetime import datetime
+            fecha_hasta_obj = datetime.strptime(fecha_hasta, '%Y-%m-%d').date()
+            base_qs = base_qs.filter(fecha_evento__lte=fecha_hasta_obj)
+        except ValueError:
+            pass
+
+    # Obtener clientes y juegos para los modales
+    clientes = Cliente.objects.select_related('usuario').all().order_by('usuario__last_name', 'usuario__first_name')
+    juegos_disponibles = Juego.objects.filter(estado__iexact='habilitado').order_by('nombre')
+
+    return render(request, 'jio_app/arriendos_list.html', {
+        'arriendos': base_qs,
+        'query': query,
+        'estado_filter': estado_filter,
+        'fecha_desde': fecha_desde,
+        'fecha_hasta': fecha_hasta,
+        'order_by': order_by.lstrip('-'),
+        'direction': direction,
+        'estado_choices': Reserva.ESTADO_CHOICES,
+        'clientes': clientes,
+        'juegos_disponibles': juegos_disponibles,
+    })
+
+
+@login_required
+@require_http_methods(["GET"])
+def juegos_disponibles_fecha_json(request):
+    """
+    Obtiene los juegos disponibles para una fecha específica
+    Si se proporciona arriendo_id, excluye ese arriendo del cálculo (para edición)
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    fecha_str = request.GET.get('fecha', '').strip()
+    arriendo_id = request.GET.get('arriendo_id', '').strip()  # Para excluir el arriendo actual al editar
+    
+    if not fecha_str:
+        return JsonResponse({'error': 'Fecha requerida'}, status=400)
+    
+    try:
+        from datetime import datetime
+        fecha_obj = datetime.strptime(fecha_str, '%Y-%m-%d').date()
+    except ValueError:
+        return JsonResponse({'error': 'Formato de fecha inválido'}, status=400)
+    
+    # Obtener todos los juegos habilitados
+    todos_juegos = Juego.objects.filter(estado__iexact='habilitado').order_by('nombre')
+    
+    # Obtener reservas confirmadas para esa fecha (excluyendo el arriendo actual si se está editando)
+    reservas_fecha = Reserva.objects.filter(
+        fecha_evento=fecha_obj,
+        estado__in=['Pendiente', 'Confirmada', 'confirmada']
+    )
+    
+    # Si se está editando, excluir el arriendo actual
+    if arriendo_id:
+        try:
+            reservas_fecha = reservas_fecha.exclude(id=int(arriendo_id))
+        except (ValueError, TypeError):
+            pass
+    
+    reservas_fecha = reservas_fecha.prefetch_related('detalles__juego')
+    
+    # Obtener IDs de juegos ocupados ese día
+    juegos_ocupados = set()
+    for reserva in reservas_fecha:
+        for detalle in reserva.detalles.all():
+            juegos_ocupados.add(detalle.juego.id)
+    
+    # Si se está editando, agregar los juegos del arriendo actual a disponibles
+    juegos_arriendo_actual = set()
+    if arriendo_id:
+        try:
+            reserva_actual = Reserva.objects.get(id=int(arriendo_id))
+            for detalle in reserva_actual.detalles.all():
+                juegos_arriendo_actual.add(detalle.juego.id)
+                # Remover de ocupados si están ahí (para que aparezcan disponibles)
+                juegos_ocupados.discard(detalle.juego.id)
+        except (Reserva.DoesNotExist, ValueError, TypeError):
+            pass
+    
+    # Filtrar juegos disponibles (no ocupados)
+    juegos_disponibles = todos_juegos.exclude(id__in=juegos_ocupados)
+    
+    juegos_data = []
+    for juego in juegos_disponibles:
+        juegos_data.append({
+            'id': juego.id,
+            'nombre': juego.nombre,
+            'precio': juego.precio_base,
+            'categoria': juego.get_categoria_display(),
+        })
+    
+    return JsonResponse({
+        'juegos': juegos_data,
+        'fecha': fecha_str,
+        'total_disponibles': len(juegos_data),
+    })
+
+
+@login_required
+@require_http_methods(["GET"])
+def arriendo_detail_json(request, arriendo_id: int):
+    """
+    Obtiene los detalles de un arriendo en formato JSON
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    try:
+        reserva = Reserva.objects.select_related('cliente__usuario').prefetch_related('detalles__juego').get(id=arriendo_id)
+        
+        detalles = []
+        for detalle in reserva.detalles.all():
+            detalles.append({
+                'juego_id': detalle.juego.id,
+                'juego_nombre': detalle.juego.nombre,
+                'cantidad': detalle.cantidad,
+                'precio_unitario': float(detalle.precio_unitario),
+                'subtotal': float(detalle.subtotal),
+            })
+        
+        return JsonResponse({
+            'id': reserva.id,
+            'cliente_id': reserva.cliente.id,
+            'cliente_nombre': reserva.cliente.usuario.get_full_name(),
+            'cliente_email': reserva.cliente.usuario.email,
+            'cliente_telefono': reserva.cliente.usuario.telefono or '',
+            'cliente_rut': reserva.cliente.rut,
+            'cliente_tipo': reserva.cliente.get_tipo_cliente_display(),
+            'fecha_evento': reserva.fecha_evento.strftime('%Y-%m-%d'),
+            'hora_instalacion': reserva.hora_instalacion.strftime('%H:%M'),
+            'hora_retiro': reserva.hora_retiro.strftime('%H:%M'),
+            'direccion_evento': reserva.direccion_evento,
+            'distancia_km': reserva.distancia_km,
+            'precio_distancia': float(reserva.precio_distancia),
+            'estado': reserva.estado,
+            'observaciones': reserva.observaciones or '',
+            'total_reserva': float(reserva.total_reserva),
+            'detalles': detalles,
+        })
+    except Reserva.DoesNotExist:
+        return JsonResponse({'error': 'Arriendo no encontrado'}, status=404)
+
+
+@login_required
+@require_http_methods(["POST"])
+def arriendo_create_json(request):
+    """
+    Crea un nuevo arriendo (reserva)
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+
+    # Datos del cliente (ingresados manualmente)
+    cliente_first_name = request.POST.get('cliente_first_name', '').strip()
+    cliente_last_name = request.POST.get('cliente_last_name', '').strip()
+    cliente_email = request.POST.get('cliente_email', '').strip()
+    cliente_telefono = request.POST.get('cliente_telefono', '').strip()
+    cliente_rut = request.POST.get('cliente_rut', '').strip()
+    cliente_tipo = request.POST.get('cliente_tipo', 'particular').strip()
+    
+    fecha_evento = request.POST.get('fecha_evento', '').strip()
+    hora_instalacion = request.POST.get('hora_instalacion', '').strip()
+    hora_retiro = request.POST.get('hora_retiro', '').strip()
+    direccion_evento = request.POST.get('direccion_evento', '').strip()
+    distancia_km = request.POST.get('distancia_km', '0').strip()
+    estado = request.POST.get('estado', 'Pendiente').strip()
+    observaciones = request.POST.get('observaciones', '').strip()
+    
+    # Detalles de juegos (JSON string)
+    juegos_json = request.POST.get('juegos', '[]')
+    
+    errors = []
+    
+    # Validaciones de cliente
+    if not all([cliente_first_name, cliente_last_name, cliente_email, cliente_rut]):
+        errors.append('Todos los datos del cliente son obligatorios')
+    
+    # Validar formato RUT
+    rut_regex = re.compile(r'^\d{7,8}-[\dkK]$')
+    if cliente_rut and not rut_regex.match(cliente_rut):
+        errors.append('El RUT debe tener el formato 12345678-9 o 1234567-K')
+    
+    # Validar email
+    email_regex = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
+    if cliente_email and not email_regex.match(cliente_email):
+        errors.append('Email inválido')
+    
+    if cliente_tipo not in ['particular', 'empresa']:
+        errors.append('Tipo de cliente inválido')
+    
+    # Buscar o crear cliente
+    cliente = None
+    if not errors:
+        try:
+            # Buscar por RUT (único)
+            cliente = Cliente.objects.get(rut=cliente_rut)
+            # Actualizar datos si es necesario
+            if cliente.usuario.email != cliente_email:
+                cliente.usuario.email = cliente_email
+            if cliente_first_name and cliente.usuario.first_name != cliente_first_name:
+                cliente.usuario.first_name = cliente_first_name
+            if cliente_last_name and cliente.usuario.last_name != cliente_last_name:
+                cliente.usuario.last_name = cliente_last_name
+            if cliente_telefono:
+                cliente.usuario.telefono = cliente_telefono
+            cliente.usuario.save()
+        except Cliente.DoesNotExist:
+            # Crear nuevo cliente
+            try:
+                # Verificar si el email ya existe
+                if Usuario.objects.filter(email=cliente_email).exists():
+                    errors.append('Ya existe un usuario con ese email')
+                else:
+                    # Generar username único
+                    base_username = slugify(f"{cliente_first_name}_{cliente_last_name}")
+                    username = base_username
+                    counter = 1
+                    while Usuario.objects.filter(username=username).exists():
+                        username = f"{base_username}_{counter}"
+                        counter += 1
+                    
+                    # Crear usuario con password aleatorio
+                    random_password = secrets.token_urlsafe(12)
+                    usuario = Usuario.objects.create_user(
+                        username=username,
+                        email=cliente_email,
+                        password=random_password,
+                        first_name=cliente_first_name,
+                        last_name=cliente_last_name,
+                        tipo_usuario='cliente',
+                        is_active=True,
+                    )
+                    if cliente_telefono:
+                        usuario.telefono = cliente_telefono
+                        usuario.save(update_fields=['telefono'])
+                    
+                    cliente = Cliente.objects.create(
+                        usuario=usuario,
+                        rut=cliente_rut,
+                        tipo_cliente=cliente_tipo,
+                    )
+            except Exception as e:
+                errors.append(f'Error al crear cliente: {str(e)}')
+    
+    if not fecha_evento:
+        errors.append('La fecha del evento es obligatoria')
+    else:
+        try:
+            from datetime import datetime
+            fecha_obj = datetime.strptime(fecha_evento, '%Y-%m-%d').date()
+        except ValueError:
+            errors.append('Formato de fecha inválido (use YYYY-MM-DD)')
+    
+    if not hora_instalacion:
+        errors.append('La hora de instalación es obligatoria')
+    else:
+        try:
+            hora_inst_obj = datetime.strptime(hora_instalacion, '%H:%M').time()
+        except ValueError:
+            errors.append('Formato de hora inválido (use HH:MM)')
+    
+    if not hora_retiro:
+        errors.append('La hora de retiro es obligatoria')
+    else:
+        try:
+            hora_ret_obj = datetime.strptime(hora_retiro, '%H:%M').time()
+        except ValueError:
+            errors.append('Formato de hora inválido (use HH:MM)')
+    
+    if not direccion_evento:
+        errors.append('La dirección del evento es obligatoria')
+    elif len(direccion_evento) > 300:
+        errors.append('La dirección no puede exceder 300 caracteres')
+    
+    # Validar distancia
+    distancia_km_int = 0
+    if distancia_km:
+        try:
+            distancia_km_int = int(distancia_km)
+            if distancia_km_int < 0:
+                errors.append('La distancia no puede ser negativa')
+        except ValueError:
+            errors.append('La distancia debe ser un número válido')
+    
+    # Calcular precio por distancia ($1.000 por km)
+    PRECIO_POR_KM = 1000
+    precio_distancia = distancia_km_int * PRECIO_POR_KM
+    
+    if estado not in [choice[0] for choice in Reserva.ESTADO_CHOICES]:
+        errors.append('Estado inválido')
+    
+    # Validar y procesar juegos
+    try:
+        import json
+        if isinstance(juegos_json, str):
+            juegos_data = json.loads(juegos_json)
+        else:
+            juegos_data = juegos_json
+        
+        if not juegos_data or len(juegos_data) == 0:
+            errors.append('Debe seleccionar al menos un juego')
+        
+        juegos_validos = []
+        total = 0
+        for juego_item in juegos_data:
+            juego_id = juego_item.get('juego_id') or juego_item.get('id')
+            
+            if not juego_id:
+                errors.append('Juego inválido en los detalles')
+                continue
+            
+            try:
+                juego = Juego.objects.get(id=int(juego_id), estado__iexact='habilitado')
+                # Cantidad siempre es 1
+                cantidad_int = 1
+                precio_unitario = juego.precio_base
+                subtotal = cantidad_int * precio_unitario
+                total += subtotal
+                
+                juegos_validos.append({
+                    'juego': juego,
+                    'cantidad': cantidad_int,
+                    'precio_unitario': precio_unitario,
+                    'subtotal': subtotal,
+                })
+            except (ValueError, Juego.DoesNotExist):
+                errors.append(f'Juego con ID {juego_id} no encontrado o no disponible')
+    except json.JSONDecodeError:
+        errors.append('Formato de juegos inválido')
+    
+    if errors:
+        return JsonResponse({'success': False, 'errors': errors}, status=400)
+    
+    # Total incluye juegos + distancia
+    total_final = total + precio_distancia
+    
+    try:
+        reserva = Reserva.objects.create(
+            cliente=cliente,
+            fecha_evento=fecha_obj,
+            hora_instalacion=hora_inst_obj,
+            hora_retiro=hora_ret_obj,
+            direccion_evento=direccion_evento,
+            distancia_km=distancia_km_int,
+            precio_distancia=precio_distancia,
+            estado=estado,
+            observaciones=observaciones or None,
+            total_reserva=total_final,
+        )
+        
+        # Crear detalles de reserva
+        for juego_item in juegos_validos:
+            DetalleReserva.objects.create(
+                reserva=reserva,
+                juego=juego_item['juego'],
+                cantidad=juego_item['cantidad'],
+                precio_unitario=juego_item['precio_unitario'],
+                subtotal=juego_item['subtotal'],
+            )
+        
+        return JsonResponse({
+            'success': True, 
+            'message': f'Arriendo #{reserva.id} creado correctamente.',
+            'arriendo_id': reserva.id
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False, 
+            'errors': [f'Error al crear el arriendo: {str(e)}']
+        }, status=500)
+
+
+@login_required
+@require_http_methods(["POST"])
+def arriendo_update_json(request, arriendo_id: int):
+    """
+    Actualiza un arriendo existente
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    try:
+        reserva = Reserva.objects.get(id=arriendo_id)
+    except Reserva.DoesNotExist:
+        return JsonResponse({'error': 'Arriendo no encontrado'}, status=404)
+    
+    cliente_id = request.POST.get('cliente_id', '').strip()
+    fecha_evento = request.POST.get('fecha_evento', '').strip()
+    hora_instalacion = request.POST.get('hora_instalacion', '').strip()
+    hora_retiro = request.POST.get('hora_retiro', '').strip()
+    direccion_evento = request.POST.get('direccion_evento', '').strip()
+    distancia_km = request.POST.get('distancia_km', '0').strip()
+    estado = request.POST.get('estado', '').strip()
+    observaciones = request.POST.get('observaciones', '').strip()
+    
+    # Detalles de juegos (JSON string)
+    juegos_json = request.POST.get('juegos', '[]')
+    
+    errors = []
+    
+    # Validaciones
+    if cliente_id:
+        try:
+            cliente = Cliente.objects.get(id=int(cliente_id))
+            reserva.cliente = cliente
+        except (ValueError, Cliente.DoesNotExist):
+            errors.append('Cliente no válido')
+    
+    if fecha_evento:
+        try:
+            from datetime import datetime
+            reserva.fecha_evento = datetime.strptime(fecha_evento, '%Y-%m-%d').date()
+        except ValueError:
+            errors.append('Formato de fecha inválido (use YYYY-MM-DD)')
+    
+    if hora_instalacion:
+        try:
+            from datetime import datetime
+            reserva.hora_instalacion = datetime.strptime(hora_instalacion, '%H:%M').time()
+        except ValueError:
+            errors.append('Formato de hora inválido (use HH:MM)')
+    
+    if hora_retiro:
+        try:
+            from datetime import datetime
+            reserva.hora_retiro = datetime.strptime(hora_retiro, '%H:%M').time()
+        except ValueError:
+            errors.append('Formato de hora inválido (use HH:MM)')
+    
+    if direccion_evento:
+        if len(direccion_evento) > 300:
+            errors.append('La dirección no puede exceder 300 caracteres')
+        else:
+            reserva.direccion_evento = direccion_evento
+    
+    # Validar y actualizar distancia
+    if distancia_km:
+        try:
+            distancia_km_int = int(distancia_km)
+            if distancia_km_int < 0:
+                errors.append('La distancia no puede ser negativa')
+            else:
+                PRECIO_POR_KM = 1000
+                reserva.distancia_km = distancia_km_int
+                reserva.precio_distancia = distancia_km_int * PRECIO_POR_KM
+        except ValueError:
+            errors.append('La distancia debe ser un número válido')
+    
+    if estado:
+        if estado not in [choice[0] for choice in Reserva.ESTADO_CHOICES]:
+            errors.append('Estado inválido')
+        else:
+            reserva.estado = estado
+    
+    if observaciones is not None:
+        reserva.observaciones = observaciones.strip() or None
+    
+    # Validar y procesar juegos
+    try:
+        import json
+        if isinstance(juegos_json, str):
+            juegos_data = json.loads(juegos_json)
+        else:
+            juegos_data = juegos_json
+        
+        if juegos_data and len(juegos_data) > 0:
+            juegos_validos = []
+            total = 0
+            
+            for juego_item in juegos_data:
+                juego_id = juego_item.get('juego_id') or juego_item.get('id')
+                
+                if not juego_id:
+                    errors.append('Juego inválido en los detalles')
+                    continue
+                
+                try:
+                    juego = Juego.objects.get(id=int(juego_id), estado__iexact='habilitado')
+                    # Cantidad siempre es 1
+                    cantidad_int = 1
+                    precio_unitario = juego.precio_base
+                    subtotal = cantidad_int * precio_unitario
+                    total += subtotal
+                    
+                    juegos_validos.append({
+                        'juego': juego,
+                        'cantidad': cantidad_int,
+                        'precio_unitario': precio_unitario,
+                        'subtotal': subtotal,
+                    })
+                except (ValueError, Juego.DoesNotExist):
+                    errors.append(f'Juego con ID {juego_id} no encontrado o no disponible')
+            
+            if not errors:
+                # Eliminar detalles antiguos y crear nuevos
+                reserva.detalles.all().delete()
+                # Total incluye juegos + distancia
+                total_final = total + reserva.precio_distancia
+                reserva.total_reserva = total_final
+                
+                for juego_item in juegos_validos:
+                    DetalleReserva.objects.create(
+                        reserva=reserva,
+                        juego=juego_item['juego'],
+                        cantidad=juego_item['cantidad'],
+                        precio_unitario=juego_item['precio_unitario'],
+                        subtotal=juego_item['subtotal'],
+                    )
+    except json.JSONDecodeError:
+        errors.append('Formato de juegos inválido')
+    
+    if errors:
+        return JsonResponse({'success': False, 'errors': errors}, status=400)
+    
+    try:
+        reserva.save()
+        return JsonResponse({
+            'success': True, 
+            'message': f'Arriendo #{reserva.id} actualizado correctamente.',
+            'arriendo_id': reserva.id
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False, 
+            'errors': [f'Error al actualizar el arriendo: {str(e)}']
+        }, status=500)
+
+
+@login_required
+@require_http_methods(["POST"])
+def arriendo_delete_json(request, arriendo_id: int):
+    """
+    Elimina un arriendo (reserva)
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    try:
+        reserva = Reserva.objects.get(id=arriendo_id)
+    except Reserva.DoesNotExist:
+        return JsonResponse({'error': 'Arriendo no encontrado'}, status=404)
+
+    try:
+        arriendo_id_str = str(reserva.id)
+        reserva.delete()
+        return JsonResponse({
+            'success': True, 
+            'message': f'Arriendo #{arriendo_id_str} eliminado correctamente.'
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False, 
+            'errors': [f'Error al eliminar el arriendo: {str(e)}']
+        }, status=500)
