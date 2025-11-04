@@ -184,26 +184,107 @@
   border: 1px solid #999;
 }
 
-/* Formulario de reserva */
-.reserva-form-container {
+/* Modal de reserva (popup) */
+.modal-reserva {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1000;
+  display: none; /* Oculto por defecto */
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-reserva.show {
+  display: flex !important; /* Mostrar cuando tiene clase 'show' */
+}
+
+.modal-reserva-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(2px);
+}
+
+.modal-reserva-content {
+  position: relative;
+  background: white;
+  border-radius: 15px;
+  max-width: 600px;
+  width: 90%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+  z-index: 1001;
+  animation: modalSlideIn 0.3s ease-out;
+}
+
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-50px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.modal-reserva-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 25px;
+  border-bottom: 2px solid #e8f5e8;
   background: #f8f9fa;
-  border-radius: 10px;
-  padding: 30px;
-  margin-top: 20px;
+  border-radius: 15px 15px 0 0;
 }
 
-.reserva-form h3 {
+.modal-reserva-header h3 {
   color: #2c5530;
-  margin-bottom: 20px;
+  margin: 0;
+  font-size: 1.5rem;
 }
 
-#fecha-seleccionada {
+.modal-close-btn {
+  background: none;
+  border: none;
+  font-size: 2rem;
+  color: #666;
+  cursor: pointer;
+  padding: 0;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: all 0.3s;
+}
+
+.modal-close-btn:hover {
+  background: #e8f5e8;
+  color: #2c5530;
+}
+
+.modal-reserva-body {
+  padding: 25px;
+}
+
+.fecha-seleccionada-text {
   background: #2c5530;
   color: white;
-  padding: 10px 15px;
-  border-radius: 5px;
-  margin-bottom: 20px;
+  padding: 12px 18px;
+  border-radius: 8px;
+  margin-bottom: 25px;
   font-weight: bold;
+  text-align: center;
+  font-size: 1.1rem;
 }
 
 .form-group {
@@ -228,11 +309,86 @@
   transition: border-color 0.3s;
 }
 
+/* Estilos específicos para el select de juegos */
+#juego {
+  width: 100%;
+  padding: 10px;
+  border: 2px solid #ddd;
+  border-radius: 5px;
+  font-size: 1rem;
+  background-color: white;
+  cursor: pointer;
+}
+
+#juego:focus {
+  outline: none;
+  border-color: #2c5530;
+}
+
+/* Estilos para opciones de juegos ocupados - IMPORTANTE: algunos navegadores no aplican estilos a option */
+#juego option.juego-ocupado {
+  color: #c62828 !important;
+  background-color: #ffcdd2 !important;
+  font-weight: 600 !important;
+  padding: 10px !important;
+}
+
+#juego option:disabled.juego-ocupado {
+  color: #c62828 !important;
+  background-color: #ffcdd2 !important;
+  font-weight: 600 !important;
+  cursor: not-allowed !important;
+}
+
+#juego option:disabled:not(.juego-ocupado) {
+  color: #999 !important;
+  background-color: #f5f5f5 !important;
+  font-weight: bold !important;
+}
+
+/* Forzar estilos en el select cuando está abierto */
+#juego:focus option.juego-ocupado {
+  color: #c62828 !important;
+  background-color: #ffcdd2 !important;
+}
+
+/* Estilo alternativo: mostrar indicador visual en el select mismo cuando hay juegos ocupados seleccionados */
+#juego option[data-ocupado="true"] {
+  color: #c62828 !important;
+  background-color: #ffcdd2 !important;
+  font-weight: 600 !important;
+}
+
 .form-group input:focus,
 .form-group select:focus,
 .form-group textarea:focus {
   outline: none;
   border-color: #2c5530;
+}
+
+.form-help {
+  display: block;
+  margin-top: 5px;
+  color: #666;
+  font-size: 0.85rem;
+}
+
+.form-errors {
+  background: #f8d7da;
+  border: 1px solid #f5c6cb;
+  border-radius: 5px;
+  padding: 15px;
+  margin-bottom: 20px;
+  color: #721c24;
+}
+
+.form-errors ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.form-errors li {
+  margin-bottom: 5px;
 }
 
 .form-actions {
@@ -311,5 +467,18 @@
   .btn-cancelar,
   .btn-confirmar {
     width: 100%;
+  }
+  
+  .modal-reserva-content {
+    width: 95%;
+    max-height: 95vh;
+  }
+  
+  .modal-reserva-header {
+    padding: 15px 20px;
+  }
+  
+  .modal-reserva-body {
+    padding: 20px;
   }
 }

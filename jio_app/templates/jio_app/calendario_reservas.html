@@ -3,6 +3,285 @@
 
 {% block extra_head %}
 <link rel="stylesheet" href="{% static 'css/calendario.css' %}">
+<!-- Leaflet CSS para el mapa -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+<style>
+  .pac-container {
+    z-index: 10000 !important;
+  }
+  #direccion {
+    width: 100%;
+    padding: 10px;
+    border: 2px solid #ddd;
+    border-radius: 5px;
+    font-size: 1rem;
+    transition: border-color 0.3s;
+  }
+  #direccion:focus {
+    outline: none;
+    border-color: #2c5530;
+  }
+  .direccion-autocomplete-wrapper {
+    position: relative;
+  }
+  .mapa-link-container {
+    margin-top: 15px;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border: 2px solid #2c5530;
+    text-align: center;
+  }
+  
+  .mapa-link-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 24px;
+    background: #2c5530;
+    color: white;
+    text-decoration: none;
+    border-radius: 5px;
+    font-weight: 600;
+    transition: background 0.3s;
+    border: none;
+    cursor: pointer;
+    font-size: 1rem;
+  }
+  
+  .mapa-link-btn:hover {
+    background: #1e3a21;
+    color: white;
+  }
+  
+  .mapa-link-btn:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+  
+  .mapa-link-btn:not(:disabled) {
+    background: #2c5530;
+    cursor: pointer;
+  }
+  
+  .mapa-link-container {
+    visibility: visible !important;
+    display: block !important;
+    margin-top: 15px;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border: 2px solid #2c5530;
+    text-align: center;
+  }
+  
+  #abrir-google-maps {
+    display: inline-flex !important;
+    visibility: visible !important;
+    opacity: 0.6;
+  }
+  
+  #abrir-google-maps:not(:disabled) {
+    opacity: 1 !important;
+    background: #2c5530 !important;
+    cursor: pointer !important;
+  }
+  
+  /* Contenedor de búsqueda de dirección */
+  .direccion-search-container {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  
+  .direccion-search-container #direccion {
+    flex: 1;
+    padding: 12px;
+    border: 2px solid #ddd;
+    border-radius: 8px;
+    font-size: 1rem;
+    transition: border-color 0.3s;
+  }
+  
+  .direccion-search-container #direccion:focus {
+    outline: none;
+    border-color: #2c5530;
+  }
+  
+  .btn-buscar {
+    padding: 12px 20px;
+    background: #2c5530;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 1.2rem;
+    transition: background 0.3s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 50px;
+  }
+  
+  .btn-buscar:hover {
+    background: #1e3d21;
+  }
+  
+  /* Contenedor del mapa */
+  .mapa-container {
+    position: relative;
+    width: 100%;
+    height: 400px;
+    margin-top: 15px;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 2px solid #ddd;
+    background: #f0f0f0;
+  }
+  
+  .mapa-leaflet {
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+  }
+  
+  .mapa-loading {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.9);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+  }
+  
+  .spinner {
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #2c5530;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    animation: spin 1s linear infinite;
+  }
+  
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+  
+  /* Información de ubicación seleccionada */
+  .mapa-info-seleccionada {
+    margin-top: 15px;
+    padding: 15px;
+    background: #e8f5e8;
+    border-radius: 8px;
+    border-left: 4px solid #2c5530;
+  }
+  
+  .mapa-info-seleccionada .info-item {
+    margin-bottom: 8px;
+    font-size: 0.95rem;
+  }
+  
+  .mapa-info-seleccionada .info-item:last-child {
+    margin-bottom: 0;
+  }
+  
+  .mapa-info-seleccionada strong {
+    color: #2c5530;
+    margin-right: 8px;
+  }
+  
+  /* Botón de Google Maps */
+  .mapa-link-container {
+    margin-top: 10px;
+    text-align: center;
+  }
+  
+  .btn-google-maps {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 24px;
+    background: #2c5530;
+    color: white;
+    text-decoration: none;
+    border-radius: 5px;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+    font-size: 1rem;
+    transition: all 0.3s;
+  }
+  
+  .btn-google-maps:hover:not(:disabled) {
+    background: #1e3d21;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  }
+  
+  .btn-google-maps:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+  
+  /* Estilos para el mapa Leaflet */
+  .leaflet-container {
+    font-family: 'Arial', sans-serif;
+  }
+  
+  .leaflet-popup-content-wrapper {
+    border-radius: 8px;
+  }
+  
+  .leaflet-popup-content {
+    margin: 15px;
+    font-size: 0.95rem;
+  }
+  
+  /* Estilos para juegos ocupados en el select */
+  #juego {
+    font-size: 1rem;
+  }
+  
+  #juego option.juego-ocupado {
+    color: #d32f2f !important;
+    background-color: #ffebee !important;
+    font-weight: 600 !important;
+  }
+  
+  #juego option:disabled.juego-ocupado {
+    color: #d32f2f !important;
+    background-color: #ffebee !important;
+    font-weight: 600 !important;
+    cursor: not-allowed !important;
+  }
+  
+  #juego option:disabled:not(.juego-ocupado) {
+    color: #999 !important;
+    background-color: #f5f5f5 !important;
+    font-weight: bold !important;
+  }
+  
+  /* Mejorar visibilidad en diferentes navegadores */
+  #juego option {
+    padding: 8px 12px;
+  }
+  
+  #juego option.juego-ocupado,
+  #juego option:disabled.juego-ocupado {
+    color: #c62828 !important;
+    background: linear-gradient(to right, #ffebee 0%, #ffcdd2 100%) !important;
+    border-left: 3px solid #d32f2f !important;
+    padding-left: 9px;
+  }
+</style>
 {% endblock %}
 
 {% block content %}
@@ -44,63 +323,119 @@
       </div>
     </div>
 
-    <!-- Formulario de reserva (se muestra cuando se selecciona una fecha) -->
-    <div class="reserva-form-container" id="reserva-form-container" style="display: none;">
-      <div class="reserva-form">
-        <h3>Formulario de Reserva</h3>
-        <p id="fecha-seleccionada"></p>
-        
-        <form id="formulario-reserva">
-          <div class="form-group">
-            <label for="nombre">Nombre completo:</label>
-            <input type="text" id="nombre" name="nombre" required>
-          </div>
+    <!-- Modal de reserva (popup) -->
+    <div class="modal-reserva" id="modal-reserva" style="display: none;">
+      <div class="modal-reserva-overlay" id="modal-overlay"></div>
+      <div class="modal-reserva-content">
+        <div class="modal-reserva-header">
+          <h3>Formulario de Reserva</h3>
+          <button class="modal-close-btn" id="modal-close-btn">&times;</button>
+        </div>
+        <div class="modal-reserva-body">
+          <p id="fecha-seleccionada" class="fecha-seleccionada-text"></p>
           
-          <div class="form-group">
-            <label for="email">Correo electrónico:</label>
-            <input type="email" id="email" name="email" required>
-          </div>
-          
-          <div class="form-group">
-            <label for="telefono">Teléfono:</label>
-            <input type="tel" id="telefono" name="telefono" required>
-          </div>
-          
-          <div class="form-group">
-            <label for="juego">Juego inflable:</label>
-            <select id="juego" name="juego" required>
-              <option value="">Selecciona un juego</option>
-              {% for juego in juegos_disponibles %}
-                <option value="{{ juego.id }}">{{ juego.nombre }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          
-          <div class="form-group">
-            <label for="horario">Horario preferido:</label>
-            <select id="horario" name="horario" required>
-              <option value="">Selecciona un horario</option>
-              <option value="09:00-13:00">Mañana (9:00 - 13:00)</option>
-              <option value="14:00-18:00">Tarde (14:00 - 18:00)</option>
-              <option value="09:00-18:00">Todo el día (9:00 - 18:00)</option>
-            </select>
-          </div>
-          
-          <div class="form-group">
-            <label for="direccion">Dirección del evento:</label>
-            <textarea id="direccion" name="direccion" rows="3" required></textarea>
-          </div>
-          
-          <div class="form-group">
-            <label for="comentarios">Comentarios adicionales:</label>
-            <textarea id="comentarios" name="comentarios" rows="3"></textarea>
-          </div>
-          
-          <div class="form-actions">
-            <button type="button" id="cancelar-reserva" class="btn-cancelar">Cancelar</button>
-            <button type="submit" class="btn-confirmar">Confirmar Reserva</button>
-          </div>
-        </form>
+          <form id="formulario-reserva">
+            <div class="form-group">
+              <label for="nombre">Nombre completo:</label>
+              <input type="text" id="nombre" name="nombre" required>
+            </div>
+            
+            <div class="form-group">
+              <label for="email">Correo electrónico:</label>
+              <input type="email" id="email" name="email" required>
+            </div>
+            
+            <div class="form-group">
+              <label for="telefono">Teléfono:</label>
+              <input type="tel" id="telefono" name="telefono" required>
+            </div>
+            
+            <div class="form-group">
+              <label for="juego">Juego inflable:</label>
+              <select id="juego" name="juego" required>
+                <option value="">Cargando juegos disponibles...</option>
+              </select>
+              <div id="info-juegos-ocupados" class="info-juegos-ocupados" style="display: none; margin-top: 8px; padding: 10px; background-color: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px; font-size: 0.9rem; color: #856404;">
+                <strong>ℹ️ Nota:</strong> Los juegos marcados con ❌ en <span style="color: #c62828; font-weight: 600;">rojo</span> están reservados y no están disponibles para esta fecha.
+              </div>
+            </div>
+            
+            <div class="form-group">
+              <label for="distancia_km">Distancia desde Osorno (km):</label>
+              <input type="number" id="distancia_km" name="distancia_km" min="0" value="0" required>
+              <small class="form-help">Precio adicional: $1.000 por km</small>
+            </div>
+            
+            <div class="form-group">
+              <label for="horario">Horario preferido:</label>
+              <select id="horario" name="horario" required>
+                <option value="">Selecciona un horario</option>
+                <option value="09:00-13:00">Mañana (9:00 - 13:00)</option>
+                <option value="14:00-18:00">Tarde (14:00 - 18:00)</option>
+                <option value="09:00-18:00">Todo el día (9:00 - 18:00)</option>
+              </select>
+            </div>
+            
+            <div class="form-group">
+              <label for="direccion">Dirección del evento:</label>
+              
+              <!-- Barra de búsqueda con botón -->
+              <div class="direccion-search-container">
+                <input type="text" id="direccion" name="direccion" placeholder="Busca una dirección o haz clic en el mapa..." required autocomplete="off">
+                <button type="button" id="btn-buscar-direccion" class="btn-buscar" title="Buscar dirección">
+                  <span>🔍</span>
+                </button>
+              </div>
+              <small class="form-help">💡 Escribe una dirección para buscarla o haz clic directamente en el mapa para seleccionar la ubicación</small>
+              
+              <!-- Campos ocultos para coordenadas -->
+              <input type="hidden" id="direccion_lat" name="direccion_lat">
+              <input type="hidden" id="direccion_lng" name="direccion_lng">
+              <input type="hidden" id="direccion_completa" name="direccion_completa">
+              
+              <!-- Mapa interactivo -->
+              <div id="mapa-container" class="mapa-container">
+                <div id="mapa" class="mapa-leaflet"></div>
+                <div class="mapa-loading" id="mapa-loading" style="display: none;">
+                  <div class="spinner"></div>
+                  <p>Cargando mapa...</p>
+                </div>
+              </div>
+              
+              <!-- Información de la ubicación seleccionada -->
+              <div class="mapa-info-seleccionada" id="mapa-info-seleccionada" style="display: none;">
+                <div class="info-item">
+                  <strong>📍 Ubicación seleccionada:</strong>
+                  <span id="direccion-seleccionada-text">-</span>
+                </div>
+                <div class="info-item">
+                  <strong>📏 Distancia desde Osorno:</strong>
+                  <span id="distancia-seleccionada-text">-</span>
+                </div>
+              </div>
+              
+              <!-- Botón para abrir en Google Maps -->
+              <div class="mapa-link-container" id="mapa-link-container" style="display: none; margin-top: 10px; text-align: center;">
+                <button type="button" id="abrir-google-maps" class="btn-google-maps" disabled>
+                  <span>🗺️</span>
+                  <span>Ver en Google Maps</span>
+                </button>
+              </div>
+            </div>
+            
+            <div class="form-group">
+              <label for="comentarios">Comentarios adicionales:</label>
+              <textarea id="comentarios" name="comentarios" rows="3"></textarea>
+            </div>
+            
+            <div id="form-errors" class="form-errors" style="display: none;"></div>
+            
+            <div class="form-actions">
+              <button type="button" id="cancelar-reserva" class="btn-cancelar">Cancelar</button>
+              <button type="submit" class="btn-confirmar" id="btn-submit">Confirmar Reserva</button>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
   </div>
@@ -108,5 +443,19 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{% static 'js/calendario.js' %}"></script>
+<!-- Leaflet JS para el mapa -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="{% static 'js/calendario.js' %}?v=6.0"></script>
+<script>
+// Debug: Verificar que el botón existe cuando se carga la página
+document.addEventListener('DOMContentLoaded', function() {
+    const btn = document.getElementById('abrir-google-maps');
+    if (btn) {
+        console.log('✅ Botón Google Maps encontrado en DOM');
+        console.log('Estado inicial:', btn.disabled ? 'DESHABILITADO' : 'HABILITADO');
+    } else {
+        console.error('❌ Botón Google Maps NO encontrado en DOM');
+    }
+});
+</script>
 {% endblock %}

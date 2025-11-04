@@ -12,6 +12,7 @@ from django.utils import timezone
 from django.db.models import Q
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.text import slugify
+from django.conf import settings
 import re
 import secrets
 import string
@@ -34,13 +35,447 @@ def calendario_reservas(request):
     """
     Vista para el calendario de reservas
     """
-    # Obtener todos los juegos habilitados para mostrar en el calendario
-    juegos_disponibles = Juego.objects.filter(estado='habilitado')
+    # Obtener todos los juegos disponibles (estado='disponible')
+    juegos_disponibles = Juego.objects.filter(estado='disponible')
     
     context = {
         'juegos_disponibles': juegos_disponibles,
     }
     return render(request, 'jio_app/calendario_reservas.html', context)
+
+
+@require_http_methods(["GET"])
+def disponibilidad_fecha_json(request):
+    """
+    Obtiene la disponibilidad de juegos para una fecha específica (público)
+    """
+    try:
+        fecha_str = request.GET.get('fecha', '').strip()
+        
+        if not fecha_str:
+            return JsonResponse({'error': 'Fecha requerida'}, status=400)
+        
+        try:
+            from datetime import datetime
+            fecha_obj = datetime.strptime(fecha_str, '%Y-%m-%d').date()
+        except ValueError:
+            return JsonResponse({'error': 'Formato de fecha inválido'}, status=400)
+        
+        # Verificar que la fecha no sea pasada
+        hoy = timezone.now().date()
+        if fecha_obj < hoy:
+            return JsonResponse({
+                'disponible': False,
+                'juegos_disponibles': [],
+                'mensaje': 'No se pueden hacer reservas para fechas pasadas',
+                'fecha': fecha_str,
+            })
+        
+        # Obtener todos los juegos disponibles (estado='disponible')
+        try:
+            todos_juegos = Juego.objects.filter(estado='disponible').order_by('nombre')
+            total_juegos_sistema = Juego.objects.count()  # Para debugging
+            juegos_disponibles_count = todos_juegos.count()
+        except Exception as e:
+            return JsonResponse({
+                'error': f'Error al obtener juegos: {str(e)}',
+                'disponible': False,
+                'juegos_disponibles': []
+            }, status=500)
+        
+        # Si no hay juegos disponibles, el día no está disponible
+        if not todos_juegos.exists():
+            # Información adicional para debugging
+            estados_existentes = Juego.objects.values_list('estado', flat=True).distinct()
+            return JsonResponse({
+                'disponible': False,
+                'juegos_disponibles': [],
+                'mensaje': 'No hay juegos disponibles en el sistema',
+                'fecha': fecha_str,
+                'debug_info': {
+                    'total_juegos_sistema': total_juegos_sistema,
+                    'juegos_disponibles_count': juegos_disponibles_count,
+                    'estados_existentes': list(estados_existentes) if estados_existentes else []
+                }
+            })
+        
+        # Obtener reservas confirmadas o pendientes para esa fecha
+        # IMPORTANTE: Buscar por fecha_evento y estados válidos
+        try:
+            reservas_fecha = Reserva.objects.filter(
+                fecha_evento=fecha_obj,
+                estado__in=['pendiente', 'confirmada']
+            ).select_related('cliente').prefetch_related('detalles__juego')
+            
+            # Debug: verificar cuántas reservas se encontraron
+            num_reservas = reservas_fecha.count()
+            print(f"🔍 DEBUG - Reservas encontradas para {fecha_obj}: {num_reservas}")
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return JsonResponse({
+                'error': f'Error al obtener reservas: {str(e)}',
+                'disponible': False,
+                'juegos_disponibles': []
+            }, status=500)
+        
+        # Obtener IDs de juegos ocupados ese día
+        # Iterar sobre todas las reservas y sus detalles para identificar juegos ocupados
+        juegos_ocupados = set()
+        reservas_info = []  # Para debugging
+        
+        try:
+            for reserva in reservas_fecha:
+                reserva_info = {
+                    'id': reserva.id,
+                    'estado': reserva.estado,
+                    'fecha': str(reserva.fecha_evento),
+                    'juegos': []
+                }
+                
+                # Obtener todos los detalles de esta reserva
+                detalles = reserva.detalles.all()
+                print(f"  📋 Reserva #{reserva.id} (estado: {reserva.estado}) tiene {detalles.count()} detalles")
+                
+                for detalle in detalles:
+                    if detalle.juego:
+                        juego_id = detalle.juego.id
+                        juego_nombre = detalle.juego.nombre
+                        juegos_ocupados.add(juego_id)
+                        reserva_info['juegos'].append({
+                            'id': juego_id,
+                            'nombre': juego_nombre,
+                            'cantidad': detalle.cantidad
+                        })
+                        print(f"    🎮 Juego ocupado: ID {juego_id} - {juego_nombre} (cantidad: {detalle.cantidad})")
+                
+                if reserva_info['juegos']:
+                    reservas_info.append(reserva_info)
+            
+            print(f"✅ Total de juegos ocupados encontrados: {len(juegos_ocupados)} (IDs: {list(juegos_ocupados)})")
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return JsonResponse({
+                'error': f'Error al procesar reservas: {str(e)}',
+                'disponible': False,
+                'juegos_disponibles': []
+            }, status=500)
+        
+        # Filtrar juegos disponibles (no ocupados)
+        # Si hay juegos ocupados, excluirlos; si no hay ninguno ocupado, todos están disponibles
+        if juegos_ocupados:
+            # Excluir los juegos ocupados de la lista de disponibles
+            juegos_disponibles = todos_juegos.exclude(id__in=juegos_ocupados)
+            # Obtener los juegos ocupados de la tabla Juego para mostrarlos
+            juegos_ocupados_list = todos_juegos.filter(id__in=juegos_ocupados)
+            print(f"📊 Juegos disponibles: {juegos_disponibles.count()}, Juegos ocupados: {juegos_ocupados_list.count()}")
+        else:
+            juegos_disponibles = todos_juegos
+            juegos_ocupados_list = []
+            print(f"📊 No hay juegos ocupados. Todos los {todos_juegos.count()} juegos están disponibles")
+        
+        # Construir lista de juegos disponibles
+        juegos_data = []
+        try:
+            for juego in juegos_disponibles:
+                juegos_data.append({
+                    'id': juego.id,
+                    'nombre': juego.nombre,
+                    'precio': int(juego.precio_base) if juego.precio_base else 0,
+                    'categoria': juego.get_categoria_display() if hasattr(juego, 'get_categoria_display') else juego.categoria,
+                    'disponible': True
+                })
+        except Exception as e:
+            return JsonResponse({
+                'error': f'Error al procesar juegos: {str(e)}',
+                'disponible': False,
+                'juegos_disponibles': []
+            }, status=500)
+        
+        # Construir lista de juegos ocupados (para mostrarlos como no disponibles)
+        juegos_ocupados_data = []
+        try:
+            for juego in juegos_ocupados_list:
+                juego_data = {
+                    'id': juego.id,
+                    'nombre': juego.nombre,
+                    'precio': int(juego.precio_base) if juego.precio_base else 0,
+                    'categoria': juego.get_categoria_display() if hasattr(juego, 'get_categoria_display') else juego.categoria,
+                    'disponible': False
+                }
+                juegos_ocupados_data.append(juego_data)
+                print(f"  ✅ Juego ocupado agregado a respuesta: ID {juego.id} - {juego.nombre}")
+            
+            print(f"📦 Total juegos ocupados en respuesta: {len(juegos_ocupados_data)}")
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return JsonResponse({
+                'error': f'Error al procesar juegos ocupados: {str(e)}',
+                'disponible': False,
+                'juegos_disponibles': []
+            }, status=500)
+        
+        # Un día está disponible si hay AL MENOS un juego disponible
+        respuesta = {
+            'disponible': len(juegos_data) > 0,
+            'juegos_disponibles': juegos_data,
+            'juegos_ocupados_list': juegos_ocupados_data,  # Lista de juegos ocupados para mostrar
+            'total_disponibles': len(juegos_data),
+            'total_juegos': todos_juegos.count(),
+            'juegos_ocupados': len(juegos_ocupados),
+            'fecha': fecha_str,
+            'debug_info': {
+                'total_juegos_sistema': todos_juegos.count(),
+                'ids_juegos_ocupados': list(juegos_ocupados),
+                'ids_juegos_disponibles': [j['id'] for j in juegos_data],
+                'reservas_encontradas': reservas_info,
+                'num_reservas': len(reservas_info)
+            }
+        }
+        
+        print(f"📤 Enviando respuesta para {fecha_str}:")
+        print(f"   - Disponible: {respuesta['disponible']}")
+        print(f"   - Juegos disponibles: {len(juegos_data)}")
+        print(f"   - Juegos ocupados: {len(juegos_ocupados_data)}")
+        print(f"   - IDs ocupados: {list(juegos_ocupados)}")
+        
+        return JsonResponse(respuesta)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({
+            'error': f'Error inesperado: {str(e)}',
+            'disponible': False,
+            'juegos_disponibles': []
+        }, status=500)
+
+
+@require_http_methods(["POST"])
+@csrf_exempt
+def crear_reserva_publica(request):
+    """
+    Crea una reserva desde el calendario público (sin autenticación)
+    """
+    import json
+    
+    try:
+        if request.content_type == 'application/json':
+            data = json.loads(request.body)
+        else:
+            data = request.POST.dict()
+    except:
+        data = request.POST.dict()
+    
+    # Extraer datos del formulario
+    nombre_completo = data.get('nombre', '').strip()
+    email = data.get('email', '').strip()
+    telefono = data.get('telefono', '').strip()
+    juego_id = data.get('juego', '').strip()
+    fecha_evento = data.get('fecha', '').strip()
+    horario = data.get('horario', '').strip()
+    direccion = data.get('direccion', '').strip()
+    comentarios = data.get('comentarios', '').strip()
+    distancia_km = data.get('distancia_km', '0').strip()
+    
+    errors = []
+    
+    # Validaciones básicas
+    if not nombre_completo:
+        errors.append('El nombre es obligatorio')
+    elif len(nombre_completo) < 3:
+        errors.append('El nombre debe tener al menos 3 caracteres')
+    
+    # Separar nombre y apellido
+    partes_nombre = nombre_completo.split(' ', 1)
+    first_name = partes_nombre[0]
+    last_name = partes_nombre[1] if len(partes_nombre) > 1 else ''
+    
+    if not email:
+        errors.append('El email es obligatorio')
+    else:
+        email_regex = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
+        if not email_regex.match(email):
+            errors.append('Email inválido')
+    
+    if not telefono:
+        errors.append('El teléfono es obligatorio')
+    
+    if not juego_id:
+        errors.append('Debe seleccionar un juego')
+    
+    if not fecha_evento:
+        errors.append('La fecha es obligatoria')
+    else:
+        try:
+            from datetime import datetime
+            fecha_obj = datetime.strptime(fecha_evento, '%Y-%m-%d').date()
+            hoy = timezone.now().date()
+            if fecha_obj < hoy:
+                errors.append('No se pueden hacer reservas para fechas pasadas')
+        except ValueError:
+            errors.append('Formato de fecha inválido')
+    
+    if not horario:
+        errors.append('Debe seleccionar un horario')
+    else:
+        # Convertir horario a hora_instalacion y hora_retiro
+        horarios_map = {
+            '09:00-13:00': ('09:00', '13:00'),
+            '14:00-18:00': ('14:00', '18:00'),
+            '09:00-18:00': ('09:00', '18:00'),
+        }
+        if horario in horarios_map:
+            hora_instalacion_str, hora_retiro_str = horarios_map[horario]
+            try:
+                hora_inst_obj = datetime.strptime(hora_instalacion_str, '%H:%M').time()
+                hora_ret_obj = datetime.strptime(hora_retiro_str, '%H:%M').time()
+            except ValueError:
+                errors.append('Error en el formato de horario')
+        else:
+            errors.append('Horario inválido')
+    
+    if not direccion:
+        errors.append('La dirección es obligatoria')
+    elif len(direccion) > 300:
+        errors.append('La dirección no puede exceder 300 caracteres')
+    
+    # Validar distancia
+    distancia_km_int = 0
+    if distancia_km:
+        try:
+            distancia_km_int = int(distancia_km)
+            if distancia_km_int < 0:
+                errors.append('La distancia no puede ser negativa')
+        except ValueError:
+            errors.append('La distancia debe ser un número válido')
+    
+    if errors:
+        return JsonResponse({'success': False, 'errors': errors}, status=400)
+    
+    # Verificar que el juego existe y está disponible
+    try:
+        juego = Juego.objects.get(id=int(juego_id), estado='disponible')
+    except (Juego.DoesNotExist, ValueError):
+        errors.append('Juego no encontrado o no disponible')
+        return JsonResponse({'success': False, 'errors': errors}, status=400)
+    
+    # Verificar disponibilidad del juego en la fecha
+    reservas_fecha = Reserva.objects.filter(
+        fecha_evento=fecha_obj,
+        estado__in=['pendiente', 'confirmada']
+    ).prefetch_related('detalles__juego')
+    
+    juego_ocupado = False
+    for reserva in reservas_fecha:
+        for detalle in reserva.detalles.all():
+            if detalle.juego.id == juego.id:
+                juego_ocupado = True
+                break
+        if juego_ocupado:
+            break
+    
+    if juego_ocupado:
+        errors.append('El juego seleccionado ya está reservado para esa fecha')
+        return JsonResponse({'success': False, 'errors': errors}, status=400)
+    
+    # Buscar o crear cliente
+    try:
+        # Buscar por email primero
+        usuario = Usuario.objects.filter(email=email, tipo_usuario='cliente').first()
+        
+        if usuario:
+            cliente = usuario.cliente
+            # Actualizar datos si es necesario
+            if usuario.first_name != first_name or usuario.last_name != last_name:
+                usuario.first_name = first_name
+                usuario.last_name = last_name
+                usuario.save()
+            if telefono and usuario.telefono != telefono:
+                usuario.telefono = telefono
+                usuario.save()
+        else:
+            # Crear nuevo usuario y cliente
+            base_username = slugify(f"{first_name}_{last_name}").lower()[:24] or slugify(first_name).lower() or 'cliente'
+            username = base_username
+            counter = 1
+            while Usuario.objects.filter(username=username).exists():
+                username = f"{base_username}_{counter}"
+                counter += 1
+            
+            random_password = secrets.token_urlsafe(12)
+            usuario = Usuario.objects.create_user(
+                username=username,
+                email=email,
+                password=random_password,
+                first_name=first_name,
+                last_name=last_name,
+                tipo_usuario='cliente',
+                is_active=True,
+                telefono=telefono or None,
+            )
+            
+            # Generar RUT ficticio si no existe (para clientes sin RUT)
+            rut_ficticio = f"{counter}{secrets.randbelow(10000000)}-{secrets.randbelow(10)}"
+            while Cliente.objects.filter(rut=rut_ficticio).exists():
+                rut_ficticio = f"{counter}{secrets.randbelow(10000000)}-{secrets.randbelow(10)}"
+            
+            cliente = Cliente.objects.create(
+                usuario=usuario,
+                rut=rut_ficticio,
+                tipo_cliente='particular',
+            )
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'errors': [f'Error al crear/buscar cliente: {str(e)}']
+        }, status=500)
+    
+    # Calcular precio por distancia ($1.000 por km)
+    PRECIO_POR_KM = 1000
+    precio_distancia = distancia_km_int * PRECIO_POR_KM
+    
+    # Calcular total
+    total_final = juego.precio_base + precio_distancia
+    
+    try:
+        # Crear reserva
+        reserva = Reserva.objects.create(
+            cliente=cliente,
+            fecha_evento=fecha_obj,
+            hora_instalacion=hora_inst_obj,
+            hora_retiro=hora_ret_obj,
+            direccion_evento=direccion,
+            distancia_km=distancia_km_int,
+            precio_distancia=precio_distancia,
+            estado='pendiente',
+            observaciones=comentarios or None,
+            total_reserva=total_final,
+        )
+        
+        # Crear detalle de reserva
+        DetalleReserva.objects.create(
+            reserva=reserva,
+            juego=juego,
+            cantidad=1,
+            precio_unitario=juego.precio_base,
+            subtotal=juego.precio_base,
+        )
+        
+        return JsonResponse({
+            'success': True,
+            'message': '¡Reserva creada exitosamente! Nos pondremos en contacto contigo pronto para confirmar.',
+            'reserva_id': reserva.id
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'errors': [f'Error al crear la reserva: {str(e)}']
+        }, status=500)
 
 def login_view(request):
     """
@@ -1312,7 +1747,7 @@ def arriendos_list(request):
 
     # Obtener clientes y juegos para los modales
     clientes = Cliente.objects.select_related('usuario').all().order_by('usuario__last_name', 'usuario__first_name')
-    juegos_disponibles = Juego.objects.filter(estado__iexact='habilitado').order_by('nombre')
+    juegos_disponibles = Juego.objects.filter(estado='disponible').order_by('nombre')
 
     return render(request, 'jio_app/arriendos_list.html', {
         'arriendos': base_qs,
@@ -1351,7 +1786,7 @@ def juegos_disponibles_fecha_json(request):
         return JsonResponse({'error': 'Formato de fecha inválido'}, status=400)
     
     # Obtener todos los juegos habilitados
-    todos_juegos = Juego.objects.filter(estado__iexact='habilitado').order_by('nombre')
+    todos_juegos = Juego.objects.filter(estado='disponible').order_by('nombre')
     
     # Obtener reservas confirmadas para esa fecha (excluyendo el arriendo actual si se está editando)
     reservas_fecha = Reserva.objects.filter(
@@ -1619,7 +2054,7 @@ def arriendo_create_json(request):
                 continue
             
             try:
-                juego = Juego.objects.get(id=int(juego_id), estado__iexact='habilitado')
+                juego = Juego.objects.get(id=int(juego_id), estado='disponible')
                 # Cantidad siempre es 1
                 cantidad_int = 1
                 precio_unitario = juego.precio_base
@@ -1784,7 +2219,7 @@ def arriendo_update_json(request, arriendo_id: int):
                     continue
                 
                 try:
-                    juego = Juego.objects.get(id=int(juego_id), estado__iexact='habilitado')
+                    juego = Juego.objects.get(id=int(juego_id), estado='disponible')
                     # Cantidad siempre es 1
                     cantidad_int = 1
                     precio_unitario = juego.precio_base
