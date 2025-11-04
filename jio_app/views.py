@@ -71,9 +71,11 @@ def disponibilidad_fecha_json(request):
                 'fecha': fecha_str,
             })
         
-        # Obtener todos los juegos disponibles (estado='disponible')
+        # Obtener todos los juegos disponibles (aceptar tanto 'Habilitado' como 'disponible')
         try:
-            todos_juegos = Juego.objects.filter(estado='disponible').order_by('nombre')
+            todos_juegos = Juego.objects.filter(
+                Q(estado='Habilitado') | Q(estado='disponible')
+            ).order_by('nombre')
             total_juegos_sistema = Juego.objects.count()  # Para debugging
             juegos_disponibles_count = todos_juegos.count()
         except Exception as e:
@@ -99,17 +101,27 @@ def disponibilidad_fecha_json(request):
                 }
             })
         
-        # Obtener reservas confirmadas o pendientes para esa fecha
-        # IMPORTANTE: Buscar por fecha_evento y estados válidos
+        # Obtener reservas confirmadas, pendientes o completadas para esa fecha
+        # IMPORTANTE: Buscar por fecha_evento y estados válidos (usar valores exactos del modelo)
         try:
+            # Primero, verificar qué estados existen realmente en la base de datos para esta fecha
+            reservas_fecha_crudas = Reserva.objects.filter(fecha_evento=fecha_obj)
+            estados_existentes_fecha = reservas_fecha_crudas.values_list('estado', flat=True).distinct()
+            print(f"🔍 DEBUG - Estados de reservas para {fecha_obj}: {list(estados_existentes_fecha)}")
+            print(f"🔍 DEBUG - Total reservas para {fecha_obj} (sin filtrar estado): {reservas_fecha_crudas.count()}")
+            
+            # Buscar con todos los posibles estados (usar Q para case-insensitive)
             reservas_fecha = Reserva.objects.filter(
-                fecha_evento=fecha_obj,
-                estado__in=['pendiente', 'confirmada']
+                fecha_evento=fecha_obj
+            ).filter(
+                Q(estado__iexact='Pendiente') | 
+                Q(estado__iexact='Confirmada') | 
+                Q(estado__iexact='completada')
             ).select_related('cliente').prefetch_related('detalles__juego')
             
             # Debug: verificar cuántas reservas se encontraron
             num_reservas = reservas_fecha.count()
-            print(f"🔍 DEBUG - Reservas encontradas para {fecha_obj}: {num_reservas}")
+            print(f"🔍 DEBUG - Reservas encontradas con filtro de estado: {num_reservas}")
             
         except Exception as e:
             import traceback
@@ -170,11 +182,11 @@ def disponibilidad_fecha_json(request):
             # Excluir los juegos ocupados de la lista de disponibles
             juegos_disponibles = todos_juegos.exclude(id__in=juegos_ocupados)
             # Obtener los juegos ocupados de la tabla Juego para mostrarlos
-            juegos_ocupados_list = todos_juegos.filter(id__in=juegos_ocupados)
-            print(f"📊 Juegos disponibles: {juegos_disponibles.count()}, Juegos ocupados: {juegos_ocupados_list.count()}")
+            juegos_ocupados_queryset = todos_juegos.filter(id__in=juegos_ocupados)
+            print(f"📊 Juegos disponibles: {juegos_disponibles.count()}, Juegos ocupados: {juegos_ocupados_queryset.count()}")
         else:
             juegos_disponibles = todos_juegos
-            juegos_ocupados_list = []
+            juegos_ocupados_queryset = Juego.objects.none()  # QuerySet vacío
             print(f"📊 No hay juegos ocupados. Todos los {todos_juegos.count()} juegos están disponibles")
         
         # Construir lista de juegos disponibles
@@ -198,7 +210,8 @@ def disponibilidad_fecha_json(request):
         # Construir lista de juegos ocupados (para mostrarlos como no disponibles)
         juegos_ocupados_data = []
         try:
-            for juego in juegos_ocupados_list:
+            # Asegurar que siempre iteramos sobre un QuerySet o lista
+            for juego in juegos_ocupados_queryset:
                 juego_data = {
                     'id': juego.id,
                     'nombre': juego.nombre,
@@ -241,8 +254,16 @@ def disponibilidad_fecha_json(request):
         print(f"📤 Enviando respuesta para {fecha_str}:")
         print(f"   - Disponible: {respuesta['disponible']}")
         print(f"   - Juegos disponibles: {len(juegos_data)}")
-        print(f"   - Juegos ocupados: {len(juegos_ocupados_data)}")
+        print(f"   - Juegos ocupados en data: {len(juegos_ocupados_data)}")
+        print(f"   - juegos_ocupados_list en respuesta: {'SÍ' if 'juegos_ocupados_list' in respuesta else 'NO'}")
+        print(f"   - Tipo de juegos_ocupados_list: {type(respuesta.get('juegos_ocupados_list'))}")
         print(f"   - IDs ocupados: {list(juegos_ocupados)}")
+        print(f"   - Total juegos sistema: {respuesta['total_juegos']}")
+        
+        # Verificar que la respuesta tenga todos los campos necesarios
+        import json
+        respuesta_json = json.dumps(respuesta, default=str)
+        print(f"   - Respuesta JSON (primeros 500 chars): {respuesta_json[:500]}")
         
         return JsonResponse(respuesta)
     except Exception as e:
@@ -271,29 +292,53 @@ def crear_reserva_publica(request):
     except:
         data = request.POST.dict()
     
-    # Extraer datos del formulario
-    nombre_completo = data.get('nombre', '').strip()
+    # Extraer datos del formulario (nuevos campos)
+    nombre = data.get('nombre', '').strip()
+    apellido = data.get('apellido', '').strip()
     email = data.get('email', '').strip()
     telefono = data.get('telefono', '').strip()
-    juego_id = data.get('juego', '').strip()
     fecha_evento = data.get('fecha', '').strip()
-    horario = data.get('horario', '').strip()
+    hora_instalacion = data.get('hora_instalacion', '').strip()
+    hora_retiro = data.get('hora_retiro', '').strip()
     direccion = data.get('direccion', '').strip()
-    comentarios = data.get('comentarios', '').strip()
+    observaciones = data.get('observaciones', '').strip()
     distancia_km = data.get('distancia_km', '0').strip()
+    juegos_data = data.get('juegos', [])  # Array de juegos
+    
+    # Debug: imprimir datos recibidos
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"📥 Datos recibidos: nombre={nombre}, apellido={apellido}, hora_instalacion={hora_instalacion}, hora_retiro={hora_retiro}, juegos={juegos_data}")
+    
+    # Si juegos_data es string, intentar parsearlo
+    if isinstance(juegos_data, str):
+        try:
+            juegos_data = json.loads(juegos_data)
+        except:
+            juegos_data = []
+    
+    # Compatibilidad con formulario antiguo (si viene nombre completo)
+    if not nombre and data.get('nombre_completo'):
+        nombre_completo = data.get('nombre_completo', '').strip()
+        partes_nombre = nombre_completo.split(' ', 1)
+        nombre = partes_nombre[0]
+        apellido = partes_nombre[1] if len(partes_nombre) > 1 else ''
     
     errors = []
     
     # Validaciones básicas
-    if not nombre_completo:
+    if not nombre:
         errors.append('El nombre es obligatorio')
-    elif len(nombre_completo) < 3:
-        errors.append('El nombre debe tener al menos 3 caracteres')
+    elif len(nombre) < 2:
+        errors.append('El nombre debe tener al menos 2 caracteres')
     
-    # Separar nombre y apellido
-    partes_nombre = nombre_completo.split(' ', 1)
-    first_name = partes_nombre[0]
-    last_name = partes_nombre[1] if len(partes_nombre) > 1 else ''
+    if not apellido:
+        errors.append('El apellido es obligatorio')
+    elif len(apellido) < 2:
+        errors.append('El apellido debe tener al menos 2 caracteres')
+    
+    first_name = nombre
+    last_name = apellido
     
     if not email:
         errors.append('El email es obligatorio')
@@ -302,11 +347,7 @@ def crear_reserva_publica(request):
         if not email_regex.match(email):
             errors.append('Email inválido')
     
-    if not telefono:
-        errors.append('El teléfono es obligatorio')
-    
-    if not juego_id:
-        errors.append('Debe seleccionar un juego')
+    # Teléfono es opcional (no validamos si está vacío)
     
     if not fecha_evento:
         errors.append('La fecha es obligatoria')
@@ -320,24 +361,44 @@ def crear_reserva_publica(request):
         except ValueError:
             errors.append('Formato de fecha inválido')
     
-    if not horario:
-        errors.append('Debe seleccionar un horario')
+    # Validar horas de instalación y retiro
+    hora_inst_obj = None
+    hora_ret_obj = None
+    if not hora_instalacion:
+        errors.append('La hora de instalación es obligatoria')
     else:
-        # Convertir horario a hora_instalacion y hora_retiro
-        horarios_map = {
-            '09:00-13:00': ('09:00', '13:00'),
-            '14:00-18:00': ('14:00', '18:00'),
-            '09:00-18:00': ('09:00', '18:00'),
-        }
-        if horario in horarios_map:
-            hora_instalacion_str, hora_retiro_str = horarios_map[horario]
-            try:
-                hora_inst_obj = datetime.strptime(hora_instalacion_str, '%H:%M').time()
-                hora_ret_obj = datetime.strptime(hora_retiro_str, '%H:%M').time()
-            except ValueError:
-                errors.append('Error en el formato de horario')
-        else:
-            errors.append('Horario inválido')
+        try:
+            from datetime import datetime
+            hora_inst_obj = datetime.strptime(hora_instalacion, '%H:%M').time()
+        except ValueError:
+            errors.append('Formato de hora de instalación inválido (debe ser HH:MM)')
+    
+    if not hora_retiro:
+        errors.append('La hora de retiro es obligatoria')
+    else:
+        try:
+            from datetime import datetime
+            hora_ret_obj = datetime.strptime(hora_retiro, '%H:%M').time()
+        except ValueError:
+            errors.append('Formato de hora de retiro inválido (debe ser HH:MM)')
+    
+    # Validar que hora_retiro sea después de hora_instalacion
+    if hora_inst_obj and hora_ret_obj:
+        if hora_ret_obj <= hora_inst_obj:
+            errors.append('La hora de retiro debe ser posterior a la hora de instalación')
+    
+    # Validar juegos
+    if not juegos_data:
+        errors.append('Debe agregar al menos un juego')
+    elif not isinstance(juegos_data, list):
+        try:
+            juegos_data = json.loads(juegos_data) if isinstance(juegos_data, str) else []
+        except:
+            errors.append('Formato de juegos inválido')
+            juegos_data = []
+    
+    if not juegos_data or len(juegos_data) == 0:
+        errors.append('Debe agregar al menos un juego')
     
     if not direccion:
         errors.append('La dirección es obligatoria')
@@ -357,30 +418,65 @@ def crear_reserva_publica(request):
     if errors:
         return JsonResponse({'success': False, 'errors': errors}, status=400)
     
-    # Verificar que el juego existe y está disponible
-    try:
-        juego = Juego.objects.get(id=int(juego_id), estado='disponible')
-    except (Juego.DoesNotExist, ValueError):
-        errors.append('Juego no encontrado o no disponible')
+    # Validar y verificar juegos
+    juegos_validos = []
+    total_juegos = 0
+    
+    for juego_item in juegos_data:
+        juego_id = juego_item.get('juego_id') or juego_item.get('id')
+        cantidad = juego_item.get('cantidad', 1)
+        
+        if not juego_id:
+            errors.append('Uno de los juegos no tiene ID válido')
+            continue
+        
+        try:
+            juego = Juego.objects.get(id=int(juego_id))
+            
+            # Verificar estado del juego
+            if juego.estado not in ['disponible', 'Habilitado']:
+                errors.append(f'El juego "{juego.nombre}" no está disponible')
+                continue
+            
+            # Verificar disponibilidad en la fecha
+            reservas_fecha = Reserva.objects.filter(
+                fecha_evento=fecha_obj,
+                estado__in=['pendiente', 'confirmada', 'Pendiente', 'Confirmada']
+            ).prefetch_related('detalles__juego')
+            
+            juego_ocupado = False
+            for reserva in reservas_fecha:
+                for detalle in reserva.detalles.all():
+                    if detalle.juego.id == juego.id:
+                        juego_ocupado = True
+                        break
+                if juego_ocupado:
+                    break
+            
+            if juego_ocupado:
+                errors.append(f'El juego "{juego.nombre}" ya está reservado para esa fecha')
+                continue
+            
+            precio_unitario = juego.precio_base
+            subtotal = precio_unitario * cantidad
+            
+            juegos_validos.append({
+                'juego': juego,
+                'cantidad': cantidad,
+                'precio_unitario': precio_unitario,
+                'subtotal': subtotal
+            })
+            total_juegos += subtotal
+            
+        except (Juego.DoesNotExist, ValueError) as e:
+            errors.append(f'Juego con ID {juego_id} no encontrado')
+            continue
+    
+    if not juegos_validos:
+        errors.append('No hay juegos válidos para la reserva')
         return JsonResponse({'success': False, 'errors': errors}, status=400)
     
-    # Verificar disponibilidad del juego en la fecha
-    reservas_fecha = Reserva.objects.filter(
-        fecha_evento=fecha_obj,
-        estado__in=['pendiente', 'confirmada']
-    ).prefetch_related('detalles__juego')
-    
-    juego_ocupado = False
-    for reserva in reservas_fecha:
-        for detalle in reserva.detalles.all():
-            if detalle.juego.id == juego.id:
-                juego_ocupado = True
-                break
-        if juego_ocupado:
-            break
-    
-    if juego_ocupado:
-        errors.append('El juego seleccionado ya está reservado para esa fecha')
+    if errors:
         return JsonResponse({'success': False, 'errors': errors}, status=400)
     
     # Buscar o crear cliente
@@ -439,8 +535,8 @@ def crear_reserva_publica(request):
     PRECIO_POR_KM = 1000
     precio_distancia = distancia_km_int * PRECIO_POR_KM
     
-    # Calcular total
-    total_final = juego.precio_base + precio_distancia
+    # Calcular total (suma de todos los juegos + precio por distancia)
+    total_final = total_juegos + precio_distancia
     
     try:
         # Crear reserva
@@ -453,18 +549,19 @@ def crear_reserva_publica(request):
             distancia_km=distancia_km_int,
             precio_distancia=precio_distancia,
             estado='pendiente',
-            observaciones=comentarios or None,
+            observaciones=observaciones or None,
             total_reserva=total_final,
         )
         
-        # Crear detalle de reserva
-        DetalleReserva.objects.create(
-            reserva=reserva,
-            juego=juego,
-            cantidad=1,
-            precio_unitario=juego.precio_base,
-            subtotal=juego.precio_base,
-        )
+        # Crear detalles de reserva para cada juego
+        for juego_item in juegos_validos:
+            DetalleReserva.objects.create(
+                reserva=reserva,
+                juego=juego_item['juego'],
+                cantidad=juego_item['cantidad'],
+                precio_unitario=juego_item['precio_unitario'],
+                subtotal=juego_item['subtotal'],
+            )
         
         return JsonResponse({
             'success': True,
@@ -2499,14 +2596,38 @@ def estadisticas(request):
     from datetime import datetime, timedelta
     from collections import defaultdict
     import json
+    from calendar import monthrange
     from django.db.models import Sum, Count, Q
+    
+    # Obtener fecha actual
+    hoy = datetime.now().date()
+    
+    # Obtener parámetros de mes y año (si existen) para el período a analizar
+    año_seleccionado = request.GET.get('year', hoy.year)
+    mes_seleccionado = request.GET.get('month', hoy.month)
+    
+    try:
+        año_seleccionado = int(año_seleccionado)
+        mes_seleccionado = int(mes_seleccionado)
+        # Validar rango
+        if mes_seleccionado < 1 or mes_seleccionado > 12:
+            mes_seleccionado = hoy.month
+        if año_seleccionado < 2000 or año_seleccionado > 2100:
+            año_seleccionado = hoy.year
+    except (ValueError, TypeError):
+        año_seleccionado = hoy.year
+        mes_seleccionado = hoy.month
+    
+    # Mapeo de meses en español
+    meses_espanol = {
+        1: 'Enero', 2: 'Febrero', 3: 'Marzo', 4: 'Abril', 5: 'Mayo', 6: 'Junio',
+        7: 'Julio', 8: 'Agosto', 9: 'Septiembre', 10: 'Octubre', 11: 'Noviembre', 12: 'Diciembre'
+    }
     
     # Obtener reservas confirmadas y completadas (no canceladas)
     reservas = Reserva.objects.filter(
         Q(estado='Confirmada') | Q(estado='confirmada') | Q(estado='completada')
     ).select_related('cliente__usuario').prefetch_related('detalles__juego')
-    
-    hoy = datetime.now().date()
     
     # ========== VENTAS SEMANALES ==========
     ventas_semanales = defaultdict(float)
@@ -2689,8 +2810,159 @@ def estadisticas(request):
     dias_semana_anuales_labels = dias_semana_nombres
     dias_semana_anuales_data = [demanda_anual.get(dia, 0) for dia in dias_semana_nombres]
     
+    # ========== KPIs Y MÉTRICAS CLAVE ==========
+    from jio_app.models import Pago
+    
+    # Total de reservas del mes seleccionado
+    reservas_mes_seleccionado = reservas.filter(
+        fecha_evento__year=año_seleccionado,
+        fecha_evento__month=mes_seleccionado
+    )
+    total_reservas_mes = reservas_mes_seleccionado.count()
+    
+    # Total de reservas del mes anterior al seleccionado
+    if mes_seleccionado == 1:
+        mes_anterior_num = 12
+        año_anterior_num = año_seleccionado - 1
+    else:
+        mes_anterior_num = mes_seleccionado - 1
+        año_anterior_num = año_seleccionado
+    
+    reservas_mes_anterior = reservas.filter(
+        fecha_evento__year=año_anterior_num,
+        fecha_evento__month=mes_anterior_num
+    )
+    total_reservas_mes_anterior = reservas_mes_anterior.count()
+    
+    # Cálculo de crecimiento de reservas (mes vs mes anterior)
+    if total_reservas_mes_anterior > 0:
+        crecimiento_reservas = ((total_reservas_mes - total_reservas_mes_anterior) / total_reservas_mes_anterior) * 100
+    else:
+        crecimiento_reservas = 100.0 if total_reservas_mes > 0 else 0.0
+    
+    # Ventas del mes seleccionado
+    ventas_mes_seleccionado = reservas_mes_seleccionado.aggregate(total=Sum('total_reserva'))['total'] or 0
+    ventas_mes_seleccionado = float(ventas_mes_seleccionado)
+    
+    # Ventas del mes anterior
+    ventas_mes_anterior = reservas_mes_anterior.aggregate(total=Sum('total_reserva'))['total'] or 0
+    ventas_mes_anterior = float(ventas_mes_anterior)
+    
+    # Crecimiento de ventas
+    if ventas_mes_anterior > 0:
+        crecimiento_ventas = ((ventas_mes_seleccionado - ventas_mes_anterior) / ventas_mes_anterior) * 100
+    else:
+        crecimiento_ventas = 100.0 if ventas_mes_seleccionado > 0 else 0.0
+    
+    # Clientes nuevos vs recurrentes (mes seleccionado)
+    clientes_mes_seleccionado = Cliente.objects.filter(
+        reservas__fecha_evento__year=año_seleccionado,
+        reservas__fecha_evento__month=mes_seleccionado
+    ).distinct()
+    
+    clientes_nuevos = 0
+    clientes_recurrentes = 0
+    
+    fecha_inicio_mes_seleccionado = datetime(año_seleccionado, mes_seleccionado, 1).date()
+    
+    for cliente in clientes_mes_seleccionado:
+        reservas_anteriores = Reserva.objects.filter(
+            cliente=cliente,
+            fecha_evento__lt=fecha_inicio_mes_seleccionado
+        ).exists()
+        if reservas_anteriores:
+            clientes_recurrentes += 1
+        else:
+            clientes_nuevos += 1
+    
+    total_clientes_mes = clientes_mes_seleccionado.count()
+    
+    # ========== COMPARACIONES AÑO A AÑO ==========
+    # Ventas del año seleccionado
+    ventas_año_seleccionado = reservas.filter(
+        fecha_evento__year=año_seleccionado
+    ).aggregate(total=Sum('total_reserva'))['total'] or 0
+    ventas_año_seleccionado = float(ventas_año_seleccionado)
+    
+    # Ventas del año anterior
+    ventas_año_anterior = reservas.filter(
+        fecha_evento__year=año_seleccionado - 1
+    ).aggregate(total=Sum('total_reserva'))['total'] or 0
+    ventas_año_anterior = float(ventas_año_anterior)
+    
+    # Crecimiento año a año
+    if ventas_año_anterior > 0:
+        crecimiento_año = ((ventas_año_seleccionado - ventas_año_anterior) / ventas_año_anterior) * 100
+    else:
+        crecimiento_año = 100.0 if ventas_año_seleccionado > 0 else 0.0
+    
+    # Reservas del año seleccionado
+    reservas_año_seleccionado = reservas.filter(fecha_evento__year=año_seleccionado).count()
+    
+    # Reservas del año anterior
+    reservas_año_anterior = reservas.filter(fecha_evento__year=año_seleccionado - 1).count()
+    
+    # Crecimiento de reservas año a año
+    if reservas_año_anterior > 0:
+        crecimiento_reservas_año = ((reservas_año_seleccionado - reservas_año_anterior) / reservas_año_anterior) * 100
+    else:
+        crecimiento_reservas_año = 100.0 if reservas_año_seleccionado > 0 else 0.0
+    
+    # Generar lista de años disponibles (desde 2020 hasta el año actual)
+    años_disponibles = list(range(2020, hoy.year + 1))
+    
+    # Meses anteriores y siguientes para navegación
+    if mes_seleccionado == 1:
+        mes_anterior_nav = 12
+        año_anterior_nav = año_seleccionado - 1
+    else:
+        mes_anterior_nav = mes_seleccionado - 1
+        año_anterior_nav = año_seleccionado
+    
+    if mes_seleccionado == 12:
+        mes_siguiente_nav = 1
+        año_siguiente_nav = año_seleccionado + 1
+    else:
+        mes_siguiente_nav = mes_seleccionado + 1
+        año_siguiente_nav = año_seleccionado
+    
+    # Verificar si hay meses futuros (no permitir ir más allá del mes actual)
+    puede_avanzar = (año_siguiente_nav < hoy.year) or (año_siguiente_nav == hoy.year and mes_siguiente_nav <= hoy.month)
+    
     # Preparar contexto con datos JSON
     context = {
+        # Parámetros de selección
+        'mes_seleccionado': mes_seleccionado,
+        'año_seleccionado': año_seleccionado,
+        'mes_nombre': meses_espanol[mes_seleccionado],
+        'mes_anterior_nav': mes_anterior_nav,
+        'año_anterior_nav': año_anterior_nav,
+        'mes_siguiente_nav': mes_siguiente_nav,
+        'año_siguiente_nav': año_siguiente_nav,
+        'puede_avanzar': puede_avanzar,
+        'meses_espanol': meses_espanol,
+        'años_disponibles': años_disponibles,
+        # Comparaciones mes a mes
+        'mes_anterior_nombre': meses_espanol[mes_anterior_num],
+        'año_anterior_num': año_anterior_num,
+        # KPIs
+        'total_reservas_mes': total_reservas_mes,
+        'total_reservas_mes_anterior': total_reservas_mes_anterior,
+        'crecimiento_reservas': crecimiento_reservas,
+        'ventas_mes_actual': ventas_mes_seleccionado,
+        'ventas_mes_anterior': ventas_mes_anterior,
+        'crecimiento_ventas': crecimiento_ventas,
+        'clientes_nuevos': clientes_nuevos,
+        'clientes_recurrentes': clientes_recurrentes,
+        'total_clientes_mes': total_clientes_mes,
+        # Comparaciones año a año
+        'ventas_año_actual': ventas_año_seleccionado,
+        'ventas_año_anterior': ventas_año_anterior,
+        'crecimiento_año': crecimiento_año,
+        'reservas_año_actual': reservas_año_seleccionado,
+        'reservas_año_anterior': reservas_año_anterior,
+        'crecimiento_reservas_año': crecimiento_reservas_año,
+        # Datos de gráficos
         'ventas_semanales_labels': json.dumps(ventas_semanales_labels),
         'ventas_semanales_data': json.dumps(ventas_semanales_data),
         'ventas_mensuales_labels': json.dumps(ventas_mensuales_labels),
@@ -2711,6 +2983,178 @@ def estadisticas(request):
     }
     
     return render(request, 'jio_app/estadisticas.html', context)
+
+
+@login_required
+def contabilidad(request):
+    """
+    Vista de contabilidad con ingresos, egresos y calendario mensual
+    """
+    if not request.user.tipo_usuario == 'administrador':
+        raise PermissionDenied("Solo los administradores pueden acceder a este recurso.")
+    
+    from datetime import datetime, timedelta
+    from collections import defaultdict
+    from calendar import monthrange
+    from django.db.models import Sum, Q
+    
+    # Obtener parámetros de mes y año (si existen)
+    hoy = datetime.now().date()
+    año_seleccionado = request.GET.get('year', hoy.year)
+    mes_seleccionado = request.GET.get('month', hoy.month)
+    
+    try:
+        año_seleccionado = int(año_seleccionado)
+        mes_seleccionado = int(mes_seleccionado)
+        # Validar rango
+        if mes_seleccionado < 1 or mes_seleccionado > 12:
+            mes_seleccionado = hoy.month
+        if año_seleccionado < 2000 or año_seleccionado > 2100:
+            año_seleccionado = hoy.year
+    except (ValueError, TypeError):
+        año_seleccionado = hoy.year
+        mes_seleccionado = hoy.month
+    
+    # ========== CALENDARIO MENSUAL CON ESTADÍSTICAS ==========
+    meses_espanol = {
+        1: 'Enero', 2: 'Febrero', 3: 'Marzo', 4: 'Abril', 5: 'Mayo', 6: 'Junio',
+        7: 'Julio', 8: 'Agosto', 9: 'Septiembre', 10: 'Octubre', 11: 'Noviembre', 12: 'Diciembre'
+    }
+    
+    # Calcular primer y último día del mes seleccionado
+    primer_dia_mes = datetime(año_seleccionado, mes_seleccionado, 1).date()
+    ultimo_dia_mes = datetime(año_seleccionado, mes_seleccionado, monthrange(año_seleccionado, mes_seleccionado)[1]).date()
+    
+    # ========== INGRESOS (Pagos recibidos) ==========
+    from jio_app.models import Pago, Reserva
+    
+    # Obtener pagos pagados del mes seleccionado
+    pagos_mes = Pago.objects.filter(
+        estado='pagado',
+        fecha_pago__year=año_seleccionado,
+        fecha_pago__month=mes_seleccionado
+    )
+    
+    # También incluir pagos sin fecha_pago pero de reservas del mes
+    reservas_mes = Reserva.objects.filter(
+        fecha_evento__year=año_seleccionado,
+        fecha_evento__month=mes_seleccionado
+    )
+    
+    pagos_sin_fecha = Pago.objects.filter(
+        estado='pagado',
+        reserva__in=reservas_mes,
+        fecha_pago__isnull=True
+    )
+    
+    # Calcular ingresos por día del mes
+    ingresos_por_dia = defaultdict(float)
+    pagos_por_dia = defaultdict(int)
+    
+    # Ingresos de pagos con fecha_pago
+    for pago in pagos_mes:
+        if pago.fecha_pago:
+            dia = pago.fecha_pago.day
+            ingresos_por_dia[dia] += float(pago.monto)
+            pagos_por_dia[dia] += 1
+    
+    # Ingresos de pagos sin fecha_pago pero de reservas del mes
+    for pago in pagos_sin_fecha:
+        dia = pago.reserva.fecha_evento.day
+        ingresos_por_dia[dia] += float(pago.monto)
+        pagos_por_dia[dia] += 1
+    
+    # Total de ingresos del mes
+    total_ingresos_mes = sum(ingresos_por_dia.values())
+    total_pagos_mes = sum(pagos_por_dia.values())
+    
+    # ========== EGRESOS (Por ahora vacío, se puede expandir después) ==========
+    egresos_por_dia = defaultdict(float)
+    total_egresos_mes = 0.0
+    
+    # ========== CALENDARIO ==========
+    # Crear estructura de calendario
+    calendario_datos = []
+    primer_dia_semana = primer_dia_mes.weekday()  # 0 = Lunes, 6 = Domingo
+    
+    # Días de la semana en español
+    dias_semana = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
+    
+    # Llenar días vacíos al inicio del mes
+    for i in range(primer_dia_semana):
+        calendario_datos.append({
+            'dia': None,
+            'ingresos': 0,
+            'egresos': 0,
+            'saldo': 0,
+            'pagos': 0,
+            'es_hoy': False
+        })
+    
+    # Llenar días del mes
+    for dia in range(1, ultimo_dia_mes.day + 1):
+        fecha_dia = datetime(año_seleccionado, mes_seleccionado, dia).date()
+        es_hoy = (fecha_dia == hoy and mes_seleccionado == hoy.month and año_seleccionado == hoy.year)
+        
+        ingresos_dia = ingresos_por_dia.get(dia, 0)
+        egresos_dia = egresos_por_dia.get(dia, 0)
+        saldo_dia = ingresos_dia - egresos_dia
+        
+        calendario_datos.append({
+            'dia': dia,
+            'ingresos': ingresos_dia,
+            'egresos': egresos_dia,
+            'saldo': saldo_dia,
+            'pagos': pagos_por_dia.get(dia, 0),
+            'es_hoy': es_hoy,
+            'fecha': fecha_dia.strftime('%Y-%m-%d')
+        })
+    
+    # Meses anteriores y siguientes para navegación
+    if mes_seleccionado == 1:
+        mes_anterior = 12
+        año_anterior = año_seleccionado - 1
+    else:
+        mes_anterior = mes_seleccionado - 1
+        año_anterior = año_seleccionado
+    
+    if mes_seleccionado == 12:
+        mes_siguiente = 1
+        año_siguiente = año_seleccionado + 1
+    else:
+        mes_siguiente = mes_seleccionado + 1
+        año_siguiente = año_seleccionado
+    
+    # Verificar si hay meses futuros (no permitir ir más allá del mes actual)
+    puede_avanzar = (año_siguiente < hoy.year) or (año_siguiente == hoy.year and mes_siguiente <= hoy.month)
+    
+    # Generar lista de años disponibles (desde 2020 hasta el año actual)
+    años_disponibles = list(range(2020, hoy.year + 1))
+    
+    # Calcular saldo neto del mes
+    saldo_neto_mes = total_ingresos_mes - total_egresos_mes
+    
+    context = {
+        # Datos del calendario mensual
+        'mes_seleccionado': mes_seleccionado,
+        'año_seleccionado': año_seleccionado,
+        'mes_nombre': meses_espanol[mes_seleccionado],
+        'calendario_datos': calendario_datos,
+        'dias_semana': dias_semana,
+        'total_ingresos_mes': total_ingresos_mes,
+        'total_egresos_mes': total_egresos_mes,
+        'saldo_neto_mes': saldo_neto_mes,
+        'total_pagos_mes': total_pagos_mes,
+        'mes_anterior': mes_anterior,
+        'año_anterior': año_anterior,
+        'mes_siguiente': mes_siguiente,
+        'año_siguiente': año_siguiente,
+        'puede_avanzar': puede_avanzar,
+        'meses_espanol': meses_espanol,
+        'años_disponibles': años_disponibles,
+    }
+    
+    return render(request, 'jio_app/contabilidad.html', context)
 
 
 # --------- CRUD de Arriendos (solo administrador) ---------

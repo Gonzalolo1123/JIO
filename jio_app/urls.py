@@ -64,4 +64,7 @@ urlpatterns = [
 
     #Estadisticas   
     path('panel/estadisticas/', views.estadisticas, name='estadisticas'),
+    
+    #Contabilidad
+    path('panel/contabilidad/', views.contabilidad, name='contabilidad'),
 ]

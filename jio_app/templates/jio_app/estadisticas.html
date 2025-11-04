@@ -1,6 +1,7 @@
 {% extends 'jio_app/base_admin.html' %}
 
 {% load static %}
+{% load humanize %}
 
 {% block title %}Estadísticas - JIO{% endblock %}
 
@@ -15,6 +16,172 @@
 {% block content %}
 
 <div class="content">
+
+  <!-- Dashboard de KPIs -->
+  <div class="kpis-dashboard">
+    <div class="dashboard-header">
+      <h2 style="margin: 0; color: #2E7D32; font-size: 1.75rem;">Resumen de {{ mes_nombre|title }} {{ año_seleccionado }}</h2>
+      <div class="period-selector">
+        <a href="?year={{ año_anterior_nav }}&month={{ mes_anterior_nav }}" class="nav-btn-period prev-btn" title="Mes anterior">
+          <i class="fas fa-chevron-left"></i>
+        </a>
+        <div class="period-selectors">
+          <select id="mes-selector" class="month-year-selector">
+            {% for num, nombre in meses_espanol.items %}
+              <option value="{{ num }}" {% if num == mes_seleccionado %}selected{% endif %}>{{ nombre }}</option>
+            {% endfor %}
+          </select>
+          <select id="año-selector" class="month-year-selector">
+            {% for año in años_disponibles %}
+              <option value="{{ año }}" {% if año == año_seleccionado %}selected{% endif %}>{{ año }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        {% if puede_avanzar %}
+        <a href="?year={{ año_siguiente_nav }}&month={{ mes_siguiente_nav }}" class="nav-btn-period next-btn" title="Mes siguiente">
+          <i class="fas fa-chevron-right"></i>
+        </a>
+        {% else %}
+        <span class="nav-btn-period next-btn disabled" title="No se puede avanzar más">
+          <i class="fas fa-chevron-right"></i>
+        </span>
+        {% endif %}
+      </div>
+    </div>
+    
+    <div class="kpis-grid">
+      <!-- Tarjeta: Reservas del Mes -->
+      <div class="kpi-card">
+        <div class="kpi-icon">
+          <i class="fas fa-calendar-check"></i>
+        </div>
+        <div class="kpi-content">
+          <div class="kpi-label">Reservas del Mes</div>
+          <div class="kpi-value">{{ total_reservas_mes }}</div>
+          <div class="kpi-change {% if crecimiento_reservas >= 0 %}positive{% else %}negative{% endif %}">
+            <i class="fas fa-arrow-{% if crecimiento_reservas >= 0 %}up{% else %}down{% endif %}"></i>
+            {{ crecimiento_reservas|floatformat:1 }}% vs {{ mes_anterior_nombre|title }} {{ año_anterior_num }}
+          </div>
+        </div>
+      </div>
+
+      <!-- Tarjeta: Ventas del Mes -->
+      <div class="kpi-card">
+        <div class="kpi-icon">
+          <i class="fas fa-dollar-sign"></i>
+        </div>
+        <div class="kpi-content">
+          <div class="kpi-label">Ventas del Mes</div>
+          <div class="kpi-value">${{ ventas_mes_actual|floatformat:0|intcomma }}</div>
+          <div class="kpi-change {% if crecimiento_ventas >= 0 %}positive{% else %}negative{% endif %}">
+            <i class="fas fa-arrow-{% if crecimiento_ventas >= 0 %}up{% else %}down{% endif %}"></i>
+            {{ crecimiento_ventas|floatformat:1 }}% vs {{ mes_anterior_nombre|title }} {{ año_anterior_num }}
+          </div>
+        </div>
+      </div>
+
+      <!-- Tarjeta: Clientes Nuevos vs Recurrentes -->
+      <div class="kpi-card">
+        <div class="kpi-icon">
+          <i class="fas fa-users"></i>
+        </div>
+        <div class="kpi-content">
+          <div class="kpi-label">Clientes del Mes</div>
+          <div class="kpi-value">{{ total_clientes_mes }}</div>
+          <div class="kpi-subtitle">
+            <span style="color: #4CAF50;">{{ clientes_nuevos }} nuevos</span> | 
+            <span style="color: #2196F3;">{{ clientes_recurrentes }} recurrentes</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Comparaciones Temporales -->
+  <div class="section comparison-section">
+    <h2>Comparaciones Temporales</h2>
+    
+    <div class="comparison-grid">
+      <!-- Comparación Mes a Mes -->
+      <div class="comparison-card">
+        <h3>Comparación Mes a Mes</h3>
+        <div class="comparison-item">
+          <div class="comparison-label">Ventas</div>
+          <div class="comparison-values">
+            <div class="comparison-current">
+              <span class="comparison-period">{{ mes_nombre|title }} {{ año_seleccionado }}:</span>
+              <span class="comparison-amount">${{ ventas_mes_actual|floatformat:0|intcomma }}</span>
+            </div>
+            <div class="comparison-previous">
+              <span class="comparison-period">{{ mes_anterior_nombre|title }} {{ año_anterior_num }}:</span>
+              <span class="comparison-amount">${{ ventas_mes_anterior|floatformat:0|intcomma }}</span>
+            </div>
+            <div class="comparison-growth {% if crecimiento_ventas >= 0 %}positive{% else %}negative{% endif %}">
+              <i class="fas fa-arrow-{% if crecimiento_ventas >= 0 %}up{% else %}down{% endif %}"></i>
+              {{ crecimiento_ventas|floatformat:1 }}% de crecimiento
+            </div>
+          </div>
+        </div>
+        <div class="comparison-item">
+          <div class="comparison-label">Reservas</div>
+          <div class="comparison-values">
+            <div class="comparison-current">
+              <span class="comparison-period">{{ mes_nombre|title }} {{ año_seleccionado }}:</span>
+              <span class="comparison-amount">{{ total_reservas_mes }}</span>
+            </div>
+            <div class="comparison-previous">
+              <span class="comparison-period">{{ mes_anterior_nombre|title }} {{ año_anterior_num }}:</span>
+              <span class="comparison-amount">{{ total_reservas_mes_anterior }}</span>
+            </div>
+            <div class="comparison-growth {% if crecimiento_reservas >= 0 %}positive{% else %}negative{% endif %}">
+              <i class="fas fa-arrow-{% if crecimiento_reservas >= 0 %}up{% else %}down{% endif %}"></i>
+              {{ crecimiento_reservas|floatformat:1 }}% de crecimiento
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Comparación Año a Año -->
+      <div class="comparison-card">
+        <h3>Comparación Año a Año</h3>
+        <div class="comparison-item">
+          <div class="comparison-label">Ventas</div>
+          <div class="comparison-values">
+            <div class="comparison-current">
+              <span class="comparison-period">{{ año_seleccionado }}:</span>
+              <span class="comparison-amount">${{ ventas_año_actual|floatformat:0|intcomma }}</span>
+            </div>
+            <div class="comparison-previous">
+              <span class="comparison-period">{{ año_seleccionado|add:"-1" }}:</span>
+              <span class="comparison-amount">${{ ventas_año_anterior|floatformat:0|intcomma }}</span>
+            </div>
+            <div class="comparison-growth {% if crecimiento_año >= 0 %}positive{% else %}negative{% endif %}">
+              <i class="fas fa-arrow-{% if crecimiento_año >= 0 %}up{% else %}down{% endif %}"></i>
+              {{ crecimiento_año|floatformat:1 }}% de crecimiento
+            </div>
+          </div>
+        </div>
+        <div class="comparison-item">
+          <div class="comparison-label">Reservas</div>
+          <div class="comparison-values">
+            <div class="comparison-current">
+              <span class="comparison-period">{{ año_seleccionado }}:</span>
+              <span class="comparison-amount">{{ reservas_año_actual }}</span>
+            </div>
+            <div class="comparison-previous">
+              <span class="comparison-period">{{ año_seleccionado|add:"-1" }}:</span>
+              <span class="comparison-amount">{{ reservas_año_anterior }}</span>
+            </div>
+            <div class="comparison-growth {% if crecimiento_reservas_año >= 0 %}positive{% else %}negative{% endif %}">
+              <i class="fas fa-arrow-{% if crecimiento_reservas_año >= 0 %}up{% else %}down{% endif %}"></i>
+              {{ crecimiento_reservas_año|floatformat:1 }}% de crecimiento
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <div class="button-group" id="view-mode-group">
 
@@ -143,6 +310,27 @@
 {% block extra_scripts %}
 
 <script src="{% static 'js/estadisticas.js' %}"></script>
+<script>
+  // Navegación de mes/año con selectores
+  document.addEventListener('DOMContentLoaded', function() {
+    const mesSelector = document.getElementById('mes-selector');
+    const añoSelector = document.getElementById('año-selector');
+    
+    function navegarPeriodo() {
+      const mes = mesSelector.value;
+      const año = añoSelector.value;
+      window.location.href = `?year=${año}&month=${mes}`;
+    }
+    
+    if (mesSelector) {
+      mesSelector.addEventListener('change', navegarPeriodo);
+    }
+    
+    if (añoSelector) {
+      añoSelector.addEventListener('change', navegarPeriodo);
+    }
+  });
+</script>
 
 {% endblock %}
 

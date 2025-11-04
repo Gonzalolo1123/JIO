@@ -607,8 +607,10 @@
             
             // Inicializar mapa de edición si existe la función
             if (typeof initMapEdit === 'function') {
-                const lat = document.getElementById('editLatitud')?.value || arriendo.latitud || null;
-                const lng = document.getElementById('editLongitud')?.value || arriendo.longitud || null;
+                const latInput = document.getElementById('editLatitud');
+                const lngInput = document.getElementById('editLongitud');
+                const lat = latInput?.value || null;
+                const lng = lngInput?.value || null;
                 setTimeout(() => {
                     initMapEdit(arriendo.direccion_evento, lat, lng);
                 }, 300);
@@ -620,14 +622,24 @@
             juegoCounter = 0;
             
             if (arriendo.detalles && arriendo.detalles.length > 0) {
-                // Esperar un momento para que los juegos se carguen
+                // Esperar a que los juegos se carguen antes de agregar las filas
+                console.log('📋 Detalles del arriendo:', arriendo.detalles);
+                console.log('🎮 Juegos disponibles:', window.juegosDisponibles);
+                
+                // Esperar más tiempo para asegurar que los juegos se hayan cargado
                 setTimeout(() => {
-                    arriendo.detalles.forEach(detalle => {
-                        agregarFilaJuego('juegosContainerEdit', detalle);
-                    });
+                    if (!window.juegosDisponibles || window.juegosDisponibles.length === 0) {
+                        console.error('❌ No hay juegos disponibles cargados');
+                        agregarFilaJuego('juegosContainerEdit');
+                    } else {
+                        arriendo.detalles.forEach(detalle => {
+                            console.log('➕ Agregando fila para detalle:', detalle);
+                            agregarFilaJuego('juegosContainerEdit', detalle);
+                        });
+                    }
                     actualizarTotal('juegosContainerEdit');
                     actualizarJuegosJson('edit');
-                }, 300);
+                }, 500);
             } else {
                 agregarFilaJuego('juegosContainerEdit');
                 actualizarTotal('juegosContainerEdit');

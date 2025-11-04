@@ -682,7 +682,9 @@ input[type="file"]::file-selector-button:hover {
 .modal .form-grid { 
     padding: 1rem 1.25rem; 
     overflow-y: auto;
+    overflow-x: hidden;
     flex: 1;
+    min-height: 0; /* Importante para que flex funcione con overflow */
 }
 .modal .form-actions { 
     justify-content: flex-end; 

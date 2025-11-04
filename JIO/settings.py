@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'django.contrib.humanize',  # Para formatear números (intcomma, etc.)
     'jio_app',  # Aplicación principal del sistema de arriendos
 ]
 
