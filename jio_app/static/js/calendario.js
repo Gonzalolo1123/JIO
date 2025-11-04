@@ -30,6 +30,10 @@ document.addEventListener('DOMContentLoaded', function() {
     let mapaInfoSeleccionada = null;
     let direccionSeleccionadaText = null;
     let distanciaSeleccionadaText = null;
+    let autocompleteSuggestions = null;
+    let autocompleteTimeout = null;
+    let selectedSuggestionIndex = -1;
+    let currentSuggestions = [];
     
     // Coordenadas de Osorno (ciudad base)
     const OSORNO_LAT = -40.5739;
@@ -46,6 +50,7 @@ document.addEventListener('DOMContentLoaded', function() {
         mapaInfoSeleccionada = document.getElementById('mapa-info-seleccionada');
         direccionSeleccionadaText = document.getElementById('direccion-seleccionada-text');
         distanciaSeleccionadaText = document.getElementById('distancia-seleccionada-text');
+        autocompleteSuggestions = document.getElementById('autocomplete-suggestions');
         
         if (!direccionInput) {
             console.warn('Campo de dirección no encontrado');
@@ -262,11 +267,22 @@ document.addEventListener('DOMContentLoaded', function() {
         const direccion = direccionInput ? direccionInput.value.trim() : '';
         
         if (!direccion) {
-            alert('Por favor, ingresa una dirección para buscar');
+            alert('Por favor, ingresa una dirección para buscar en el mapa');
             return;
         }
         
-        console.log('🔍 Buscando dirección:', direccion);
+        console.log('🔍 Buscando dirección en el mapa:', direccion);
+        
+        // Asegurarse de que el mapa esté inicializado
+        if (!mapaLeaflet) {
+            console.log('⚠️ Mapa no inicializado, inicializando...');
+            inicializarMapa();
+            // Esperar un poco para que el mapa se inicialice
+            setTimeout(() => {
+                buscarDireccionEnMapa();
+            }, 500);
+            return;
+        }
         
         // Mostrar loading
         const mapaLoading = document.getElementById('mapa-loading');
@@ -274,10 +290,21 @@ document.addEventListener('DOMContentLoaded', function() {
             mapaLoading.style.display = 'flex';
         }
         
+        // Asegurarse de que el contenedor del mapa sea visible
+        const mapaContainer = document.getElementById('mapa-container');
+        if (mapaContainer) {
+            mapaContainer.style.display = 'block';
+            mapaContainer.style.visibility = 'visible';
+        }
+        
         // Usar Nominatim (OpenStreetMap) para geocoding (gratis, sin API key)
         const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(direccion + ', Chile')}&limit=1&addressdetails=1`;
         
-        fetch(url)
+        fetch(url, {
+            headers: {
+                'User-Agent': 'JIO Reservas App'
+            }
+        })
             .then(response => response.json())
             .then(data => {
                 if (mapaLoading) {
@@ -295,6 +322,11 @@ document.addEventListener('DOMContentLoaded', function() {
                     // Centrar mapa en la ubicación encontrada
                     if (mapaLeaflet) {
                         mapaLeaflet.setView([lat, lng], 15);
+                        
+                        // Invalidar tamaño para asegurar que se renderice correctamente
+                        setTimeout(() => {
+                            mapaLeaflet.invalidateSize();
+                        }, 100);
                         
                         // Crear o mover marcador
                         if (marcadorEvento) {
@@ -337,6 +369,212 @@ document.addEventListener('DOMContentLoaded', function() {
             });
     }
     
+    // Funciones para autocompletado de direcciones
+    function buscarAutocompletado(query) {
+        if (!query || query.length < 3) {
+            ocultarAutocompletado();
+            return;
+        }
+        
+        // Asegurarse de que el elemento existe
+        if (!autocompleteSuggestions) {
+            autocompleteSuggestions = document.getElementById('autocomplete-suggestions');
+            if (!autocompleteSuggestions) {
+                console.error('❌ Elemento autocomplete-suggestions no encontrado');
+                return;
+            }
+        }
+        
+        console.log('🔍 Buscando autocompletado para:', query);
+        
+        // Mostrar loading
+        autocompleteSuggestions.innerHTML = '<div class="autocomplete-loading">🔍 Buscando direcciones...</div>';
+        autocompleteSuggestions.style.display = 'block';
+        autocompleteSuggestions.style.visibility = 'visible';
+        autocompleteSuggestions.style.opacity = '1';
+        
+        // Usar Nominatim (OpenStreetMap) para autocompletado (gratis, sin API key)
+        // Agregar "Chile" para mejorar resultados en Chile
+        // viewbox: formato es (min_lon,min_lat,max_lon,max_lat)
+        const minLon = OSORNO_LNG - 2;
+        const maxLon = OSORNO_LNG + 2;
+        const minLat = OSORNO_LAT - 2;
+        const maxLat = OSORNO_LAT + 2;
+        const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query + ', Chile')}&limit=5&addressdetails=1&bounded=1&viewbox=${minLon},${minLat},${maxLon},${maxLat}&countrycodes=cl`;
+        
+        console.log('🌐 Haciendo petición a:', url);
+        
+        fetch(url, {
+            headers: {
+                'User-Agent': 'JIO Reservas App' // Nominatim requiere un User-Agent
+            }
+        })
+            .then(response => {
+                console.log('📡 Respuesta recibida, status:', response.status);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                console.log('📦 Datos recibidos:', data);
+                if (data && data.length > 0) {
+                    currentSuggestions = data;
+                    mostrarAutocompletado(data);
+                } else {
+                    console.log('⚠️ No se encontraron resultados');
+                    if (autocompleteSuggestions) {
+                        autocompleteSuggestions.innerHTML = '<div class="autocomplete-loading">No se encontraron direcciones</div>';
+                        autocompleteSuggestions.style.display = 'block';
+                        autocompleteSuggestions.style.visibility = 'visible';
+                        autocompleteSuggestions.style.opacity = '1';
+                    }
+                }
+            })
+            .catch(error => {
+                console.error('❌ Error al buscar autocompletado:', error);
+                if (autocompleteSuggestions) {
+                    autocompleteSuggestions.innerHTML = '<div class="autocomplete-loading">Error al buscar direcciones: ' + error.message + '</div>';
+                    autocompleteSuggestions.style.display = 'block';
+                    autocompleteSuggestions.style.visibility = 'visible';
+                    autocompleteSuggestions.style.opacity = '1';
+                }
+            });
+    }
+    
+    function mostrarAutocompletado(suggestions) {
+        if (!autocompleteSuggestions) {
+            console.error('❌ autocompleteSuggestions no está disponible');
+            return;
+        }
+        
+        console.log('✅ Mostrando', suggestions.length, 'sugerencias');
+        
+        selectedSuggestionIndex = -1;
+        autocompleteSuggestions.innerHTML = '';
+        
+        suggestions.forEach((suggestion, index) => {
+            const div = document.createElement('div');
+            div.className = 'autocomplete-suggestion';
+            div.setAttribute('data-index', index);
+            
+            // Obtener tipo de lugar
+            const type = suggestion.type || suggestion.class || 'lugar';
+            const icon = obtenerIconoPorTipo(type);
+            
+            // Formatear dirección
+            const direccionTexto = suggestion.display_name || suggestion.name || '';
+            
+            div.innerHTML = `
+                <span class="autocomplete-suggestion-icon">${icon}</span>
+                <div class="autocomplete-suggestion-text">
+                    <strong>${direccionTexto.split(',').slice(0, 2).join(',')}</strong>
+                    <div class="autocomplete-suggestion-type">${direccionTexto}</div>
+                </div>
+            `;
+            
+            div.addEventListener('click', function() {
+                seleccionarSugerenciaAutocompletado(suggestion);
+            });
+            
+            div.addEventListener('mouseenter', function() {
+                selectedSuggestionIndex = index;
+                actualizarSeleccionAutocompletado();
+            });
+            
+            autocompleteSuggestions.appendChild(div);
+        });
+        
+        autocompleteSuggestions.style.display = 'block';
+        autocompleteSuggestions.style.visibility = 'visible';
+        autocompleteSuggestions.style.opacity = '1';
+        console.log('✅ Autocompletado mostrado, display:', autocompleteSuggestions.style.display, 'z-index:', window.getComputedStyle(autocompleteSuggestions).zIndex);
+    }
+    
+    function obtenerIconoPorTipo(type) {
+        const tipoLower = (type || '').toLowerCase();
+        if (tipoLower.includes('house') || tipoLower.includes('residential')) return '🏠';
+        if (tipoLower.includes('road') || tipoLower.includes('street')) return '🛣️';
+        if (tipoLower.includes('city') || tipoLower.includes('town')) return '🏙️';
+        if (tipoLower.includes('village')) return '🏘️';
+        if (tipoLower.includes('commercial') || tipoLower.includes('shop')) return '🏪';
+        if (tipoLower.includes('administrative')) return '🏛️';
+        return '📍';
+    }
+    
+    function ocultarAutocompletado() {
+        if (autocompleteSuggestions) {
+            autocompleteSuggestions.style.display = 'none';
+            autocompleteSuggestions.style.visibility = 'hidden';
+            autocompleteSuggestions.style.opacity = '0';
+            autocompleteSuggestions.innerHTML = '';
+        }
+        selectedSuggestionIndex = -1;
+        currentSuggestions = [];
+    }
+    
+    function actualizarSeleccionAutocompletado() {
+        if (!autocompleteSuggestions) return;
+        
+        const items = autocompleteSuggestions.querySelectorAll('.autocomplete-suggestion');
+        items.forEach((item, index) => {
+            if (index === selectedSuggestionIndex) {
+                item.classList.add('selected');
+                item.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+            } else {
+                item.classList.remove('selected');
+            }
+        });
+    }
+    
+    function seleccionarSugerenciaAutocompletado(suggestion) {
+        if (!suggestion) return;
+        
+        const lat = parseFloat(suggestion.lat);
+        const lng = parseFloat(suggestion.lon);
+        const direccionCompleta = suggestion.display_name || suggestion.name || '';
+        
+        console.log('✅ Dirección seleccionada:', direccionCompleta, 'Coordenadas:', lat, lng);
+        
+        // Actualizar campo de dirección
+        if (direccionInput) {
+            direccionInput.value = direccionCompleta;
+        }
+        
+        // Ocultar autocompletado
+        ocultarAutocompletado();
+        
+        // Centrar mapa en la ubicación seleccionada
+        if (mapaLeaflet) {
+            mapaLeaflet.setView([lat, lng], 15);
+            
+            // Crear o mover marcador
+            if (marcadorEvento) {
+                marcadorEvento.setLatLng([lat, lng]);
+                if (!mapaLeaflet.hasLayer(marcadorEvento)) {
+                    marcadorEvento.addTo(mapaLeaflet);
+                }
+                marcadorEvento.setOpacity(1);
+            } else {
+                marcadorEvento = L.marker([lat, lng], {
+                    draggable: true,
+                    title: 'Arrastra para seleccionar ubicación',
+                }).addTo(mapaLeaflet);
+                
+                // Agregar evento de arrastre al marcador
+                marcadorEvento.on('dragend', function(e) {
+                    const dragLat = e.target.getLatLng().lat;
+                    const dragLng = e.target.getLatLng().lng;
+                    console.log('📍 Marcador arrastrado a:', dragLat, dragLng);
+                    obtenerDireccionDesdeCoordenadas(dragLat, dragLng);
+                });
+            }
+            
+            // Actualizar información y calcular distancia
+            obtenerDireccionDesdeCoordenadas(lat, lng);
+        }
+    }
+    
     function setupGoogleMapsLink() {
         if (!direccionInput) {
             console.warn('Campo de dirección no encontrado');
@@ -344,6 +582,20 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         
         console.log('🔧 Configurando funcionalidad de mapa...');
+        console.log('🔍 Verificando elementos:', {
+            direccionInput: direccionInput,
+            autocompleteSuggestions: autocompleteSuggestions || document.getElementById('autocomplete-suggestions')
+        });
+        
+        // Re-inicializar autocompleteSuggestions por si acaso
+        if (!autocompleteSuggestions) {
+            autocompleteSuggestions = document.getElementById('autocomplete-suggestions');
+            if (autocompleteSuggestions) {
+                console.log('✅ autocompleteSuggestions encontrado:', autocompleteSuggestions);
+            } else {
+                console.error('❌ autocompleteSuggestions NO encontrado en el DOM');
+            }
+        }
         
         // Inicializar mapa si Leaflet está disponible
         if (typeof L !== 'undefined') {
@@ -375,12 +627,69 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         }
         
-        // Buscar al presionar Enter en el campo de dirección
+        // Autocompletado mientras escribe
         if (direccionInput) {
-            direccionInput.addEventListener('keypress', function(e) {
-                if (e.key === 'Enter') {
+            // Asegurarse de que autocompleteSuggestions está inicializado
+            if (!autocompleteSuggestions) {
+                autocompleteSuggestions = document.getElementById('autocomplete-suggestions');
+            }
+            
+            console.log('✅ Configurando autocompletado. Elemento input:', direccionInput, 'Elemento suggestions:', autocompleteSuggestions);
+            
+            direccionInput.addEventListener('input', function(e) {
+                const query = e.target.value.trim();
+                console.log('📝 Input detectado:', query, 'Longitud:', query.length);
+                
+                // Asegurarse de que autocompleteSuggestions existe
+                if (!autocompleteSuggestions) {
+                    autocompleteSuggestions = document.getElementById('autocomplete-suggestions');
+                }
+                
+                if (query.length >= 3) {
+                    // Debounce: esperar 300ms después de que el usuario deje de escribir
+                    clearTimeout(autocompleteTimeout);
+                    autocompleteTimeout = setTimeout(() => {
+                        console.log('⏰ Ejecutando búsqueda de autocompletado...');
+                        buscarAutocompletado(query);
+                    }, 300);
+                } else {
+                    ocultarAutocompletado();
+                }
+            });
+            
+            // Manejar teclado en el campo de dirección
+            direccionInput.addEventListener('keydown', function(e) {
+                if (autocompleteSuggestions && autocompleteSuggestions.style.display !== 'none') {
+                    if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        selectedSuggestionIndex = Math.min(selectedSuggestionIndex + 1, currentSuggestions.length - 1);
+                        actualizarSeleccionAutocompletado();
+                    } else if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        selectedSuggestionIndex = Math.max(selectedSuggestionIndex - 1, -1);
+                        actualizarSeleccionAutocompletado();
+                    } else if (e.key === 'Enter') {
+                        e.preventDefault();
+                        if (selectedSuggestionIndex >= 0 && currentSuggestions[selectedSuggestionIndex]) {
+                            seleccionarSugerenciaAutocompletado(currentSuggestions[selectedSuggestionIndex]);
+                        } else {
+                            buscarDireccionEnMapa();
+                        }
+                    } else if (e.key === 'Escape') {
+                        ocultarAutocompletado();
+                    }
+                } else if (e.key === 'Enter') {
                     e.preventDefault();
                     buscarDireccionEnMapa();
+                }
+            });
+            
+            // Ocultar autocompletado al hacer clic fuera
+            document.addEventListener('click', function(e) {
+                if (autocompleteSuggestions && 
+                    !autocompleteSuggestions.contains(e.target) && 
+                    e.target !== direccionInput) {
+                    ocultarAutocompletado();
                 }
             });
         }
@@ -855,6 +1164,9 @@ document.addEventListener('DOMContentLoaded', function() {
             if (direccionCompletaInput) direccionCompletaInput.value = '';
             if (abrirGoogleMapsBtn) abrirGoogleMapsBtn.disabled = true;
             
+            // Ocultar autocompletado
+            ocultarAutocompletado();
+            
             // Limpiar mapa y marcadores
             if (marcadorEvento && mapaLeaflet) {
                 mapaLeaflet.removeLayer(marcadorEvento);
@@ -906,12 +1218,16 @@ document.addEventListener('DOMContentLoaded', function() {
         formErrors.innerHTML = '';
         
         // Limpiar campos de dirección
+        if (direccionInput) direccionInput.value = '';
         if (direccionLatInput) direccionLatInput.value = '';
         if (direccionLngInput) direccionLngInput.value = '';
         if (direccionCompletaInput) direccionCompletaInput.value = '';
         if (abrirGoogleMapsBtn) abrirGoogleMapsBtn.disabled = true;
         const distanciaInput = document.getElementById('distancia_km');
         if (distanciaInput) distanciaInput.value = '0';
+        
+        // Ocultar autocompletado
+        ocultarAutocompletado();
     }
     
     async function procesarReserva() {

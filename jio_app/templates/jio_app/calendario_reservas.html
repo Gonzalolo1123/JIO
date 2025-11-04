@@ -22,7 +22,103 @@
     border-color: #2c5530;
   }
   .direccion-autocomplete-wrapper {
+    position: relative !important;
+    width: 100%;
+    z-index: 1;
+    overflow: visible !important;
+  }
+  
+  .form-group {
+    overflow: visible !important;
+  }
+  
+  .modal-reserva-body {
+    overflow: visible !important;
+  }
+  
+  .direccion-search-container {
     position: relative;
+    width: 100%;
+  }
+  
+  /* Estilos para el autocompletado */
+  .autocomplete-suggestions {
+    position: absolute !important;
+    top: calc(100% + 4px) !important;
+    left: 0 !important;
+    width: calc(100% - 54px) !important;
+    background: white !important;
+    border: 2px solid #2c5530 !important;
+    border-radius: 8px !important;
+    max-height: 300px !important;
+    overflow-y: auto !important;
+    z-index: 10001 !important;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2) !important;
+    margin-top: 0 !important;
+    display: none;
+    visibility: visible;
+    opacity: 1;
+  }
+  
+  .autocomplete-suggestion {
+    padding: 12px 15px;
+    cursor: pointer;
+    border-bottom: 1px solid #e0e0e0;
+    transition: background-color 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 50px;
+  }
+  
+  .autocomplete-suggestion:first-child {
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+  }
+  
+  .autocomplete-suggestion:last-child {
+    border-bottom: none;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+  }
+  
+  .autocomplete-suggestion:hover,
+  .autocomplete-suggestion.selected {
+    background-color: #e8f5e9;
+  }
+  
+  .autocomplete-suggestion:active {
+    background-color: #c8e6c9;
+  }
+  
+  .autocomplete-suggestion-icon {
+    font-size: 1.2rem;
+    color: #2c5530;
+    flex-shrink: 0;
+  }
+  
+  .autocomplete-suggestion-text {
+    flex: 1;
+    font-size: 0.95rem;
+    color: #333;
+  }
+  
+  .autocomplete-suggestion-text strong {
+    color: #2c5530;
+    font-weight: 600;
+  }
+  
+  .autocomplete-suggestion-type {
+    font-size: 0.8rem;
+    color: #666;
+    font-style: italic;
+  }
+  
+  .autocomplete-loading {
+    padding: 12px 15px;
+    text-align: center;
+    color: #666;
+    font-style: italic;
   }
   .mapa-link-container {
     margin-top: 15px;
@@ -116,16 +212,24 @@
     border: none;
     border-radius: 8px;
     cursor: pointer;
-    font-size: 1.2rem;
+    font-size: 1rem;
+    font-weight: 600;
     transition: background 0.3s;
     display: flex;
     align-items: center;
     justify-content: center;
-    min-width: 50px;
+    gap: 8px;
+    white-space: nowrap;
+    min-width: auto;
   }
   
   .btn-buscar:hover {
     background: #1e3d21;
+  }
+  
+  .btn-buscar:active {
+    background: #153017;
+    transform: scale(0.98);
   }
   
   /* Contenedor del mapa */
@@ -134,16 +238,21 @@
     width: 100%;
     height: 400px;
     margin-top: 15px;
+    margin-bottom: 15px;
     border-radius: 8px;
     overflow: hidden;
-    border: 2px solid #ddd;
+    border: 2px solid #2c5530;
     background: #f0f0f0;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    display: block !important;
+    visibility: visible !important;
   }
   
   .mapa-leaflet {
     width: 100%;
     height: 100%;
     z-index: 1;
+    min-height: 400px;
   }
   
   .mapa-loading {
@@ -380,13 +489,17 @@
               <label for="direccion">Dirección del evento:</label>
               
               <!-- Barra de búsqueda con botón -->
-              <div class="direccion-search-container">
-                <input type="text" id="direccion" name="direccion" placeholder="Busca una dirección o haz clic en el mapa..." required autocomplete="off">
-                <button type="button" id="btn-buscar-direccion" class="btn-buscar" title="Buscar dirección">
-                  <span>🔍</span>
-                </button>
+              <div class="direccion-autocomplete-wrapper">
+                <div class="direccion-search-container">
+                  <input type="text" id="direccion" name="direccion" placeholder="Busca una dirección con autocompletado..." required autocomplete="off">
+                  <button type="button" id="btn-buscar-direccion" class="btn-buscar" title="Buscar en el mapa">
+                    <span>🗺️</span> Buscar en el mapa
+                  </button>
+                </div>
+                <!-- Dropdown de sugerencias de autocompletado -->
+                <div id="autocomplete-suggestions" class="autocomplete-suggestions" style="display: none;"></div>
               </div>
-              <small class="form-help">💡 Escribe una dirección para buscarla o haz clic directamente en el mapa para seleccionar la ubicación</small>
+              <small class="form-help">💡 Escribe una dirección (ej: "hueyusca 312") y aparecerán sugerencias de autocompletado. También puedes hacer clic en el mapa para seleccionar una ubicación o usar el botón "Buscar en el mapa"</small>
               
               <!-- Campos ocultos para coordenadas -->
               <input type="hidden" id="direccion_lat" name="direccion_lat">
@@ -445,7 +558,7 @@
 {% block extra_scripts %}
 <!-- Leaflet JS para el mapa -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-<script src="{% static 'js/calendario.js' %}?v=6.0"></script>
+<script src="{% static 'js/calendario.js' %}?v=8.0"></script>
 <script>
 // Debug: Verificar que el botón existe cuando se carga la página
 document.addEventListener('DOMContentLoaded', function() {
