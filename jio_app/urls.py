@@ -7,6 +7,8 @@ urlpatterns = [
     # Páginas públicas
     path('', views.index, name='index'),
     path('calendario/', views.calendario_reservas, name='calendario_reservas'),
+    path('api/disponibilidad/', views.disponibilidad_fecha_json, name='disponibilidad_fecha_json'),
+    path('api/reserva/', views.crear_reserva_publica, name='crear_reserva_publica'),
     
     # Autenticación
     path('login_jio/', views.login_view, name='login_jio'),
