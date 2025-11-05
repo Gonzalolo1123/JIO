@@ -167,13 +167,73 @@
     <table class="table">
       <thead>
         <tr>
-          <th>ID</th>
-          <th>Fecha</th>
-          <th>Hora</th>
-          <th>Cliente</th>
-          <th>Dirección</th>
+          <th>
+            <a href="?{% if query %}q={{ query }}&{% endif %}{% if estado_filter %}estado={{ estado_filter }}&{% endif %}order_by_inst=id&direction_inst={% if order_by_inst == 'id' and direction_inst == 'asc' %}desc{% else %}asc{% endif %}" 
+               class="sortable-header" style="text-decoration:none;color:inherit;display:flex;align-items:center;gap:0.5rem;">
+              ID
+              {% if order_by_inst == 'id' %}
+                <i class="fas fa-arrow-{% if direction_inst == 'asc' %}up{% else %}down{% endif %}" style="font-size:0.75rem;"></i>
+              {% else %}
+                <i class="fas fa-sort" style="font-size:0.75rem;color:#bbb;"></i>
+              {% endif %}
+            </a>
+          </th>
+          <th>
+            <a href="?{% if query %}q={{ query }}&{% endif %}{% if estado_filter %}estado={{ estado_filter }}&{% endif %}order_by_inst=fecha_instalacion&direction_inst={% if order_by_inst == 'fecha_instalacion' and direction_inst == 'asc' %}desc{% else %}asc{% endif %}" 
+               class="sortable-header" style="text-decoration:none;color:inherit;display:flex;align-items:center;gap:0.5rem;">
+              Fecha
+              {% if order_by_inst == 'fecha_instalacion' %}
+                <i class="fas fa-arrow-{% if direction_inst == 'asc' %}up{% else %}down{% endif %}" style="font-size:0.75rem;"></i>
+              {% else %}
+                <i class="fas fa-sort" style="font-size:0.75rem;color:#bbb;"></i>
+              {% endif %}
+            </a>
+          </th>
+          <th>
+            <a href="?{% if query %}q={{ query }}&{% endif %}{% if estado_filter %}estado={{ estado_filter }}&{% endif %}order_by_inst=hora_instalacion&direction_inst={% if order_by_inst == 'hora_instalacion' and direction_inst == 'asc' %}desc{% else %}asc{% endif %}" 
+               class="sortable-header" style="text-decoration:none;color:inherit;display:flex;align-items:center;gap:0.5rem;">
+              Hora
+              {% if order_by_inst == 'hora_instalacion' %}
+                <i class="fas fa-arrow-{% if direction_inst == 'asc' %}up{% else %}down{% endif %}" style="font-size:0.75rem;"></i>
+              {% else %}
+                <i class="fas fa-sort" style="font-size:0.75rem;color:#bbb;"></i>
+              {% endif %}
+            </a>
+          </th>
+          <th>
+            <a href="?{% if query %}q={{ query }}&{% endif %}{% if estado_filter %}estado={{ estado_filter }}&{% endif %}order_by_inst=cliente&direction_inst={% if order_by_inst == 'cliente' and direction_inst == 'asc' %}desc{% else %}asc{% endif %}" 
+               class="sortable-header" style="text-decoration:none;color:inherit;display:flex;align-items:center;gap:0.5rem;">
+              Cliente
+              {% if order_by_inst == 'cliente' %}
+                <i class="fas fa-arrow-{% if direction_inst == 'asc' %}up{% else %}down{% endif %}" style="font-size:0.75rem;"></i>
+              {% else %}
+                <i class="fas fa-sort" style="font-size:0.75rem;color:#bbb;"></i>
+              {% endif %}
+            </a>
+          </th>
+          <th>
+            <a href="?{% if query %}q={{ query }}&{% endif %}{% if estado_filter %}estado={{ estado_filter }}&{% endif %}order_by_inst=direccion&direction_inst={% if order_by_inst == 'direccion' and direction_inst == 'asc' %}desc{% else %}asc{% endif %}" 
+               class="sortable-header" style="text-decoration:none;color:inherit;display:flex;align-items:center;gap:0.5rem;">
+              Dirección
+              {% if order_by_inst == 'direccion' %}
+                <i class="fas fa-arrow-{% if direction_inst == 'asc' %}up{% else %}down{% endif %}" style="font-size:0.75rem;"></i>
+              {% else %}
+                <i class="fas fa-sort" style="font-size:0.75rem;color:#bbb;"></i>
+              {% endif %}
+            </a>
+          </th>
           <th>Repartidor</th>
-          <th>Estado</th>
+          <th>
+            <a href="?{% if query %}q={{ query }}&{% endif %}{% if estado_filter %}estado={{ estado_filter }}&{% endif %}order_by_inst=estado&direction_inst={% if order_by_inst == 'estado' and direction_inst == 'asc' %}desc{% else %}asc{% endif %}" 
+               class="sortable-header" style="text-decoration:none;color:inherit;display:flex;align-items:center;gap:0.5rem;">
+              Estado
+              {% if order_by_inst == 'estado' %}
+                <i class="fas fa-arrow-{% if direction_inst == 'asc' %}up{% else %}down{% endif %}" style="font-size:0.75rem;"></i>
+              {% else %}
+                <i class="fas fa-sort" style="font-size:0.75rem;color:#bbb;"></i>
+              {% endif %}
+            </a>
+          </th>
           <th>Acciones</th>
         </tr>
       </thead>
@@ -210,9 +270,11 @@
             <button class="btn btn-sm btn-secondary" data-cambiar-estado-instalacion="{{ inst.id }}">
               <i class="fas fa-sync"></i>
             </button>
+            {% comment %}
             <button class="btn btn-sm btn-warning" data-registrar-incidente="{{ inst.id }}" data-tipo="instalacion">
               <i class="fas fa-exclamation-circle"></i>
             </button>
+            {% endcomment %}
           </td>
         </tr>
         {% empty %}
@@ -239,13 +301,63 @@
     <table class="table">
       <thead>
         <tr>
-          <th>ID</th>
-          <th>Fecha</th>
-          <th>Hora</th>
-          <th>Cliente</th>
+          <th>
+            <a href="?{% if query %}q={{ query }}&{% endif %}{% if estado_filter %}estado={{ estado_filter }}&{% endif %}order_by_ret=id&direction_ret={% if order_by_ret == 'id' and direction_ret == 'asc' %}desc{% else %}asc{% endif %}" 
+               class="sortable-header" style="text-decoration:none;color:inherit;display:flex;align-items:center;gap:0.5rem;">
+              ID
+              {% if order_by_ret == 'id' %}
+                <i class="fas fa-arrow-{% if direction_ret == 'asc' %}up{% else %}down{% endif %}" style="font-size:0.75rem;"></i>
+              {% else %}
+                <i class="fas fa-sort" style="font-size:0.75rem;color:#bbb;"></i>
+              {% endif %}
+            </a>
+          </th>
+          <th>
+            <a href="?{% if query %}q={{ query }}&{% endif %}{% if estado_filter %}estado={{ estado_filter }}&{% endif %}order_by_ret=fecha_retiro&direction_ret={% if order_by_ret == 'fecha_retiro' and direction_ret == 'asc' %}desc{% else %}asc{% endif %}" 
+               class="sortable-header" style="text-decoration:none;color:inherit;display:flex;align-items:center;gap:0.5rem;">
+              Fecha
+              {% if order_by_ret == 'fecha_retiro' %}
+                <i class="fas fa-arrow-{% if direction_ret == 'asc' %}up{% else %}down{% endif %}" style="font-size:0.75rem;"></i>
+              {% else %}
+                <i class="fas fa-sort" style="font-size:0.75rem;color:#bbb;"></i>
+              {% endif %}
+            </a>
+          </th>
+          <th>
+            <a href="?{% if query %}q={{ query }}&{% endif %}{% if estado_filter %}estado={{ estado_filter }}&{% endif %}order_by_ret=hora_retiro&direction_ret={% if order_by_ret == 'hora_retiro' and direction_ret == 'asc' %}desc{% else %}asc{% endif %}" 
+               class="sortable-header" style="text-decoration:none;color:inherit;display:flex;align-items:center;gap:0.5rem;">
+              Hora
+              {% if order_by_ret == 'hora_retiro' %}
+                <i class="fas fa-arrow-{% if direction_ret == 'asc' %}up{% else %}down{% endif %}" style="font-size:0.75rem;"></i>
+              {% else %}
+                <i class="fas fa-sort" style="font-size:0.75rem;color:#bbb;"></i>
+              {% endif %}
+            </a>
+          </th>
+          <th>
+            <a href="?{% if query %}q={{ query }}&{% endif %}{% if estado_filter %}estado={{ estado_filter }}&{% endif %}order_by_ret=cliente&direction_ret={% if order_by_ret == 'cliente' and direction_ret == 'asc' %}desc{% else %}asc{% endif %}" 
+               class="sortable-header" style="text-decoration:none;color:inherit;display:flex;align-items:center;gap:0.5rem;">
+              Cliente
+              {% if order_by_ret == 'cliente' %}
+                <i class="fas fa-arrow-{% if direction_ret == 'asc' %}up{% else %}down{% endif %}" style="font-size:0.75rem;"></i>
+              {% else %}
+                <i class="fas fa-sort" style="font-size:0.75rem;color:#bbb;"></i>
+              {% endif %}
+            </a>
+          </th>
           <th>Dirección</th>
           <th>Repartidor</th>
-          <th>Estado</th>
+          <th>
+            <a href="?{% if query %}q={{ query }}&{% endif %}{% if estado_filter %}estado={{ estado_filter }}&{% endif %}order_by_ret=estado&direction_ret={% if order_by_ret == 'estado' and direction_ret == 'asc' %}desc{% else %}asc{% endif %}" 
+               class="sortable-header" style="text-decoration:none;color:inherit;display:flex;align-items:center;gap:0.5rem;">
+              Estado
+              {% if order_by_ret == 'estado' %}
+                <i class="fas fa-arrow-{% if direction_ret == 'asc' %}up{% else %}down{% endif %}" style="font-size:0.75rem;"></i>
+              {% else %}
+                <i class="fas fa-sort" style="font-size:0.75rem;color:#bbb;"></i>
+              {% endif %}
+            </a>
+          </th>
           <th>Acciones</th>
         </tr>
       </thead>
@@ -282,9 +394,11 @@
             <button class="btn btn-sm btn-secondary" data-cambiar-estado-retiro="{{ ret.id }}">
               <i class="fas fa-sync"></i>
             </button>
+            {% comment %}
             <button class="btn btn-sm btn-warning" data-registrar-incidente="{{ ret.id }}" data-tipo="retiro">
               <i class="fas fa-exclamation-circle"></i>
             </button>
+            {% endcomment %}
           </td>
         </tr>
         {% empty %}
@@ -368,6 +482,7 @@
     <div class="modal-backdrop" data-modal-close></div>
   </div>
 
+  {% comment %}
   <!-- Modal: Registrar Incidente -->
   <div id="modalRegistrarIncidente" class="modal" aria-hidden="true">
     <div class="modal-content">
@@ -411,6 +526,7 @@
     </div>
     <div class="modal-backdrop" data-modal-close></div>
   </div>
+  {% endcomment %}
 
   <!-- Modal: Ver Detalle -->
   <div id="modalVerDetalle" class="modal" aria-hidden="true">
