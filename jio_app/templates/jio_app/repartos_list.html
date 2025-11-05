@@ -30,21 +30,66 @@
 
   <!-- Agenda del día -->
   <div class="form-card" style="margin-top: 1rem;">
-    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:.75rem;">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:.75rem; flex-wrap:wrap; gap:0.5rem;">
       <h2 class="panel-title" style="font-size:1.25rem; color:#2E7D32; margin:0;">
-        <i class="fas fa-calendar-day"></i> Agenda de Hoy
+        <i class="fas fa-calendar-day"></i> Agenda
       </h2>
-      <span class="badge badge-info">{{ fecha_hoy|date:"d/m/Y" }}</span>
+      
+      <!-- Controles de vista -->
+      <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+        <!-- Selector de vista -->
+        <div style="display:flex; gap:0.25rem;">
+          <button type="button" class="btn btn-sm vista-btn" data-vista="diaria" 
+            style="{% if vista == 'diaria' %}background:#2E7D32;color:white;{% endif %}">
+            <i class="fas fa-calendar-day"></i> Día
+          </button>
+          <button type="button" class="btn btn-sm vista-btn" data-vista="semanal"
+            style="{% if vista == 'semanal' %}background:#2E7D32;color:white;{% endif %}">
+            <i class="fas fa-calendar-week"></i> Semana
+          </button>
+          <button type="button" class="btn btn-sm vista-btn" data-vista="mensual"
+            style="{% if vista == 'mensual' %}background:#2E7D32;color:white;{% endif %}">
+            <i class="fas fa-calendar-alt"></i> Mes
+          </button>
+        </div>
+        
+        <!-- Navegación -->
+        <div style="display:flex; gap:0.25rem; align-items:center;">
+          <button type="button" class="btn btn-sm btn-secondary" id="btnAnterior" title="Anterior">
+            <i class="fas fa-chevron-left"></i>
+          </button>
+          <input type="date" id="fechaSeleccionada" value="{{ fecha_base|date:'Y-m-d' }}" 
+            style="padding:0.25rem 0.5rem; border:1px solid #ddd; border-radius:4px; font-size:0.875rem;">
+          <button type="button" class="btn btn-sm btn-secondary" id="btnSiguiente" title="Siguiente">
+            <i class="fas fa-chevron-right"></i>
+          </button>
+          <button type="button" class="btn btn-sm btn-primary" id="btnHoy" title="Ir a hoy">
+            Hoy
+          </button>
+        </div>
+        
+        <!-- Rango de fechas -->
+        <span class="badge badge-info" id="rangoFechas">
+          {% if vista == 'diaria' %}
+            {{ fecha_base|date:"d/m/Y" }}
+          {% elif vista == 'semanal' %}
+            {{ fecha_inicio|date:"d/m" }} - {{ fecha_fin|date:"d/m/Y" }}
+          {% else %}
+            {{ fecha_base|date:"F Y" }}
+          {% endif %}
+        </span>
+      </div>
     </div>
-    <div class="agenda-grid">
-      <!-- Instalaciones de hoy -->
+    <div class="agenda-grid" id="agendaContainer">
+      <!-- Instalaciones -->
       <div class="agenda-section">
         <h3 class="agenda-title">
-          <i class="fas fa-truck-loading"></i> Instalaciones ({{ instalaciones_hoy|length }})
+          <i class="fas fa-truck-loading"></i> Instalaciones (<span id="countInstalaciones">{{ instalaciones_agenda|length }}</span>)
         </h3>
-        {% for inst in instalaciones_hoy %}
+        <div id="instalacionesContainer">
+        {% for inst in instalaciones_agenda %}
         <div class="agenda-card agenda-instalacion">
-          <div class="agenda-time">{{ inst.hora_instalacion }}</div>
+          <div class="agenda-time">{{ inst.hora_instalacion|time:"H:i" }}</div>
           <div class="agenda-info">
             <strong>{{ inst.reserva.cliente.usuario.get_full_name }}</strong>
             <p>{{ inst.direccion_instalacion }}</p>
@@ -66,18 +111,20 @@
           </div>
         </div>
         {% empty %}
-        <p style="color:#7f8c8d; text-align:center; padding:1rem;">No hay instalaciones programadas para hoy</p>
+        <p style="color:#7f8c8d; text-align:center; padding:1rem;">No hay instalaciones programadas para este período</p>
         {% endfor %}
+        </div>
       </div>
 
-      <!-- Retiros de hoy -->
+      <!-- Retiros -->
       <div class="agenda-section">
         <h3 class="agenda-title">
-          <i class="fas fa-truck-pickup"></i> Retiros ({{ retiros_hoy|length }})
+          <i class="fas fa-truck-pickup"></i> Retiros (<span id="countRetiros">{{ retiros_agenda|length }}</span>)
         </h3>
-        {% for ret in retiros_hoy %}
+        <div id="retirosContainer">
+        {% for ret in retiros_agenda %}
         <div class="agenda-card agenda-retiro">
-          <div class="agenda-time">{{ ret.hora_retiro }}</div>
+          <div class="agenda-time">{{ ret.hora_retiro|time:"H:i" }}</div>
           <div class="agenda-info">
             <strong>{{ ret.reserva.cliente.usuario.get_full_name }}</strong>
             <p>{{ ret.reserva.direccion_evento }}</p>
@@ -99,19 +146,24 @@
           </div>
         </div>
         {% empty %}
-        <p style="color:#7f8c8d; text-align:center; padding:1rem;">No hay retiros programados para hoy</p>
+        <p style="color:#7f8c8d; text-align:center; padding:1rem;">No hay retiros programados para este período</p>
         {% endfor %}
+        </div>
       </div>
     </div>
   </div>
 
   <!-- Tabla de Instalaciones -->
   <div class="form-card" style="overflow:auto; margin-top:1rem;">
-    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:.75rem;">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:.75rem; cursor:pointer;" 
+         onclick="toggleSection('instalacionesTable')" title="Hacer clic para expandir/colapsar">
       <h2 class="panel-title" style="font-size:1.25rem; color:#2E7D32; margin:0;">
         <i class="fas fa-truck-loading"></i> Instalaciones
+        <span id="instalacionesCount" style="font-size:0.875rem; color:#666; margin-left:0.5rem;">({{ instalaciones|length }})</span>
       </h2>
+      <i class="fas fa-chevron-down" id="instalacionesIcon" style="transition:transform 0.3s;"></i>
     </div>
+    <div id="instalacionesTable" style="display:block;">
     <table class="table">
       <thead>
         <tr>
@@ -130,7 +182,7 @@
         <tr>
           <td>{{ inst.id }}</td>
           <td>{{ inst.fecha_instalacion|date:"d/m/Y" }}</td>
-          <td>{{ inst.hora_instalacion }}</td>
+          <td>{{ inst.hora_instalacion|time:"H:i" }}</td>
           <td>{{ inst.reserva.cliente.usuario.get_full_name }}</td>
           <td>{{ inst.direccion_instalacion|truncatewords:5 }}</td>
           <td>
@@ -170,15 +222,20 @@
         {% endfor %}
       </tbody>
     </table>
+    </div>
   </div>
 
   <!-- Tabla de Retiros -->
   <div class="form-card" style="overflow:auto; margin-top:1rem;">
-    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:.75rem;">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:.75rem; cursor:pointer;" 
+         onclick="toggleSection('retirosTable')" title="Hacer clic para expandir/colapsar">
       <h2 class="panel-title" style="font-size:1.25rem; color:#2E7D32; margin:0;">
         <i class="fas fa-truck-pickup"></i> Retiros
+        <span id="retirosCount" style="font-size:0.875rem; color:#666; margin-left:0.5rem;">({{ retiros|length }})</span>
       </h2>
+      <i class="fas fa-chevron-down" id="retirosIcon" style="transition:transform 0.3s;"></i>
     </div>
+    <div id="retirosTable" style="display:block;">
     <table class="table">
       <thead>
         <tr>
@@ -197,7 +254,7 @@
         <tr>
           <td>{{ ret.id }}</td>
           <td>{{ ret.fecha_retiro|date:"d/m/Y" }}</td>
-          <td>{{ ret.hora_retiro }}</td>
+          <td>{{ ret.hora_retiro|time:"H:i" }}</td>
           <td>{{ ret.reserva.cliente.usuario.get_full_name }}</td>
           <td>{{ ret.reserva.direccion_evento|truncatewords:5 }}</td>
           <td>
@@ -237,6 +294,7 @@
         {% endfor %}
       </tbody>
     </table>
+    </div>
   </div>
 
   <!-- Modal: Asignar Repartidor -->
@@ -354,8 +412,51 @@
     <div class="modal-backdrop" data-modal-close></div>
   </div>
 
+  <!-- Modal: Ver Detalle -->
+  <div id="modalVerDetalle" class="modal" aria-hidden="true">
+    <div class="modal-content" style="max-width:700px; max-height:90vh; display:flex; flex-direction:column;">
+      <div class="modal-header" style="flex-shrink:0;">
+        <h2 id="modalDetalleTitulo">Detalle</h2>
+        <button class="modal-close" data-modal-close>&times;</button>
+      </div>
+      <div id="modalDetalleContent" style="padding:1.5rem; overflow-y:auto; flex:1; max-height:calc(90vh - 80px);">
+        <!-- Contenido se cargará dinámicamente -->
+      </div>
+    </div>
+    <div class="modal-backdrop" data-modal-close></div>
+  </div>
+
   {% block extra_scripts %}
   <script src="{% static 'js/repartos_list.js' %}"></script>
+  <script>
+    // Función para colapsar/expandir secciones
+    function toggleSection(sectionId) {
+      const section = document.getElementById(sectionId);
+      const icon = document.getElementById(sectionId.replace('Table', 'Icon'));
+      
+      if (!section || !icon) return;
+      
+      if (section.style.display === 'none') {
+        section.style.display = 'block';
+        icon.style.transform = 'rotate(0deg)';
+        icon.classList.remove('fa-chevron-up');
+        icon.classList.add('fa-chevron-down');
+      } else {
+        section.style.display = 'none';
+        icon.style.transform = 'rotate(180deg)';
+        icon.classList.remove('fa-chevron-down');
+        icon.classList.add('fa-chevron-up');
+      }
+    }
+    
+    // Inicializar estado de las secciones (opcional: colapsar por defecto)
+    document.addEventListener('DOMContentLoaded', function() {
+      // Las tablas inician expandidas por defecto
+      // Si quieres que inicien colapsadas, descomenta las siguientes líneas:
+      // toggleSection('instalacionesTable');
+      // toggleSection('retirosTable');
+    });
+  </script>
   {% endblock %}
 </div>
 {% endblock %}

@@ -1,5 +1,6 @@
 {% extends 'jio_app/base_admin.html' %}
 {% load static %}
+{% load jio_filters %}
 
 {% block title %}Juegos Inflables - JIO{% endblock %}
 
@@ -19,13 +20,10 @@
       <form id="formEditJuego" class="form-grid" data-endpoint-base="/panel/juegos/">
         {% csrf_token %}
         <input type="hidden" name="juego_id" id="editJuegoId">
+        <!-- Fila 1: Nombre, Categoría, Capacidad -->
         <label>
           Nombre
           <input type="text" name="nombre" id="editJuegoNombre" required>
-        </label>
-        <label>
-          Descripción
-          <textarea name="descripcion" id="editJuegoDescripcion" rows="3"></textarea>
         </label>
         <label>
           Categoría
@@ -37,13 +35,26 @@
           </select>
         </label>
         <label>
-          Dimensiones
-          <input type="text" name="dimensiones" id="editJuegoDimensiones" required placeholder="Ej: 5m x 3m x 2m">
-        </label>
-        <label>
           Capacidad (personas)
           <input type="number" name="capacidad_personas" id="editJuegoCapacidad" required min="1">
         </label>
+        <!-- Fila 2: Largo, Ancho, Alto -->
+        <label style="grid-column: 1 / -1; margin-bottom: 0.25rem; margin-top: 0.5rem;">
+          <strong>Dimensiones (metros)</strong>
+        </label>
+        <label>
+          Largo
+          <input type="number" name="dimension_largo" id="editJuegoDimensionLargo" required min="1.0" max="25.0" step="0.1" placeholder="Ej: 5.5">
+        </label>
+        <label>
+          Ancho
+          <input type="number" name="dimension_ancho" id="editJuegoDimensionAncho" required min="1.0" max="25.0" step="0.1" placeholder="Ej: 3.0">
+        </label>
+        <label>
+          Alto
+          <input type="number" name="dimension_alto" id="editJuegoDimensionAlto" required min="1.0" max="25.0" step="0.1" placeholder="Ej: 2.5">
+        </label>
+        <!-- Fila 3: Peso máximo, Precio base, Descripción -->
         <label>
           Peso máximo (kg)
           <input type="number" name="peso_maximo" id="editJuegoPeso" required min="1">
@@ -52,17 +63,15 @@
           Precio base ($)
           <input type="number" name="precio_base" id="editJuegoPrecio" required min="1" step="1">
         </label>
-        <label style="grid-column: 1 / -1;">
+        <label>
+          Descripción
+          <textarea name="descripcion" id="editJuegoDescripcion" rows="3"></textarea>
+        </label>
+        <!-- Fila 4: Imagen, Estado (3 columnas) -->
+        <label>
           Imagen del juego
           <input type="file" name="foto" id="editJuegoFoto" accept="image/*">
           <small style="color:#7f8c8d;">Máximo 5MB. Formatos: JPG, PNG, GIF, WEBP</small>
-        </label>
-        <div id="editJuegoFotoPreview" style="grid-column: 1 / -1; text-align: center; margin-top: 0.5rem;">
-          <!-- Preview de la imagen existente/nueva -->
-        </div>
-        <label style="grid-column: 1 / -1;" id="editJuegoEliminarFotoContainer" style="display:none;">
-          <input type="checkbox" name="eliminar_foto" id="editJuegoEliminarFoto" style="width:auto; margin-right:0.5rem;">
-          <span>Eliminar imagen actual</span>
         </label>
         <label>
           Estado
@@ -71,6 +80,16 @@
             <option value="{{ value }}">{{ label }}</option>
             {% endfor %}
           </select>
+        </label>
+        <label>
+          <!-- Campo vacío para mantener estructura de 3 columnas -->
+        </label>
+        <div id="editJuegoFotoPreview" style="grid-column: 1 / -1; text-align: center; margin-top: 0.5rem;">
+          <!-- Preview de la imagen existente/nueva -->
+        </div>
+        <label style="grid-column: 1 / -1;" id="editJuegoEliminarFotoContainer" style="display:none;">
+          <input type="checkbox" name="eliminar_foto" id="editJuegoEliminarFoto" style="width:auto; margin-right:0.5rem;">
+          <span>Eliminar imagen actual</span>
         </label>
         <div class="form-actions" style="grid-column: 1 / -1;">
           <button type="button" class="btn btn-secondary" data-modal-close>Cancelar</button>
@@ -84,6 +103,8 @@
   <!-- Filtros de búsqueda -->
   <div class="form-card" id="juegosPage" data-juegos-base="/panel/juegos/">
     <form method="get" class="form-grid" style="grid-template-columns: 1fr 1fr 1fr auto;align-items: end;gap:1rem;">
+      <input type="hidden" name="order_by" value="{{ order_by }}">
+      <input type="hidden" name="direction" value="{{ direction }}">
       <label>Buscar
         <input type="text" name="q" value="{{ query }}" placeholder="Nombre, descripción o categoría">
       </label>
@@ -118,14 +139,68 @@
     <table class="table">
       <thead>
         <tr>
-          <th>ID</th>
+          <th>
+            <a href="?{% if query %}q={{ query }}&{% endif %}{% if categoria_filter %}categoria={{ categoria_filter }}&{% endif %}{% if estado_filter %}estado={{ estado_filter }}&{% endif %}order_by=id&direction={% if order_by == 'id' and direction == 'asc' %}desc{% else %}asc{% endif %}" class="sortable-header" style="text-decoration:none;color:inherit;display:flex;align-items:center;gap:0.5rem;">
+              ID
+              {% if order_by == 'id' %}
+                <i class="fas fa-arrow-{% if direction == 'asc' %}up{% else %}down{% endif %}" style="font-size:0.75rem;"></i>
+              {% else %}
+                <i class="fas fa-sort" style="font-size:0.75rem;color:#bbb;"></i>
+              {% endif %}
+            </a>
+          </th>
           <th>Foto</th>
-          <th>Nombre</th>
-          <th>Categoría</th>
+          <th>
+            <a href="?{% if query %}q={{ query }}&{% endif %}{% if categoria_filter %}categoria={{ categoria_filter }}&{% endif %}{% if estado_filter %}estado={{ estado_filter }}&{% endif %}order_by=nombre&direction={% if order_by == 'nombre' and direction == 'asc' %}desc{% else %}asc{% endif %}" class="sortable-header" style="text-decoration:none;color:inherit;display:flex;align-items:center;gap:0.5rem;">
+              Nombre
+              {% if order_by == 'nombre' %}
+                <i class="fas fa-arrow-{% if direction == 'asc' %}up{% else %}down{% endif %}" style="font-size:0.75rem;"></i>
+              {% else %}
+                <i class="fas fa-sort" style="font-size:0.75rem;color:#bbb;"></i>
+              {% endif %}
+            </a>
+          </th>
+          <th>
+            <a href="?{% if query %}q={{ query }}&{% endif %}{% if categoria_filter %}categoria={{ categoria_filter }}&{% endif %}{% if estado_filter %}estado={{ estado_filter }}&{% endif %}order_by=categoria&direction={% if order_by == 'categoria' and direction == 'asc' %}desc{% else %}asc{% endif %}" class="sortable-header" style="text-decoration:none;color:inherit;display:flex;align-items:center;gap:0.5rem;">
+              Categoría
+              {% if order_by == 'categoria' %}
+                <i class="fas fa-arrow-{% if direction == 'asc' %}up{% else %}down{% endif %}" style="font-size:0.75rem;"></i>
+              {% else %}
+                <i class="fas fa-sort" style="font-size:0.75rem;color:#bbb;"></i>
+              {% endif %}
+            </a>
+          </th>
           <th>Dimensiones</th>
-          <th>Capacidad</th>
-          <th>Precio</th>
-          <th>Estado</th>
+          <th>
+            <a href="?{% if query %}q={{ query }}&{% endif %}{% if categoria_filter %}categoria={{ categoria_filter }}&{% endif %}{% if estado_filter %}estado={{ estado_filter }}&{% endif %}order_by=capacidad_personas&direction={% if order_by == 'capacidad_personas' and direction == 'asc' %}desc{% else %}asc{% endif %}" class="sortable-header" style="text-decoration:none;color:inherit;display:flex;align-items:center;gap:0.5rem;">
+              Capacidad
+              {% if order_by == 'capacidad_personas' %}
+                <i class="fas fa-arrow-{% if direction == 'asc' %}up{% else %}down{% endif %}" style="font-size:0.75rem;"></i>
+              {% else %}
+                <i class="fas fa-sort" style="font-size:0.75rem;color:#bbb;"></i>
+              {% endif %}
+            </a>
+          </th>
+          <th>
+            <a href="?{% if query %}q={{ query }}&{% endif %}{% if categoria_filter %}categoria={{ categoria_filter }}&{% endif %}{% if estado_filter %}estado={{ estado_filter }}&{% endif %}order_by=precio_base&direction={% if order_by == 'precio_base' and direction == 'asc' %}desc{% else %}asc{% endif %}" class="sortable-header" style="text-decoration:none;color:inherit;display:flex;align-items:center;gap:0.5rem;">
+              Precio
+              {% if order_by == 'precio_base' %}
+                <i class="fas fa-arrow-{% if direction == 'asc' %}up{% else %}down{% endif %}" style="font-size:0.75rem;"></i>
+              {% else %}
+                <i class="fas fa-sort" style="font-size:0.75rem;color:#bbb;"></i>
+              {% endif %}
+            </a>
+          </th>
+          <th>
+            <a href="?{% if query %}q={{ query }}&{% endif %}{% if categoria_filter %}categoria={{ categoria_filter }}&{% endif %}{% if estado_filter %}estado={{ estado_filter }}&{% endif %}order_by=estado&direction={% if order_by == 'estado' and direction == 'asc' %}desc{% else %}asc{% endif %}" class="sortable-header" style="text-decoration:none;color:inherit;display:flex;align-items:center;gap:0.5rem;">
+              Estado
+              {% if order_by == 'estado' %}
+                <i class="fas fa-arrow-{% if direction == 'asc' %}up{% else %}down{% endif %}" style="font-size:0.75rem;"></i>
+              {% else %}
+                <i class="fas fa-sort" style="font-size:0.75rem;color:#bbb;"></i>
+              {% endif %}
+            </a>
+          </th>
           <th>Acciones</th>
         </tr>
       </thead>
@@ -151,7 +226,7 @@
           <td>{{ juego.get_categoria_display }}</td>
           <td>{{ juego.dimensiones }}</td>
           <td>{{ juego.capacidad_personas }} {% if juego.capacidad_personas == 1 %}persona{% else %}personas{% endif %}</td>
-          <td>${{ juego.precio_base|floatformat:0 }}</td>
+          <td>{{ juego.precio_base|precio_chileno }}</td>
           <td>
             <span class="status-badge status-{{ juego.estado }}">
               {{ juego.get_estado_display }}
@@ -180,13 +255,10 @@
       </div>
       <form id="formCreateJuego" class="form-grid" data-endpoint="{% url 'jio_app:juego_create_json' %}">
         {% csrf_token %}
+        <!-- Fila 1: Nombre, Categoría, Capacidad -->
         <label>
           Nombre
           <input type="text" name="nombre" required>
-        </label>
-        <label>
-          Descripción
-          <textarea name="descripcion" rows="3"></textarea>
         </label>
         <label>
           Categoría
@@ -198,13 +270,26 @@
           </select>
         </label>
         <label>
-          Dimensiones
-          <input type="text" name="dimensiones" required placeholder="Ej: 5m x 3m x 2m">
-        </label>
-        <label>
           Capacidad (personas)
           <input type="number" name="capacidad_personas" required min="1">
         </label>
+        <!-- Fila 2: Largo, Ancho, Alto -->
+        <label style="grid-column: 1 / -1; margin-bottom: 0.25rem; margin-top: 0.5rem;">
+          <strong>Dimensiones (metros)</strong>
+        </label>
+        <label>
+          Largo
+          <input type="number" name="dimension_largo" id="createJuegoDimensionLargo" required min="1.0" max="25.0" step="0.1" placeholder="Ej: 5.5">
+        </label>
+        <label>
+          Ancho
+          <input type="number" name="dimension_ancho" id="createJuegoDimensionAncho" required min="1.0" max="25.0" step="0.1" placeholder="Ej: 3.0">
+        </label>
+        <label>
+          Alto
+          <input type="number" name="dimension_alto" id="createJuegoDimensionAlto" required min="1.0" max="25.0" step="0.1" placeholder="Ej: 2.5">
+        </label>
+        <!-- Fila 3: Peso máximo, Precio base, Descripción -->
         <label>
           Peso máximo (kg)
           <input type="number" name="peso_maximo" required min="1">
@@ -213,14 +298,16 @@
           Precio base ($)
           <input type="number" name="precio_base" required min="1" step="1">
         </label>
-        <label style="grid-column: 1 / -1;">
+        <label>
+          Descripción
+          <textarea name="descripcion" rows="3"></textarea>
+        </label>
+        <!-- Fila 4: Imagen, Estado (3 columnas) -->
+        <label>
           Imagen del juego
           <input type="file" name="foto" id="createJuegoFoto" accept="image/*">
           <small style="color:#7f8c8d;">Máximo 5MB. Formatos: JPG, PNG, GIF, WEBP</small>
         </label>
-        <div id="createJuegoFotoPreview" style="grid-column: 1 / -1; text-align: center; margin-top: 0.5rem;">
-          <!-- Preview de la imagen -->
-        </div>
         <label>
           Estado
           <select name="estado" required>
@@ -229,6 +316,12 @@
             {% endfor %}
           </select>
         </label>
+        <label>
+          <!-- Campo vacío para mantener estructura de 3 columnas -->
+        </label>
+        <div id="createJuegoFotoPreview" style="grid-column: 1 / -1; text-align: center; margin-top: 0.5rem;">
+          <!-- Preview de la imagen -->
+        </div>
         <div class="form-actions" style="grid-column: 1 / -1;">
           <button type="button" class="btn btn-secondary" data-modal-close>Cancelar</button>
           <button type="submit" class="btn btn-primary">Crear</button>

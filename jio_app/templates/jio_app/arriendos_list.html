@@ -1,0 +1,916 @@
+{% extends 'jio_app/base_admin.html' %}
+{% load static %}
+{% load jio_filters %}
+
+{% block title %}Arriendos - JIO{% endblock %}
+
+{% block content %}
+<div class="panel-container">
+  <div class="panel-header">
+    <h1 class="panel-title">Arriendos</h1>
+  </div>
+
+  <!-- Filtros de búsqueda -->
+  <div class="form-card" id="arriendosPage" data-arriendos-base="/panel/arriendos/">
+    <form method="get" class="form-grid" style="grid-template-columns: 1fr 1fr 1fr 1fr auto;align-items: end;gap:1rem;">
+      <input type="hidden" name="order_by" value="{{ order_by }}">
+      <input type="hidden" name="direction" value="{{ direction }}">
+      <label>Buscar
+        <input type="text" name="q" value="{{ query }}" placeholder="Cliente, dirección o ID">
+      </label>
+      <label>Estado
+        <select name="estado">
+          <option value="">Todos los estados</option>
+          {% for value, label in estado_choices %}
+          <option value="{{ value }}" {% if estado_filter == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Fecha desde
+        <input type="date" name="fecha_desde" value="{{ fecha_desde }}">
+      </label>
+      <label>Fecha hasta
+        <input type="date" name="fecha_hasta" value="{{ fecha_hasta }}">
+      </label>
+      <button class="btn btn-secondary" type="submit">Filtrar</button>
+    </form>
+  </div>
+
+  <!-- Lista de arriendos -->
+  <div class="form-card" style="overflow:auto;">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:.75rem;">
+      <h2 class="panel-title" style="font-size:1.25rem; color:#2E7D32; margin:0;">Lista de Arriendos</h2>
+      <div class="actions-wrap" style="gap:.5rem;">
+        <button type="button" id="btnOpenCreateArriendo" class="btn btn-primary"><i class="fas fa-plus"></i> Nuevo
+          Arriendo</button>
+      </div>
+    </div>
+    <table class="table">
+      <thead>
+        <tr>
+          <th>
+            <a href="?{% if query %}q={{ query }}&{% endif %}{% if estado_filter %}estado={{ estado_filter }}&{% endif %}{% if fecha_desde %}fecha_desde={{ fecha_desde }}&{% endif %}{% if fecha_hasta %}fecha_hasta={{ fecha_hasta }}&{% endif %}order_by=id&direction={% if order_by == 'id' and direction == 'asc' %}desc{% else %}asc{% endif %}"
+              class="sortable-header"
+              style="text-decoration:none;color:inherit;display:flex;align-items:center;gap:0.5rem;">
+              ID
+              {% if order_by == 'id' %}
+              <i class="fas fa-arrow-{% if direction == 'asc' %}up{% else %}down{% endif %}"
+                style="font-size:0.75rem;"></i>
+              {% else %}
+              <i class="fas fa-sort" style="font-size:0.75rem;color:#bbb;"></i>
+              {% endif %}
+            </a>
+          </th>
+          <th>
+            <a href="?{% if query %}q={{ query }}&{% endif %}{% if estado_filter %}estado={{ estado_filter }}&{% endif %}{% if fecha_desde %}fecha_desde={{ fecha_desde }}&{% endif %}{% if fecha_hasta %}fecha_hasta={{ fecha_hasta }}&{% endif %}order_by=cliente&direction={% if order_by == 'cliente' and direction == 'asc' %}desc{% else %}asc{% endif %}"
+              class="sortable-header"
+              style="text-decoration:none;color:inherit;display:flex;align-items:center;gap:0.5rem;">
+              Cliente
+              {% if order_by == 'cliente' %}
+              <i class="fas fa-arrow-{% if direction == 'asc' %}up{% else %}down{% endif %}"
+                style="font-size:0.75rem;"></i>
+              {% else %}
+              <i class="fas fa-sort" style="font-size:0.75rem;color:#bbb;"></i>
+              {% endif %}
+            </a>
+          </th>
+          <th>
+            <a href="?{% if query %}q={{ query }}&{% endif %}{% if estado_filter %}estado={{ estado_filter }}&{% endif %}{% if fecha_desde %}fecha_desde={{ fecha_desde }}&{% endif %}{% if fecha_hasta %}fecha_hasta={{ fecha_hasta }}&{% endif %}order_by=fecha_evento&direction={% if order_by == 'fecha_evento' and direction == 'asc' %}desc{% else %}asc{% endif %}"
+              class="sortable-header"
+              style="text-decoration:none;color:inherit;display:flex;align-items:center;gap:0.5rem;">
+              Fecha Evento
+              {% if order_by == 'fecha_evento' %}
+              <i class="fas fa-arrow-{% if direction == 'asc' %}up{% else %}down{% endif %}"
+                style="font-size:0.75rem;"></i>
+              {% else %}
+              <i class="fas fa-sort" style="font-size:0.75rem;color:#bbb;"></i>
+              {% endif %}
+            </a>
+          </th>
+          <th>Juegos</th>
+          <th>
+            <a href="?{% if query %}q={{ query }}&{% endif %}{% if estado_filter %}estado={{ estado_filter }}&{% endif %}{% if fecha_desde %}fecha_desde={{ fecha_desde }}&{% endif %}{% if fecha_hasta %}fecha_hasta={{ fecha_hasta }}&{% endif %}order_by=total_reserva&direction={% if order_by == 'total_reserva' and direction == 'asc' %}desc{% else %}asc{% endif %}"
+              class="sortable-header"
+              style="text-decoration:none;color:inherit;display:flex;align-items:center;gap:0.5rem;">
+              Total
+              {% if order_by == 'total_reserva' %}
+              <i class="fas fa-arrow-{% if direction == 'asc' %}up{% else %}down{% endif %}"
+                style="font-size:0.75rem;"></i>
+              {% else %}
+              <i class="fas fa-sort" style="font-size:0.75rem;color:#bbb;"></i>
+              {% endif %}
+            </a>
+          </th>
+          <th>
+            <a href="?{% if query %}q={{ query }}&{% endif %}{% if estado_filter %}estado={{ estado_filter }}&{% endif %}{% if fecha_desde %}fecha_desde={{ fecha_desde }}&{% endif %}{% if fecha_hasta %}fecha_hasta={{ fecha_hasta }}&{% endif %}order_by=estado&direction={% if order_by == 'estado' and direction == 'asc' %}desc{% else %}asc{% endif %}"
+              class="sortable-header"
+              style="text-decoration:none;color:inherit;display:flex;align-items:center;gap:0.5rem;">
+              Estado
+              {% if order_by == 'estado' %}
+              <i class="fas fa-arrow-{% if direction == 'asc' %}up{% else %}down{% endif %}"
+                style="font-size:0.75rem;"></i>
+              {% else %}
+              <i class="fas fa-sort" style="font-size:0.75rem;color:#bbb;"></i>
+              {% endif %}
+            </a>
+          </th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for arriendo in arriendos %}
+        <tr>
+          <td>#{{ arriendo.id }}</td>
+          <td>
+            <strong>{{ arriendo.cliente.usuario.get_full_name }}</strong>
+            <br><small style="color:#666;">{{ arriendo.cliente.usuario.email }}</small>
+          </td>
+          <td>
+            {{ arriendo.fecha_evento|date:"d/m/Y" }}
+            <br><small style="color:#666;">{{ arriendo.hora_instalacion|date:"H:i" }} - {{ arriendo.hora_retiro|date:"H:i" }}</small>
+          </td>
+          <td>
+            {% for detalle in arriendo.detalles.all %}
+            <span
+              style="display:inline-block;margin:2px 4px;padding:2px 8px;background:#e8f5e9;border-radius:4px;font-size:0.85rem;">
+              {{ detalle.juego.nombre }}
+            </span>
+            {% endfor %}
+          </td>
+          <td><strong>{{ arriendo.total_reserva|precio_chileno }}</strong></td>
+          <td>
+            <span class="status-badge status-{{ arriendo.estado|lower }}">
+              {{ arriendo.get_estado_display }}
+            </span>
+          </td>
+          <td style="white-space:nowrap;">
+            <button class="btn btn-secondary" data-edit-arriendo="{{ arriendo.id }}">Editar</button>
+            <button class="btn btn-danger" data-delete-arriendo="{{ arriendo.id }}">Eliminar</button>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="7">No hay arriendos que coincidan con los filtros.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Modal de creación -->
+  <div id="modalCreateArriendo" class="modal" aria-hidden="true">
+    <div class="modal-content" style="max-width:800px;">
+      <div class="modal-header">
+        <h2>Nuevo Arriendo</h2>
+        <button class="modal-close" data-modal-close>&times;</button>
+      </div>
+      <form id="formCreateArriendo" class="form-grid" data-endpoint="{% url 'jio_app:arriendo_create_json' %}"
+        style="max-height:70vh;overflow-y:auto;">
+        {% csrf_token %}
+        <!-- Datos del Cliente -->
+        <label style="grid-column: 1 / -1; margin-top: 0.5rem; margin-bottom: 0.25rem;">
+          <strong>Datos del Cliente *</strong>
+        </label>
+        <label>
+          Nombre *
+          <input type="text" id="createClienteNombre" name="cliente_first_name" required>
+        </label>
+        <label>
+          Apellido *
+          <input type="text" id="createClienteApellido" name="cliente_last_name" required>
+        </label>
+        <label>
+          RUT *
+          <input type="text" id="createClienteRut" name="cliente_rut" required placeholder="12345678-9">
+        </label>
+        <label>
+          Email *
+          <input type="email" id="createClienteEmail" name="cliente_email" required>
+        </label>
+        <label>
+          Teléfono
+          <input type="text" id="createClienteTelefono" name="cliente_telefono" placeholder="+56912345678">
+        </label>
+        <label>
+          Tipo de Cliente *
+          <select id="createClienteTipo" name="cliente_tipo" required>
+            <option value="particular">Particular</option>
+            <option value="empresa">Empresa</option>
+          </select>
+        </label>
+
+        <!-- Fechas y Horarios -->
+        <label style="grid-column: 1 / -1; margin-top: 0.5rem; margin-bottom: 0.25rem;">
+          <strong>Datos del Evento</strong>
+        </label>
+        <label>
+          Fecha del Evento *
+          <input type="date" id="createFechaEvento" name="fecha_evento" required>
+        </label>
+        <label>
+          Hora Instalación *
+          <input type="time" id="createHoraInstalacion" name="hora_instalacion" required>
+        </label>
+        <label>
+          Hora Retiro *
+          <input type="time" id="createHoraRetiro" name="hora_retiro" required>
+        </label>
+
+        <!-- Dirección con Mapa -->
+        <label style="grid-column: 1 / -1;">
+          Dirección del Evento *
+          <input type="text" id="createDireccion" name="direccion_evento" required
+            placeholder="Buscar dirección o seleccionar en el mapa">
+          <small style="display:block;color:#666;margin-top:0.25rem;margin-bottom:0.5rem;">
+            <i class="fas fa-info-circle"></i> Escribe para buscar o haz clic en el mapa para seleccionar ubicación
+          </small>
+          <div id="mapCreate"
+            style="width:100%;height:300px;border-radius:8px;border:1px solid #ddd;margin-top:0.5rem;"></div>
+          <input type="hidden" id="createLatitud" name="latitud">
+          <input type="hidden" id="createLongitud" name="longitud">
+        </label>
+
+        <!-- Distancia -->
+        <label>
+          Distancia (km fuera de Osorno)
+          <input type="number" id="createDistanciaKm" name="distancia_km" min="0" step="1" value="0" placeholder="0">
+        </label>
+        <label style="grid-column: 2 / -1;">
+          <span style="font-size:0.875rem;color:#666;">Precio por distancia: <span
+              id="createPrecioDistancia">$0</span></span>
+          <small style="display:block;color:#666;margin-top:0.25rem;">
+            <i class="fas fa-info-circle"></i> $1.000 por kilómetro fuera de Osorno
+          </small>
+        </label>
+
+        <!-- Juegos -->
+        <div style="grid-column: 1 / -1;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+            <label style="margin:0;"><strong>Juegos Disponibles *</strong></label>
+            <button type="button" id="btnAddJuegoCreate" class="btn btn-secondary"
+              style="padding:0.25rem 0.75rem;font-size:0.875rem;">
+              <i class="fas fa-plus"></i> Agregar Juego
+            </button>
+          </div>
+          <div id="juegosContainerCreate" style="display:grid;gap:0.75rem;">
+            <!-- Juegos se agregarán aquí dinámicamente -->
+          </div>
+          <div id="totalContainerCreate" style="margin-top:1rem;padding:1rem;background:#fff3e0;border-radius:8px;">
+            <div style="display:flex;justify-content:space-between;margin-bottom:0.5rem;">
+              <span>Subtotal Juegos:</span>
+              <span id="subtotalJuegosCreate">$0</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:0.5rem;">
+              <span>Precio por Distancia:</span>
+              <span id="precioDistanciaCreate">$0</span>
+            </div>
+            <div style="border-top:1px solid #ccc;padding-top:0.5rem;display:flex;justify-content:space-between;">
+              <strong style="font-size:1.25rem;">Total:</strong>
+              <strong style="font-size:1.25rem;"><span id="totalCreate">$0</span></strong>
+            </div>
+          </div>
+          <small style="color:#666;margin-top:0.5rem;display:block;">
+            <i class="fas fa-info-circle"></i> Los juegos disponibles se actualizarán automáticamente según la fecha
+            seleccionada.
+          </small>
+        </div>
+
+        <!-- Estado y Observaciones -->
+        <label>
+          Estado *
+          <select id="createEstado" name="estado" required>
+            {% for value, label in estado_choices %}
+            <option value="{{ value }}" {% if value|stringformat:"s" == "Pendiente" %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label style="grid-column: 2 / -1;">
+          Observaciones
+          <textarea id="createObservaciones" name="observaciones" rows="3"></textarea>
+        </label>
+
+        <input type="hidden" id="createJuegosJson" name="juegos" value="[]">
+
+        <div class="form-actions" style="grid-column: 1 / -1;">
+          <button type="button" class="btn btn-secondary" data-modal-close>Cancelar</button>
+          <button type="submit" class="btn btn-primary">Crear Arriendo</button>
+        </div>
+      </form>
+    </div>
+    <div class="modal-backdrop" data-modal-close></div>
+  </div>
+
+  <!-- Modal de edición -->
+  <div id="modalEditArriendo" class="modal" aria-hidden="true">
+    <div class="modal-content" style="max-width:800px;">
+      <div class="modal-header">
+        <h2>Editar Arriendo</h2>
+        <button class="modal-close" data-modal-close>&times;</button>
+      </div>
+      <form id="formEditArriendo" class="form-grid" data-endpoint-base="/panel/arriendos/"
+        style="overflow-y:auto;overflow-x:hidden;">
+        {% csrf_token %}
+        <input type="hidden" name="arriendo_id" id="editArriendoId">
+        <!-- Datos del Cliente (editable en edición) -->
+        <label style="grid-column: 1 / -1; margin-top: 0.5rem; margin-bottom: 0.25rem;">
+          <strong>Datos del Cliente</strong>
+        </label>
+        <label>
+          Nombre *
+          <input type="text" id="editClienteNombre" name="cliente_nombre" required>
+        </label>
+        <label>
+          Apellido *
+          <input type="text" id="editClienteApellido" name="cliente_apellido" required>
+        </label>
+        <label>
+          RUT *
+          <input type="text" id="editClienteRut" name="cliente_rut" required>
+        </label>
+        <label>
+          Email *
+          <input type="email" id="editClienteEmail" name="cliente_email" required>
+        </label>
+        <label>
+          Teléfono
+          <input type="text" id="editClienteTelefono" name="cliente_telefono">
+        </label>
+        <label>
+          Tipo de Cliente *
+          <select id="editClienteTipo" name="cliente_tipo" required>
+            <option value="">Seleccione un tipo</option>
+            <option value="particular">Particular</option>
+            <option value="empresa">Empresa</option>
+          </select>
+        </label>
+        <input type="hidden" id="editClienteId" name="cliente_id">
+
+        <!-- Fechas y Horarios -->
+        <label>
+          Fecha del Evento *
+          <input type="date" id="editFechaEvento" name="fecha_evento" required>
+        </label>
+        <label>
+          Hora Instalación *
+          <input type="time" id="editHoraInstalacion" name="hora_instalacion" required>
+        </label>
+        <label>
+          Hora Retiro *
+          <input type="time" id="editHoraRetiro" name="hora_retiro" required>
+        </label>
+
+        <!-- Dirección con Mapa -->
+        <label style="grid-column: 1 / -1;">
+          Dirección del Evento *
+          <input type="text" id="editDireccion" name="direccion_evento" required
+            placeholder="Buscar dirección o seleccionar en el mapa">
+          <small style="display:block;color:#666;margin-top:0.25rem;margin-bottom:0.5rem;">
+            <i class="fas fa-info-circle"></i> Escribe para buscar o haz clic en el mapa para seleccionar ubicación
+          </small>
+          <div id="mapEdit"
+            style="width:100%;height:300px;border-radius:8px;border:1px solid #ddd;margin-top:0.5rem;background:#f5f5f5;">
+          </div>
+          <input type="hidden" id="editLatitud" name="latitud">
+          <input type="hidden" id="editLongitud" name="longitud">
+        </label>
+
+        <!-- Distancia -->
+        <label>
+          Distancia (km fuera de Osorno)
+          <input type="number" id="editDistanciaKm" name="distancia_km" min="0" step="1" value="0" placeholder="0">
+        </label>
+        <label style="grid-column: 2 / -1;">
+          <span style="font-size:0.875rem;color:#666;">Precio por distancia: <span
+              id="editPrecioDistancia">$0</span></span>
+          <small style="display:block;color:#666;margin-top:0.25rem;">
+            <i class="fas fa-info-circle"></i> $1.000 por kilómetro fuera de Osorno
+          </small>
+        </label>
+
+        <!-- Juegos -->
+        <div style="grid-column: 1 / -1;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+            <label style="margin:0;"><strong>Juegos *</strong></label>
+            <button type="button" id="btnAddJuegoEdit" class="btn btn-secondary"
+              style="padding:0.25rem 0.75rem;font-size:0.875rem;">
+              <i class="fas fa-plus"></i> Agregar Juego
+            </button>
+          </div>
+          <div id="juegosContainerEdit" style="display:grid;gap:0.75rem;">
+            <!-- Juegos se agregarán aquí dinámicamente -->
+          </div>
+          <div id="totalContainerEdit" style="margin-top:1rem;padding:1rem;background:#fff3e0;border-radius:8px;">
+            <div style="display:flex;justify-content:space-between;margin-bottom:0.5rem;">
+              <span>Subtotal Juegos:</span>
+              <span id="subtotalJuegosEdit">$0</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:0.5rem;">
+              <span>Precio por Distancia:</span>
+              <span id="precioDistanciaEdit">$0</span>
+            </div>
+            <div style="border-top:1px solid #ccc;padding-top:0.5rem;display:flex;justify-content:space-between;">
+              <strong style="font-size:1.25rem;">Total:</strong>
+              <strong style="font-size:1.25rem;"><span id="totalEdit">$0</span></strong>
+            </div>
+          </div>
+        </div>
+
+        <!-- Estado y Observaciones -->
+        <label>
+          Estado *
+          <select id="editEstado" name="estado" required>
+            {% for value, label in estado_choices %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label style="grid-column: 2 / -1;">
+          Observaciones
+          <textarea id="editObservaciones" name="observaciones" rows="3"></textarea>
+        </label>
+
+        <input type="hidden" id="editJuegosJson" name="juegos" value="[]">
+
+        <div class="form-actions" style="grid-column: 1 / -1;">
+          <button type="button" class="btn btn-secondary" data-modal-close>Cancelar</button>
+          <button type="submit" class="btn btn-primary">Guardar Cambios</button>
+        </div>
+      </form>
+    </div>
+    <div class="modal-backdrop" data-modal-close></div>
+  </div>
+
+  {% block extra_scripts %}
+  <script src="{% static 'js/validaciones.js' %}"></script>
+  <!-- Leaflet (OpenStreetMap) - Gratis, sin API key -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    // Esperar a que Leaflet esté cargado
+    if (typeof L === 'undefined') {
+      console.error('Leaflet no se cargó correctamente');
+    } else {
+      console.log('Leaflet cargado correctamente');
+    }
+    // Datos globales para JavaScript - se inicializarán vacíos, se cargarán según la fecha
+    window.juegosDisponibles = [];
+
+    // Variables globales para los mapas (Leaflet) - accesibles globalmente
+    window.mapCreate = null;
+    window.mapEdit = null;
+    window.markerCreate = null;
+    window.markerEdit = null;
+    window.osornoMarkerCreate = null;
+    window.osornoMarkerEdit = null;
+
+    // Coordenadas de Osorno
+    const OSORNO_LAT = -40.5739;
+    const OSORNO_LNG = -73.1317;
+    const RADIO_KM = 30;
+
+    // Función helper para esperar a que Leaflet esté disponible
+    function waitForLeaflet(callback, maxAttempts = 50) {
+      let attempts = 0;
+      const checkInterval = setInterval(() => {
+        attempts++;
+        if (typeof L !== 'undefined') {
+          clearInterval(checkInterval);
+          callback();
+        } else if (attempts >= maxAttempts) {
+          clearInterval(checkInterval);
+          console.error('Leaflet no se cargó después de varios intentos');
+        }
+      }, 100);
+    }
+
+    // Inicializar mapas cuando el DOM esté listo y Leaflet esté disponible
+    waitForLeaflet(() => {
+      // Observar cuando el modal se abre
+      const modalCreate = document.getElementById('modalCreateArriendo');
+      if (modalCreate) {
+        // Observar cambios en la clase 'show' y aria-hidden
+        const observer = new MutationObserver((mutations) => {
+          mutations.forEach((mutation) => {
+            const hasShowClass = modalCreate.classList.contains('show');
+            const isVisible = window.getComputedStyle(modalCreate).display !== 'none';
+
+            if (hasShowClass && isVisible && !mapCreate) {
+              // Esperar un momento para que el modal esté completamente visible
+              setTimeout(() => {
+                if (typeof L !== 'undefined') {
+                  initMapCreate();
+                  // Invalidar tamaño para que Leaflet recalcule
+                  if (mapCreate) {
+                    setTimeout(() => mapCreate.invalidateSize(), 300);
+                  }
+                }
+              }, 400);
+            }
+          });
+        });
+
+        // Observar cambios en clases y atributos
+        observer.observe(modalCreate, {
+          attributes: true,
+          attributeFilter: ['class', 'aria-hidden', 'style'],
+          attributeOldValue: false
+        });
+      }
+    });
+
+    // Función para calcular distancia en km entre dos puntos
+    function calcularDistanciaKm(lat1, lng1, lat2, lng2) {
+      const R = 6371; // Radio de la Tierra en km
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLng = (lng2 - lng1) * Math.PI / 180;
+      const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+        Math.sin(dLng / 2) * Math.sin(dLng / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c;
+    }
+
+    // Función para actualizar distancia cuando cambia la ubicación
+    function actualizarDistanciaDesdeMapa(lat, lng, tipo = 'create') {
+      const OSORNO_LAT = -40.5739;
+      const OSORNO_LNG = -73.1317;
+
+      const distanciaKm = Math.round(calcularDistanciaKm(OSORNO_LAT, OSORNO_LNG, lat, lng));
+
+      const distanciaInput = document.getElementById(tipo === 'create' ? 'createDistanciaKm' : 'editDistanciaKm');
+      if (distanciaInput) {
+        distanciaInput.value = distanciaKm;
+        // Disparar evento para actualizar precio
+        distanciaInput.dispatchEvent(new Event('input'));
+      }
+    }
+
+    // Inicializar mapa para crear arriendo (Leaflet)
+    function initMapCreate() {
+      // Verificar que Leaflet esté disponible
+      if (typeof L === 'undefined') {
+        console.error('Leaflet no está disponible');
+        return;
+      }
+
+      const mapDiv = document.getElementById('mapCreate');
+      if (!mapDiv) {
+        console.error('Div del mapa no encontrado');
+        return;
+      }
+
+      if (mapCreate) {
+        // Si ya existe, solo invalidar tamaño
+        mapCreate.invalidateSize();
+        console.log('Mapa ya existe, invalidando tamaño');
+        return;
+      }
+
+      console.log('Inicializando mapa de creación...');
+
+      // Verificar que el div tenga dimensiones
+      const rect = mapDiv.getBoundingClientRect();
+      console.log('Dimensiones del div:', rect.width, 'x', rect.height);
+
+      if (rect.width === 0 || rect.height === 0) {
+        console.warn('El div del mapa no tiene dimensiones visibles, reintentando...');
+        setTimeout(() => initMapCreate(), 300);
+        return;
+      }
+
+      try {
+        // Crear mapa centrado en Osorno
+        mapCreate = L.map(mapDiv, {
+          center: [OSORNO_LAT, OSORNO_LNG],
+          zoom: 11,
+          zoomControl: true,
+        });
+
+        // Hacer accesible globalmente
+        window.mapCreate = mapCreate;
+
+        // Agregar capa de OpenStreetMap
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '© OpenStreetMap contributors',
+          maxZoom: 19,
+        }).addTo(mapCreate);
+
+            // Marcador en el centro de Osorno
+        osornoMarkerCreate = L.marker([OSORNO_LAT, OSORNO_LNG], {
+          title: 'Osorno',
+          icon: L.divIcon({
+            className: 'osorno-marker',
+            html: '<div style="background-color:#FF0000;width:16px;height:16px;border-radius:50%;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.3);"></div>',
+            iconSize: [16, 16],
+            iconAnchor: [8, 8],
+          }),
+        }).addTo(mapCreate).bindPopup('Osorno');
+
+        // Marcador arrastrable para la ubicación del evento
+        markerCreate = L.marker([OSORNO_LAT, OSORNO_LNG], {
+          draggable: true,
+          title: 'Arrastra para seleccionar ubicación',
+        }).addTo(mapCreate);
+
+        window.markerCreate = markerCreate;
+
+        // Inicialmente oculto hasta que se seleccione una ubicación
+        markerCreate.setOpacity(0);
+
+        console.log('Mapa inicializado correctamente');
+
+        // Invalidar tamaño una vez más después de que todo esté renderizado
+        setTimeout(() => {
+          if (mapCreate) {
+            mapCreate.invalidateSize();
+          }
+        }, 200);
+
+        // Listener para búsqueda de direcciones (usando Nominatim de OpenStreetMap)
+        const direccionInput = document.getElementById('createDireccion');
+        if (direccionInput) {
+          // Botón de búsqueda
+          const buscarBtn = document.createElement('button');
+          buscarBtn.type = 'button';
+          buscarBtn.innerHTML = '<i class="fas fa-search"></i> Buscar';
+          buscarBtn.className = 'btn btn-secondary';
+          buscarBtn.style.cssText = 'margin-top:0.5rem;padding:0.5rem 1rem;';
+
+          buscarBtn.addEventListener('click', async () => {
+            const direccion = direccionInput.value.trim();
+            if (!direccion) return;
+
+            try {
+              // Usar Nominatim API (gratis) para geocodificación
+              const response = await fetch(
+                `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(direccion + ', Osorno, Chile')}&limit=1`
+              );
+              const data = await response.json();
+
+              if (data && data.length > 0) {
+                const result = data[0];
+                const lat = parseFloat(result.lat);
+                const lng = parseFloat(result.lon);
+
+                // Mover marcador
+                markerCreate.setLatLng([lat, lng]);
+                markerCreate.setOpacity(1);
+
+                // Centrar mapa
+                mapCreate.setView([lat, lng], 15);
+
+                // Actualizar campos
+                const latInput = document.getElementById('createLatitud');
+                const lngInput = document.getElementById('createLongitud');
+                if (latInput) latInput.value = lat;
+                if (lngInput) lngInput.value = lng;
+
+                // Actualizar distancia
+                actualizarDistanciaDesdeMapa(lat, lng, 'create');
+
+                // Actualizar dirección con el resultado completo
+                direccionInput.value = result.display_name;
+              } else {
+                alert('No se encontró la dirección. Intenta con otra búsqueda.');
+              }
+            } catch (error) {
+              console.error('Error al buscar dirección:', error);
+              alert('Error al buscar la dirección. Intenta nuevamente.');
+            }
+          });
+
+          // Insertar botón después del input
+          direccionInput.parentNode.appendChild(buscarBtn);
+        }
+
+        // Click en el mapa para seleccionar ubicación
+        mapCreate.on('click', (e) => {
+          const lat = e.latlng.lat;
+          const lng = e.latlng.lng;
+
+          // Mover marcador
+          markerCreate.setLatLng([lat, lng]);
+          markerCreate.setOpacity(1);
+
+          // Actualizar campos
+          const latInput = document.getElementById('createLatitud');
+          const lngInput = document.getElementById('createLongitud');
+          if (latInput) latInput.value = lat;
+          if (lngInput) lngInput.value = lng;
+
+          // Calcular y actualizar distancia desde Osorno
+          actualizarDistanciaDesdeMapa(lat, lng, 'create');
+
+          // Geocodificación inversa para obtener dirección
+          fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`)
+            .then(response => response.json())
+            .then(data => {
+              if (data && data.display_name && direccionInput) {
+                direccionInput.value = data.display_name;
+              }
+            })
+            .catch(error => console.error('Error al obtener dirección:', error));
+        });
+
+        // Arrastrar marcador
+        markerCreate.on('dragend', (e) => {
+          const lat = e.target.getLatLng().lat;
+          const lng = e.target.getLatLng().lng;
+
+          const latInput = document.getElementById('createLatitud');
+          const lngInput = document.getElementById('createLongitud');
+          if (latInput) latInput.value = lat;
+          if (lngInput) lngInput.value = lng;
+
+          // Calcular y actualizar distancia desde Osorno
+          actualizarDistanciaDesdeMapa(lat, lng, 'create');
+
+          // Geocodificación inversa
+          fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`)
+            .then(response => response.json())
+            .then(data => {
+              if (data && data.display_name && direccionInput) {
+                direccionInput.value = data.display_name;
+              }
+            })
+            .catch(error => console.error('Error al obtener dirección:', error));
+        });
+
+      } catch (error) {
+        console.error('Error al inicializar el mapa:', error);
+      }
+    }
+
+    // Inicializar mapa para editar arriendo (Leaflet)
+    function initMapEdit(direccion = null, lat = null, lng = null) {
+      const mapDiv = document.getElementById('mapEdit');
+      if (!mapDiv || mapEdit) return; // Evitar inicializar múltiples veces
+
+      // Si hay coordenadas, centrar en ellas, sino en Osorno
+      let centerLat = OSORNO_LAT;
+      let centerLng = OSORNO_LNG;
+      if (lat && lng) {
+        centerLat = parseFloat(lat);
+        centerLng = parseFloat(lng);
+      }
+
+      // Crear mapa
+      mapEdit = L.map(mapDiv).setView([centerLat, centerLng], 11);
+
+      // Agregar capa de OpenStreetMap
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors',
+        maxZoom: 19,
+      }).addTo(mapEdit);
+
+        // Marcador en el centro de Osorno
+      osornoMarkerEdit = L.marker([OSORNO_LAT, OSORNO_LNG], {
+        title: 'Osorno',
+        icon: L.divIcon({
+          className: 'osorno-marker',
+          html: '<div style="background-color:#FF0000;width:16px;height:16px;border-radius:50%;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.3);"></div>',
+          iconSize: [16, 16],
+          iconAnchor: [8, 8],
+        }),
+      }).addTo(mapEdit).bindPopup('Osorno');
+
+      // Marcador arrastrable
+      if (lat && lng) {
+        markerEdit = L.marker([parseFloat(lat), parseFloat(lng)], {
+          draggable: true,
+        }).addTo(mapEdit);
+
+        // Calcular distancia si hay coordenadas
+        actualizarDistanciaDesdeMapa(parseFloat(lat), parseFloat(lng), 'edit');
+      } else {
+        markerEdit = L.marker([OSORNO_LAT, OSORNO_LNG], {
+          draggable: true,
+        }).addTo(mapEdit);
+        markerEdit.setOpacity(0);
+      }
+
+      // Búsqueda de direcciones
+      const direccionInput = document.getElementById('editDireccion');
+      if (direccionInput) {
+        if (direccion) {
+          direccionInput.value = direccion;
+        }
+
+        // Botón de búsqueda
+        const buscarBtn = document.createElement('button');
+        buscarBtn.type = 'button';
+        buscarBtn.innerHTML = '<i class="fas fa-search"></i> Buscar';
+        buscarBtn.className = 'btn btn-secondary';
+        buscarBtn.style.cssText = 'margin-top:0.5rem;padding:0.5rem 1rem;';
+
+        buscarBtn.addEventListener('click', async () => {
+          const direccion = direccionInput.value.trim();
+          if (!direccion) return;
+
+          try {
+            const response = await fetch(
+              `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(direccion + ', Osorno, Chile')}&limit=1`
+            );
+            const data = await response.json();
+
+            if (data && data.length > 0) {
+              const result = data[0];
+              const lat = parseFloat(result.lat);
+              const lng = parseFloat(result.lon);
+
+              markerEdit.setLatLng([lat, lng]);
+              markerEdit.setOpacity(1);
+              mapEdit.setView([lat, lng], 15);
+
+              const latInput = document.getElementById('editLatitud');
+              const lngInput = document.getElementById('editLongitud');
+              if (latInput) latInput.value = lat;
+              if (lngInput) lngInput.value = lng;
+
+              actualizarDistanciaDesdeMapa(lat, lng, 'edit');
+              direccionInput.value = result.display_name;
+            } else {
+              alert('No se encontró la dirección.');
+            }
+          } catch (error) {
+            console.error('Error al buscar dirección:', error);
+            alert('Error al buscar la dirección.');
+          }
+        });
+
+        direccionInput.parentNode.appendChild(buscarBtn);
+      }
+
+      // Click en el mapa
+      mapEdit.on('click', (e) => {
+        const lat = e.latlng.lat;
+        const lng = e.latlng.lng;
+
+        markerEdit.setLatLng([lat, lng]);
+        markerEdit.setOpacity(1);
+
+        const latInput = document.getElementById('editLatitud');
+        const lngInput = document.getElementById('editLongitud');
+        if (latInput) latInput.value = lat;
+        if (lngInput) lngInput.value = lng;
+
+        actualizarDistanciaDesdeMapa(lat, lng, 'edit');
+
+        fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`)
+          .then(response => response.json())
+          .then(data => {
+            if (data && data.display_name && direccionInput) {
+              direccionInput.value = data.display_name;
+            }
+          })
+          .catch(error => console.error('Error:', error));
+      });
+
+      // Arrastrar marcador
+      markerEdit.on('dragend', (e) => {
+        const lat = e.target.getLatLng().lat;
+        const lng = e.target.getLatLng().lng;
+
+        const latInput = document.getElementById('editLatitud');
+        const lngInput = document.getElementById('editLongitud');
+        if (latInput) latInput.value = lat;
+        if (lngInput) lngInput.value = lng;
+
+        actualizarDistanciaDesdeMapa(lat, lng, 'edit');
+
+        fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`)
+          .then(response => response.json())
+          .then(data => {
+            if (data && data.display_name && direccionInput) {
+              direccionInput.value = data.display_name;
+            }
+          })
+          .catch(error => console.error('Error:', error));
+      });
+    }
+
+    // Función para resetear mapa de creación
+    function resetMapCreate() {
+      if (markerCreate) {
+        markerCreate.setLatLng([OSORNO_LAT, OSORNO_LNG]);
+        markerCreate.setOpacity(0);
+      }
+      if (mapCreate) {
+        mapCreate.setView([OSORNO_LAT, OSORNO_LNG], 11);
+        mapCreate.invalidateSize();
+      }
+      const latInput = document.getElementById('createLatitud');
+      const lngInput = document.getElementById('createLongitud');
+      if (latInput) latInput.value = '';
+      if (lngInput) lngInput.value = '';
+    }
+
+    // Hacer funciones accesibles globalmente
+    window.initMapCreate = initMapCreate;
+    window.initMapEdit = initMapEdit;
+    window.resetMapCreate = resetMapCreate;
+  </script>
+  <script src="{% static 'js/arriendos_list.js' %}"></script>
+  {% endblock %}
+</div>
+{% endblock %}

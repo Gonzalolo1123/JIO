@@ -1,0 +1,235 @@
+{% extends 'jio_app/base_admin.html' %}
+
+{% load static %}
+{% load humanize %}
+
+{% block title %}Contabilidad - JIO{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{% static 'css/estadisticas.css' %}">
+<style>
+  .accounting-section {
+    background: white;
+    border-radius: 8px;
+    padding: 2rem;
+    margin-bottom: 2rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+
+  .accounting-stats-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin-bottom: 2rem;
+    padding: 1.5rem;
+    background: linear-gradient(135deg, #f5f5f5 0%, #e8f5e9 100%);
+    border-radius: 8px;
+  }
+
+  .accounting-stat-box {
+    text-align: center;
+    padding: 1rem;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+
+  .accounting-stat-box.ingresos {
+    border-left: 4px solid #4CAF50;
+  }
+
+  .accounting-stat-box.egresos {
+    border-left: 4px solid #f44336;
+  }
+
+  .accounting-stat-box.saldo {
+    border-left: 4px solid #2196F3;
+  }
+
+  .accounting-stat-label {
+    font-size: 0.875rem;
+    color: #666;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+  }
+
+  .accounting-stat-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+  }
+
+  .accounting-stat-value.ingresos {
+    color: #4CAF50;
+  }
+
+  .accounting-stat-value.egresos {
+    color: #f44336;
+  }
+
+  .accounting-stat-value.saldo {
+    color: #2196F3;
+  }
+
+  .calendar-day.has-income {
+    border-color: #4CAF50;
+    background: #f1f8e9;
+  }
+
+  .calendar-day.has-expense {
+    border-color: #f44336;
+    background: #ffebee;
+  }
+
+  .day-accounting {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    gap: 0.25rem;
+  }
+
+  .day-income {
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: #4CAF50;
+  }
+
+  .day-expense {
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: #f44336;
+  }
+
+  .day-balance {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #2196F3;
+    margin-top: 0.25rem;
+    padding-top: 0.25rem;
+    border-top: 1px solid #e0e0e0;
+  }
+
+  .day-accounting.empty {
+    color: #999;
+    font-size: 0.75rem;
+    font-style: italic;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div class="content">
+  <!-- Sección de Calendario Mensual con Contabilidad -->
+  <div class="section calendar-section">
+    <div class="calendar-header">
+      <h2>Contabilidad Mensual</h2>
+      <div class="calendar-navigation">
+        <a href="?year={{ año_anterior }}&month={{ mes_anterior }}" class="nav-btn prev-btn" title="Mes anterior">
+          <i class="fas fa-chevron-left"></i>
+        </a>
+        <div class="current-month">
+          <select id="mes-selector" class="month-year-selector">
+            {% for num, nombre in meses_espanol.items %}
+              <option value="{{ num }}" {% if num == mes_seleccionado %}selected{% endif %}>{{ nombre }}</option>
+            {% endfor %}
+          </select>
+          <select id="año-selector" class="month-year-selector">
+            {% for año in años_disponibles %}
+              <option value="{{ año }}" {% if año == año_seleccionado %}selected{% endif %}>{{ año }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        {% if puede_avanzar %}
+        <a href="?year={{ año_siguiente }}&month={{ mes_siguiente }}" class="nav-btn next-btn" title="Mes siguiente">
+          <i class="fas fa-chevron-right"></i>
+        </a>
+        {% else %}
+        <span class="nav-btn next-btn disabled" title="No se puede avanzar más">
+          <i class="fas fa-chevron-right"></i>
+        </span>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="accounting-stats-summary">
+      <div class="accounting-stat-box ingresos">
+        <div class="accounting-stat-label">Ingresos del Mes</div>
+        <div class="accounting-stat-value ingresos">${{ total_ingresos_mes|floatformat:0|intcomma }}</div>
+        <div style="font-size: 0.75rem; color: #666; margin-top: 0.5rem;">{{ total_pagos_mes }} pago{{ total_pagos_mes|pluralize }}</div>
+      </div>
+      <div class="accounting-stat-box egresos">
+        <div class="accounting-stat-label">Egresos del Mes</div>
+        <div class="accounting-stat-value egresos">${{ total_egresos_mes|floatformat:0|intcomma }}</div>
+      </div>
+      <div class="accounting-stat-box saldo">
+        <div class="accounting-stat-label">Saldo Neto</div>
+        <div class="accounting-stat-value saldo">${{ saldo_neto_mes|floatformat:0|intcomma }}</div>
+      </div>
+    </div>
+
+    <div class="calendar-grid">
+      <!-- Encabezados de días de la semana -->
+      {% for dia in dias_semana %}
+      <div class="calendar-day-header">{{ dia }}</div>
+      {% endfor %}
+
+      <!-- Días del mes -->
+      {% for dia_data in calendario_datos %}
+        {% if dia_data.dia %}
+          <div class="calendar-day {% if dia_data.es_hoy %}today{% endif %} {% if dia_data.ingresos > 0 %}has-income{% endif %} {% if dia_data.egresos > 0 %}has-expense{% endif %}">
+            <div class="day-number">{{ dia_data.dia }}</div>
+            {% if dia_data.ingresos > 0 or dia_data.egresos > 0 %}
+              <div class="day-accounting">
+                {% if dia_data.ingresos > 0 %}
+                  <div class="day-income">+${{ dia_data.ingresos|floatformat:0 }}</div>
+                  <div style="font-size: 0.65rem; color: #666;">{{ dia_data.pagos }} pago{{ dia_data.pagos|pluralize }}</div>
+                {% endif %}
+                {% if dia_data.egresos > 0 %}
+                  <div class="day-expense">-${{ dia_data.egresos|floatformat:0 }}</div>
+                {% endif %}
+                {% if dia_data.saldo != 0 %}
+                  <div class="day-balance">Saldo: ${{ dia_data.saldo|floatformat:0 }}</div>
+                {% endif %}
+              </div>
+            {% else %}
+              <div class="day-accounting empty">Sin movimientos</div>
+            {% endif %}
+          </div>
+        {% else %}
+          <div class="calendar-day empty-day"></div>
+        {% endif %}
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  // Navegación de mes/año con selectores
+  document.addEventListener('DOMContentLoaded', function() {
+    const mesSelector = document.getElementById('mes-selector');
+    const añoSelector = document.getElementById('año-selector');
+    
+    function navegarMes() {
+      const mes = mesSelector.value;
+      const año = añoSelector.value;
+      window.location.href = `?year=${año}&month=${mes}`;
+    }
+    
+    if (mesSelector) {
+      mesSelector.addEventListener('change', navegarMes);
+    }
+    
+    if (añoSelector) {
+      añoSelector.addEventListener('change', navegarMes);
+    }
+  });
+</script>
+{% endblock %}
+
+

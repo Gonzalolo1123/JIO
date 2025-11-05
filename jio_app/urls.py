@@ -7,6 +7,8 @@ urlpatterns = [
     # Páginas públicas
     path('', views.index, name='index'),
     path('calendario/', views.calendario_reservas, name='calendario_reservas'),
+    path('api/disponibilidad/', views.disponibilidad_fecha_json, name='disponibilidad_fecha_json'),
+    path('api/reserva/', views.crear_reserva_publica, name='crear_reserva_publica'),
     
     # Autenticación
     path('login_jio/', views.login_view, name='login_jio'),
@@ -35,6 +37,7 @@ urlpatterns = [
 
     # Gestión de Repartos
     path('panel/repartos/', views.repartos_list, name='repartos_list'),
+    path('panel/repartos/agenda/json/', views.agenda_repartos_json, name='agenda_repartos_json'),
     path('panel/repartos/<str:tipo_reparto>/<int:reparto_id>/asignar/', views.asignar_repartidor, name='asignar_repartidor'),
     path('panel/repartos/<str:tipo_reparto>/<int:reparto_id>/cambiar-estado/', views.cambiar_estado_reparto, name='cambiar_estado_reparto'),
     path('panel/repartos/<str:tipo_reparto>/<int:reparto_id>/registrar-incidente/', views.registrar_incidente, name='registrar_incidente'),
@@ -51,4 +54,18 @@ urlpatterns = [
     path('panel/juegos/<int:juego_id>/json/', views.juego_detail_json, name='juego_detail_json'),
     path('panel/juegos/<int:juego_id>/update/', views.juego_update_json, name='juego_update_json'),
     path('panel/juegos/<int:juego_id>/delete/', views.juego_delete_json, name='juego_delete_json'),
+
+    # CRUD de arriendos
+    path('panel/arriendos/', views.arriendos_list, name='arriendos_list'),
+    path('panel/arriendos/create/', views.arriendo_create_json, name='arriendo_create_json'),
+    path('panel/arriendos/juegos-disponibles/', views.juegos_disponibles_fecha_json, name='juegos_disponibles_fecha_json'),
+    path('panel/arriendos/<int:arriendo_id>/json/', views.arriendo_detail_json, name='arriendo_detail_json'),
+    path('panel/arriendos/<int:arriendo_id>/update/', views.arriendo_update_json, name='arriendo_update_json'),
+    path('panel/arriendos/<int:arriendo_id>/delete/', views.arriendo_delete_json, name='arriendo_delete_json'),
+
+    #Estadisticas   
+    path('panel/estadisticas/', views.estadisticas, name='estadisticas'),
+    
+    #Contabilidad
+    path('panel/contabilidad/', views.contabilidad, name='contabilidad'),
 ]

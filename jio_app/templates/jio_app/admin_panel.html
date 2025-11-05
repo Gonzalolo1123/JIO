@@ -71,7 +71,7 @@
                 </div>
             </a>
 
-            <a href="#" class="module-card module-warning">
+            <a href="{% url 'jio_app:arriendos_list' %}" class="module-card module-warning">
                 <div class="module-icon">
                     <i class="fas fa-calendar-check"></i>
                 </div>
@@ -97,13 +97,26 @@
                 </div>
             </a>
 
-            <a href="#" class="module-card module-purple">
+            <a href="{% url 'jio_app:estadisticas' %}" class="module-card module-purple">
                 <div class="module-icon">
                     <i class="fas fa-chart-line"></i>
                 </div>
                 <div class="module-content">
                     <h3 class="module-title">Estadísticas</h3>
                     <p class="module-description">Reportes, análisis y métricas del negocio</p>
+                </div>
+                <div class="module-arrow">
+                    <i class="fas fa-chevron-right"></i>
+                </div>
+            </a>
+
+            <a href="{% url 'jio_app:contabilidad' %}" class="module-card module-success">
+                <div class="module-icon">
+                    <i class="fas fa-calculator"></i>
+                </div>
+                <div class="module-content">
+                    <h3 class="module-title">Contabilidad</h3>
+                    <p class="module-description">Ingresos, egresos y control financiero</p>
                 </div>
                 <div class="module-arrow">
                     <i class="fas fa-chevron-right"></i>

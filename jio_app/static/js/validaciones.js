@@ -106,12 +106,19 @@ function validarNombre(nombre, campo = 'nombre', minLength = 3, maxLength = 30, 
 }
 
 // Función para validar descripción
-function validarDescripcion(descripcion, campo = 'descripción', minLength = 5, maxLength = 50, mostrarAlerta = false) {
+function validarDescripcion(descripcion, campo = 'descripción', minLength = 5, maxLength = 50, obligatorio = true, mostrarAlerta = false) {
   const errores = [];
   
-  if (!descripcion) {
-    errores.push(`La ${campo} es obligatoria`);
-  } else if (descripcion.length < minLength) {
+  if (!descripcion || descripcion.trim() === '') {
+    if (obligatorio) {
+      errores.push(`La ${campo} es obligatoria`);
+    }
+    // Si no es obligatorio y está vacío, no hay errores
+    return errores;
+  }
+  
+  // Si tiene contenido, validar
+  if (descripcion.length < minLength) {
     errores.push(`La ${campo} debe tener al menos ${minLength} caracteres`);
   } else if (descripcion.length > maxLength) {
     errores.push(`La ${campo} no puede exceder los ${maxLength} caracteres`);
@@ -503,4 +510,56 @@ function validarFormulario(validaciones, titulo = 'Errores en el Formulario') {
   }
   
   return true;
-} 
+}
+
+// Función para validar que la hora de retiro sea posterior a la hora de instalación
+function validarHorarioRetiroPosterior(horaInstalacion, horaRetiro, mostrarAlerta = false) {
+  const errores = [];
+  
+  if (!horaInstalacion || !horaRetiro) {
+    return errores; // Si alguna hora falta, las validaciones individuales se encargarán
+  }
+  
+  // Convertir horas a minutos para comparar
+  const [hInst, mInst] = horaInstalacion.split(':').map(Number);
+  const [hRet, mRet] = horaRetiro.split(':').map(Number);
+  
+  const minutosInstalacion = hInst * 60 + mInst;
+  const minutosRetiro = hRet * 60 + mRet;
+  
+  if (minutosRetiro <= minutosInstalacion) {
+    errores.push('La hora de retiro debe ser posterior a la hora de instalación');
+  }
+  
+  if (mostrarAlerta && errores.length > 0) {
+    mostrarErroresValidacion(errores, 'Error en horarios');
+  }
+  
+  return errores;
+}
+
+// Función para mostrar confirmación de eliminación con SweetAlert2
+function mostrarConfirmacionEliminar(mensaje, titulo = '¿Estás seguro?') {
+  return new Promise((resolve) => {
+    // Verificar si SweetAlert2 está disponible
+    if (typeof Swal !== 'undefined' && Swal.fire) {
+      Swal.fire({
+        title: titulo,
+        text: mensaje,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        cancelButtonColor: '#3085d6',
+        confirmButtonText: 'Sí, eliminar',
+        cancelButtonText: 'Cancelar',
+        reverseButtons: true
+      }).then((result) => {
+        resolve(result.isConfirmed);
+      });
+    } else {
+      // Fallback si SweetAlert2 no está disponible
+      const confirmado = confirm(`${titulo}\n\n${mensaje}`);
+      resolve(confirmado);
+    }
+  });
+}

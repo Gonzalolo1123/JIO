@@ -54,7 +54,9 @@
             const nombre = form.querySelector('input[name="nombre"]')?.value?.trim() || '';
             const descripcion = form.querySelector('textarea[name="descripcion"]')?.value?.trim() || '';
             const categoria = form.querySelector('select[name="categoria"]')?.value || '';
-            const dimensiones = form.querySelector('input[name="dimensiones"]')?.value?.trim() || '';
+            const dimension_largo = form.querySelector('input[name="dimension_largo"]')?.value?.trim() || '';
+            const dimension_ancho = form.querySelector('input[name="dimension_ancho"]')?.value?.trim() || '';
+            const dimension_alto = form.querySelector('input[name="dimension_alto"]')?.value?.trim() || '';
             const capacidad = form.querySelector('input[name="capacidad_personas"]')?.value || '';
             const peso = form.querySelector('input[name="peso_maximo"]')?.value || '';
             const precio = form.querySelector('input[name="precio_base"]')?.value || '';
@@ -64,32 +66,15 @@
             validaciones.push(() => validarNombre(nombre, 'nombre del juego', 2, 100, true));
             
             // Descripción es opcional, pero si se proporciona debe ser válida
-            if (descripcion) {
-                validaciones.push(() => {
-                    const errores = [];
-                    if (descripcion.length > 1000) {
-                        errores.push('La descripción no puede exceder los 1000 caracteres');
-                    }
-                    if (!/^[A-Za-zÑñÁÉÍÓÚáéíóú0-9\s\-.,()&]+$/.test(descripcion)) {
-                        errores.push('La descripción contiene caracteres no permitidos');
-                    }
-                    return errores;
-                });
-            }
+            validaciones.push(() => validarDescripcion(descripcion, 'descripción', 0, 1000, false, false));
             
             validaciones.push(() => validarSeleccion(categoria, 'categoría'));
             
-            validaciones.push(() => {
-                const errores = [];
-                if (!dimensiones) {
-                    errores.push('Las dimensiones son obligatorias');
-                } else if (dimensiones.length > 50) {
-                    errores.push('Las dimensiones no pueden exceder los 50 caracteres');
-                } else if (!/^[A-Za-zÑñÁÉÍÓÚáéíóú0-9\s\-.,()&xX]+$/.test(dimensiones)) {
-                    errores.push('Las dimensiones contienen caracteres no permitidos');
-                }
-                return errores;
-            });
+            // Validar dimensiones (decimales, tamaños creíbles para juegos inflables)
+            // Largo, ancho y alto: mínimo 1m, máximo 25m (castillos inflables grandes)
+            validaciones.push(() => validarNumeroDecimal(dimension_largo, 'largo', 1.0, 25.0, true, false));
+            validaciones.push(() => validarNumeroDecimal(dimension_ancho, 'ancho', 1.0, 25.0, true, false));
+            validaciones.push(() => validarNumeroDecimal(dimension_alto, 'alto', 1.0, 25.0, true, false));
             
             validaciones.push(() => validarEnteroPositivo(capacidad, 'capacidad de personas', 1000));
             
@@ -131,7 +116,9 @@
             document.getElementById('editJuegoNombre').value = juego.nombre;
             document.getElementById('editJuegoDescripcion').value = juego.descripcion || '';
             document.getElementById('editJuegoCategoria').value = juego.categoria;
-            document.getElementById('editJuegoDimensiones').value = juego.dimensiones;
+            document.getElementById('editJuegoDimensionLargo').value = juego.dimension_largo || '';
+            document.getElementById('editJuegoDimensionAncho').value = juego.dimension_ancho || '';
+            document.getElementById('editJuegoDimensionAlto').value = juego.dimension_alto || '';
             document.getElementById('editJuegoCapacidad').value = juego.capacidad_personas;
             document.getElementById('editJuegoPeso').value = juego.peso_maximo;
             document.getElementById('editJuegoPrecio').value = juego.precio_base;
@@ -501,7 +488,13 @@
                     return;
                 }
                 
-                if (confirm(`¿Estás seguro de que quieres eliminar el juego "${juegoNombre}"?`)) {
+                // Mostrar confirmación con SweetAlert2
+                const confirmado = await mostrarConfirmacionEliminar(
+                    `¿Estás seguro de que quieres eliminar el juego "${juegoNombre}"?`,
+                    'Confirmar Eliminación'
+                );
+                
+                if (confirmado) {
                     isDeleting = true;
                     const deleteBtn = e.target;
                     deleteBtn.dataset.processing = 'true';

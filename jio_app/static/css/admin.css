@@ -682,7 +682,9 @@ input[type="file"]::file-selector-button:hover {
 .modal .form-grid { 
     padding: 1rem 1.25rem; 
     overflow-y: auto;
+    overflow-x: hidden;
     flex: 1;
+    min-height: 0; /* Importante para que flex funcione con overflow */
 }
 .modal .form-actions { 
     justify-content: flex-end; 
@@ -1057,6 +1059,25 @@ input[type="file"]::file-selector-button:hover {
 
 .table tbody tr:hover {
     background-color: #f8f9fa;
+}
+
+/* Encabezados ordenables */
+.sortable-header {
+    cursor: pointer;
+    user-select: none;
+    transition: color 0.2s ease;
+}
+
+.sortable-header:hover {
+    color: #2E7D32 !important;
+}
+
+.sortable-header i {
+    transition: color 0.2s ease;
+}
+
+.sortable-header:hover i {
+    color: #2E7D32 !important;
 }
 
 /* Responsive para repartos */

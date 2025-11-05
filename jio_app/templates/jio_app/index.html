@@ -1,5 +1,6 @@
 {% extends "jio_app/base.html" %}
 {% load static %}
+{% load jio_filters %}
 
 {% block extra_head %}
 <link rel="stylesheet" href="{% static 'css/index.css' %}">
@@ -66,7 +67,7 @@
         </div>
         <div class="juego-info">
           <span class="capacidad">Hasta {{ juego.capacidad_personas }} niños</span>
-          <span class="precio">Desde ${{ juego.precio_base|floatformat:0 }}</span>
+          <span class="precio">Desde {{ juego.precio_base|precio_chileno }}</span>
         </div>
       </div>
       {% empty %}

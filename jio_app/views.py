@@ -5,13 +5,14 @@ from django.contrib import messages
 from django.http import JsonResponse
 from django.core.exceptions import PermissionDenied
 from django.urls import reverse
-from .models import Juego, Usuario, Repartidor, Cliente, Instalacion, Retiro, Reserva
+from .models import Juego, Usuario, Repartidor, Cliente, Instalacion, Retiro, Reserva, DetalleReserva
 from django.views.decorators.http import require_http_methods
 from django.core import signing
 from django.utils import timezone
 from django.db.models import Q
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.text import slugify
+from django.conf import settings
 import re
 import secrets
 import string
@@ -23,7 +24,7 @@ def index(request):
     Vista para la página principal del sitio público
     """
     # Obtener todos los juegos habilitados ordenados por categoría y nombre
-    juegos_disponibles = Juego.objects.filter(estado='habilitado').order_by('categoria', 'nombre')
+    juegos_disponibles = Juego.objects.filter(estado__iexact='habilitado').order_by('categoria', 'nombre')
     
     context = {
         'juegos_disponibles': juegos_disponibles,
@@ -34,13 +35,544 @@ def calendario_reservas(request):
     """
     Vista para el calendario de reservas
     """
-    # Obtener todos los juegos habilitados para mostrar en el calendario
-    juegos_disponibles = Juego.objects.filter(estado='habilitado')
+    # Obtener todos los juegos disponibles (estado='disponible')
+    juegos_disponibles = Juego.objects.filter(estado='disponible')
     
     context = {
         'juegos_disponibles': juegos_disponibles,
     }
     return render(request, 'jio_app/calendario_reservas.html', context)
+
+
+@require_http_methods(["GET"])
+def disponibilidad_fecha_json(request):
+    """
+    Obtiene la disponibilidad de juegos para una fecha específica (público)
+    """
+    try:
+        fecha_str = request.GET.get('fecha', '').strip()
+        
+        if not fecha_str:
+            return JsonResponse({'error': 'Fecha requerida'}, status=400)
+        
+        try:
+            from datetime import datetime
+            fecha_obj = datetime.strptime(fecha_str, '%Y-%m-%d').date()
+        except ValueError:
+            return JsonResponse({'error': 'Formato de fecha inválido'}, status=400)
+        
+        # Verificar que la fecha no sea pasada
+        hoy = timezone.now().date()
+        if fecha_obj < hoy:
+            return JsonResponse({
+                'disponible': False,
+                'juegos_disponibles': [],
+                'mensaje': 'No se pueden hacer reservas para fechas pasadas',
+                'fecha': fecha_str,
+            })
+        
+        # Obtener todos los juegos disponibles (aceptar tanto 'Habilitado' como 'disponible')
+        try:
+            todos_juegos = Juego.objects.filter(
+                Q(estado='Habilitado') | Q(estado='disponible')
+            ).order_by('nombre')
+            total_juegos_sistema = Juego.objects.count()  # Para debugging
+            juegos_disponibles_count = todos_juegos.count()
+        except Exception as e:
+            return JsonResponse({
+                'error': f'Error al obtener juegos: {str(e)}',
+                'disponible': False,
+                'juegos_disponibles': []
+            }, status=500)
+        
+        # Si no hay juegos disponibles, el día no está disponible
+        if not todos_juegos.exists():
+            # Información adicional para debugging
+            estados_existentes = Juego.objects.values_list('estado', flat=True).distinct()
+            return JsonResponse({
+                'disponible': False,
+                'juegos_disponibles': [],
+                'mensaje': 'No hay juegos disponibles en el sistema',
+                'fecha': fecha_str,
+                'debug_info': {
+                    'total_juegos_sistema': total_juegos_sistema,
+                    'juegos_disponibles_count': juegos_disponibles_count,
+                    'estados_existentes': list(estados_existentes) if estados_existentes else []
+                }
+            })
+        
+        # Obtener reservas confirmadas, pendientes o completadas para esa fecha
+        # IMPORTANTE: Buscar por fecha_evento y estados válidos (usar valores exactos del modelo)
+        try:
+            # Primero, verificar qué estados existen realmente en la base de datos para esta fecha
+            reservas_fecha_crudas = Reserva.objects.filter(fecha_evento=fecha_obj)
+            estados_existentes_fecha = reservas_fecha_crudas.values_list('estado', flat=True).distinct()
+            print(f"🔍 DEBUG - Estados de reservas para {fecha_obj}: {list(estados_existentes_fecha)}")
+            print(f"🔍 DEBUG - Total reservas para {fecha_obj} (sin filtrar estado): {reservas_fecha_crudas.count()}")
+            
+            # Buscar con todos los posibles estados (usar Q para case-insensitive)
+            reservas_fecha = Reserva.objects.filter(
+                fecha_evento=fecha_obj
+            ).filter(
+                Q(estado__iexact='Pendiente') | 
+                Q(estado__iexact='Confirmada') | 
+                Q(estado__iexact='completada')
+            ).select_related('cliente').prefetch_related('detalles__juego')
+            
+            # Debug: verificar cuántas reservas se encontraron
+            num_reservas = reservas_fecha.count()
+            print(f"🔍 DEBUG - Reservas encontradas con filtro de estado: {num_reservas}")
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return JsonResponse({
+                'error': f'Error al obtener reservas: {str(e)}',
+                'disponible': False,
+                'juegos_disponibles': []
+            }, status=500)
+        
+        # Obtener IDs de juegos ocupados ese día
+        # Iterar sobre todas las reservas y sus detalles para identificar juegos ocupados
+        juegos_ocupados = set()
+        reservas_info = []  # Para debugging
+        
+        try:
+            for reserva in reservas_fecha:
+                reserva_info = {
+                    'id': reserva.id,
+                    'estado': reserva.estado,
+                    'fecha': str(reserva.fecha_evento),
+                    'juegos': []
+                }
+                
+                # Obtener todos los detalles de esta reserva
+                detalles = reserva.detalles.all()
+                print(f"  📋 Reserva #{reserva.id} (estado: {reserva.estado}) tiene {detalles.count()} detalles")
+                
+                for detalle in detalles:
+                    if detalle.juego:
+                        juego_id = detalle.juego.id
+                        juego_nombre = detalle.juego.nombre
+                        juegos_ocupados.add(juego_id)
+                        reserva_info['juegos'].append({
+                            'id': juego_id,
+                            'nombre': juego_nombre,
+                            'cantidad': detalle.cantidad
+                        })
+                        print(f"    🎮 Juego ocupado: ID {juego_id} - {juego_nombre} (cantidad: {detalle.cantidad})")
+                
+                if reserva_info['juegos']:
+                    reservas_info.append(reserva_info)
+            
+            print(f"✅ Total de juegos ocupados encontrados: {len(juegos_ocupados)} (IDs: {list(juegos_ocupados)})")
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return JsonResponse({
+                'error': f'Error al procesar reservas: {str(e)}',
+                'disponible': False,
+                'juegos_disponibles': []
+            }, status=500)
+        
+        # Filtrar juegos disponibles (no ocupados)
+        # Si hay juegos ocupados, excluirlos; si no hay ninguno ocupado, todos están disponibles
+        if juegos_ocupados:
+            # Excluir los juegos ocupados de la lista de disponibles
+            juegos_disponibles = todos_juegos.exclude(id__in=juegos_ocupados)
+            # Obtener los juegos ocupados de la tabla Juego para mostrarlos
+            juegos_ocupados_queryset = todos_juegos.filter(id__in=juegos_ocupados)
+            print(f"📊 Juegos disponibles: {juegos_disponibles.count()}, Juegos ocupados: {juegos_ocupados_queryset.count()}")
+        else:
+            juegos_disponibles = todos_juegos
+            juegos_ocupados_queryset = Juego.objects.none()  # QuerySet vacío
+            print(f"📊 No hay juegos ocupados. Todos los {todos_juegos.count()} juegos están disponibles")
+        
+        # Construir lista de juegos disponibles
+        juegos_data = []
+        try:
+            for juego in juegos_disponibles:
+                juegos_data.append({
+                    'id': juego.id,
+                    'nombre': juego.nombre,
+                    'precio': int(juego.precio_base) if juego.precio_base else 0,
+                    'categoria': juego.get_categoria_display() if hasattr(juego, 'get_categoria_display') else juego.categoria,
+                    'disponible': True
+                })
+        except Exception as e:
+            return JsonResponse({
+                'error': f'Error al procesar juegos: {str(e)}',
+                'disponible': False,
+                'juegos_disponibles': []
+            }, status=500)
+        
+        # Construir lista de juegos ocupados (para mostrarlos como no disponibles)
+        juegos_ocupados_data = []
+        try:
+            # Asegurar que siempre iteramos sobre un QuerySet o lista
+            for juego in juegos_ocupados_queryset:
+                juego_data = {
+                    'id': juego.id,
+                    'nombre': juego.nombre,
+                    'precio': int(juego.precio_base) if juego.precio_base else 0,
+                    'categoria': juego.get_categoria_display() if hasattr(juego, 'get_categoria_display') else juego.categoria,
+                    'disponible': False
+                }
+                juegos_ocupados_data.append(juego_data)
+                print(f"  ✅ Juego ocupado agregado a respuesta: ID {juego.id} - {juego.nombre}")
+            
+            print(f"📦 Total juegos ocupados en respuesta: {len(juegos_ocupados_data)}")
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return JsonResponse({
+                'error': f'Error al procesar juegos ocupados: {str(e)}',
+                'disponible': False,
+                'juegos_disponibles': []
+            }, status=500)
+        
+        # Un día está disponible si hay AL MENOS un juego disponible
+        respuesta = {
+            'disponible': len(juegos_data) > 0,
+            'juegos_disponibles': juegos_data,
+            'juegos_ocupados_list': juegos_ocupados_data,  # Lista de juegos ocupados para mostrar
+            'total_disponibles': len(juegos_data),
+            'total_juegos': todos_juegos.count(),
+            'juegos_ocupados': len(juegos_ocupados),
+            'fecha': fecha_str,
+            'debug_info': {
+                'total_juegos_sistema': todos_juegos.count(),
+                'ids_juegos_ocupados': list(juegos_ocupados),
+                'ids_juegos_disponibles': [j['id'] for j in juegos_data],
+                'reservas_encontradas': reservas_info,
+                'num_reservas': len(reservas_info)
+            }
+        }
+        
+        print(f"📤 Enviando respuesta para {fecha_str}:")
+        print(f"   - Disponible: {respuesta['disponible']}")
+        print(f"   - Juegos disponibles: {len(juegos_data)}")
+        print(f"   - Juegos ocupados en data: {len(juegos_ocupados_data)}")
+        print(f"   - juegos_ocupados_list en respuesta: {'SÍ' if 'juegos_ocupados_list' in respuesta else 'NO'}")
+        print(f"   - Tipo de juegos_ocupados_list: {type(respuesta.get('juegos_ocupados_list'))}")
+        print(f"   - IDs ocupados: {list(juegos_ocupados)}")
+        print(f"   - Total juegos sistema: {respuesta['total_juegos']}")
+        
+        # Verificar que la respuesta tenga todos los campos necesarios
+        import json
+        respuesta_json = json.dumps(respuesta, default=str)
+        print(f"   - Respuesta JSON (primeros 500 chars): {respuesta_json[:500]}")
+        
+        return JsonResponse(respuesta)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({
+            'error': f'Error inesperado: {str(e)}',
+            'disponible': False,
+            'juegos_disponibles': []
+        }, status=500)
+
+
+@require_http_methods(["POST"])
+@csrf_exempt
+def crear_reserva_publica(request):
+    """
+    Crea una reserva desde el calendario público (sin autenticación)
+    """
+    import json
+    
+    try:
+        if request.content_type == 'application/json':
+            data = json.loads(request.body)
+        else:
+            data = request.POST.dict()
+    except:
+        data = request.POST.dict()
+    
+    # Extraer datos del formulario (nuevos campos)
+    nombre = data.get('nombre', '').strip()
+    apellido = data.get('apellido', '').strip()
+    email = data.get('email', '').strip()
+    telefono = data.get('telefono', '').strip()
+    fecha_evento = data.get('fecha', '').strip()
+    hora_instalacion = data.get('hora_instalacion', '').strip()
+    hora_retiro = data.get('hora_retiro', '').strip()
+    direccion = data.get('direccion', '').strip()
+    observaciones = data.get('observaciones', '').strip()
+    distancia_km = data.get('distancia_km', '0').strip()
+    juegos_data = data.get('juegos', [])  # Array de juegos
+    
+    # Debug: imprimir datos recibidos
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"📥 Datos recibidos: nombre={nombre}, apellido={apellido}, hora_instalacion={hora_instalacion}, hora_retiro={hora_retiro}, juegos={juegos_data}")
+    
+    # Si juegos_data es string, intentar parsearlo
+    if isinstance(juegos_data, str):
+        try:
+            juegos_data = json.loads(juegos_data)
+        except:
+            juegos_data = []
+    
+    # Compatibilidad con formulario antiguo (si viene nombre completo)
+    if not nombre and data.get('nombre_completo'):
+        nombre_completo = data.get('nombre_completo', '').strip()
+        partes_nombre = nombre_completo.split(' ', 1)
+        nombre = partes_nombre[0]
+        apellido = partes_nombre[1] if len(partes_nombre) > 1 else ''
+    
+    errors = []
+    
+    # Validaciones básicas
+    if not nombre:
+        errors.append('El nombre es obligatorio')
+    elif len(nombre) < 2:
+        errors.append('El nombre debe tener al menos 2 caracteres')
+    
+    if not apellido:
+        errors.append('El apellido es obligatorio')
+    elif len(apellido) < 2:
+        errors.append('El apellido debe tener al menos 2 caracteres')
+    
+    first_name = nombre
+    last_name = apellido
+    
+    if not email:
+        errors.append('El email es obligatorio')
+    else:
+        email_regex = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
+        if not email_regex.match(email):
+            errors.append('Email inválido')
+    
+    # Teléfono es opcional (no validamos si está vacío)
+    
+    if not fecha_evento:
+        errors.append('La fecha es obligatoria')
+    else:
+        try:
+            from datetime import datetime
+            fecha_obj = datetime.strptime(fecha_evento, '%Y-%m-%d').date()
+            hoy = timezone.now().date()
+            if fecha_obj < hoy:
+                errors.append('No se pueden hacer reservas para fechas pasadas')
+        except ValueError:
+            errors.append('Formato de fecha inválido')
+    
+    # Validar horas de instalación y retiro
+    hora_inst_obj = None
+    hora_ret_obj = None
+    if not hora_instalacion:
+        errors.append('La hora de instalación es obligatoria')
+    else:
+        try:
+            from datetime import datetime
+            hora_inst_obj = datetime.strptime(hora_instalacion, '%H:%M').time()
+        except ValueError:
+            errors.append('Formato de hora de instalación inválido (debe ser HH:MM)')
+    
+    if not hora_retiro:
+        errors.append('La hora de retiro es obligatoria')
+    else:
+        try:
+            from datetime import datetime
+            hora_ret_obj = datetime.strptime(hora_retiro, '%H:%M').time()
+        except ValueError:
+            errors.append('Formato de hora de retiro inválido (debe ser HH:MM)')
+    
+    # Validar que hora_retiro sea después de hora_instalacion
+    if hora_inst_obj and hora_ret_obj:
+        if hora_ret_obj <= hora_inst_obj:
+            errors.append('La hora de retiro debe ser posterior a la hora de instalación')
+    
+    # Validar juegos
+    if not juegos_data:
+        errors.append('Debe agregar al menos un juego')
+    elif not isinstance(juegos_data, list):
+        try:
+            juegos_data = json.loads(juegos_data) if isinstance(juegos_data, str) else []
+        except:
+            errors.append('Formato de juegos inválido')
+            juegos_data = []
+    
+    if not juegos_data or len(juegos_data) == 0:
+        errors.append('Debe agregar al menos un juego')
+    
+    if not direccion:
+        errors.append('La dirección es obligatoria')
+    elif len(direccion) > 300:
+        errors.append('La dirección no puede exceder 300 caracteres')
+    
+    # Validar distancia
+    distancia_km_int = 0
+    if distancia_km:
+        try:
+            distancia_km_int = int(distancia_km)
+            if distancia_km_int < 0:
+                errors.append('La distancia no puede ser negativa')
+        except ValueError:
+            errors.append('La distancia debe ser un número válido')
+    
+    if errors:
+        return JsonResponse({'success': False, 'errors': errors}, status=400)
+    
+    # Validar y verificar juegos
+    juegos_validos = []
+    total_juegos = 0
+    
+    for juego_item in juegos_data:
+        juego_id = juego_item.get('juego_id') or juego_item.get('id')
+        cantidad = juego_item.get('cantidad', 1)
+        
+        if not juego_id:
+            errors.append('Uno de los juegos no tiene ID válido')
+            continue
+        
+        try:
+            juego = Juego.objects.get(id=int(juego_id))
+            
+            # Verificar estado del juego
+            if juego.estado not in ['disponible', 'Habilitado']:
+                errors.append(f'El juego "{juego.nombre}" no está disponible')
+                continue
+            
+            # Verificar disponibilidad en la fecha
+            reservas_fecha = Reserva.objects.filter(
+                fecha_evento=fecha_obj,
+                estado__in=['pendiente', 'confirmada', 'Pendiente', 'Confirmada']
+            ).prefetch_related('detalles__juego')
+            
+            juego_ocupado = False
+            for reserva in reservas_fecha:
+                for detalle in reserva.detalles.all():
+                    if detalle.juego.id == juego.id:
+                        juego_ocupado = True
+                        break
+                if juego_ocupado:
+                    break
+            
+            if juego_ocupado:
+                errors.append(f'El juego "{juego.nombre}" ya está reservado para esa fecha')
+                continue
+            
+            precio_unitario = juego.precio_base
+            subtotal = precio_unitario * cantidad
+            
+            juegos_validos.append({
+                'juego': juego,
+                'cantidad': cantidad,
+                'precio_unitario': precio_unitario,
+                'subtotal': subtotal
+            })
+            total_juegos += subtotal
+            
+        except (Juego.DoesNotExist, ValueError) as e:
+            errors.append(f'Juego con ID {juego_id} no encontrado')
+            continue
+    
+    if not juegos_validos:
+        errors.append('No hay juegos válidos para la reserva')
+        return JsonResponse({'success': False, 'errors': errors}, status=400)
+    
+    if errors:
+        return JsonResponse({'success': False, 'errors': errors}, status=400)
+    
+    # Buscar o crear cliente
+    try:
+        # Buscar por email primero
+        usuario = Usuario.objects.filter(email=email, tipo_usuario='cliente').first()
+        
+        if usuario:
+            cliente = usuario.cliente
+            # Actualizar datos si es necesario
+            if usuario.first_name != first_name or usuario.last_name != last_name:
+                usuario.first_name = first_name
+                usuario.last_name = last_name
+                usuario.save()
+            if telefono and usuario.telefono != telefono:
+                usuario.telefono = telefono
+                usuario.save()
+        else:
+            # Crear nuevo usuario y cliente
+            base_username = slugify(f"{first_name}_{last_name}").lower()[:24] or slugify(first_name).lower() or 'cliente'
+            username = base_username
+            counter = 1
+            while Usuario.objects.filter(username=username).exists():
+                username = f"{base_username}_{counter}"
+                counter += 1
+            
+            random_password = secrets.token_urlsafe(12)
+            usuario = Usuario.objects.create_user(
+                username=username,
+                email=email,
+                password=random_password,
+                first_name=first_name,
+                last_name=last_name,
+                tipo_usuario='cliente',
+                is_active=True,
+                telefono=telefono or None,
+            )
+            
+            # Generar RUT ficticio si no existe (para clientes sin RUT)
+            rut_ficticio = f"{counter}{secrets.randbelow(10000000)}-{secrets.randbelow(10)}"
+            while Cliente.objects.filter(rut=rut_ficticio).exists():
+                rut_ficticio = f"{counter}{secrets.randbelow(10000000)}-{secrets.randbelow(10)}"
+            
+            cliente = Cliente.objects.create(
+                usuario=usuario,
+                rut=rut_ficticio,
+                tipo_cliente='particular',
+            )
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'errors': [f'Error al crear/buscar cliente: {str(e)}']
+        }, status=500)
+    
+    # Calcular precio por distancia ($1.000 por km)
+    PRECIO_POR_KM = 1000
+    precio_distancia = distancia_km_int * PRECIO_POR_KM
+    
+    # Calcular total (suma de todos los juegos + precio por distancia)
+    total_final = total_juegos + precio_distancia
+    
+    try:
+        # Crear reserva
+        reserva = Reserva.objects.create(
+            cliente=cliente,
+            fecha_evento=fecha_obj,
+            hora_instalacion=hora_inst_obj,
+            hora_retiro=hora_ret_obj,
+            direccion_evento=direccion,
+            distancia_km=distancia_km_int,
+            precio_distancia=precio_distancia,
+            estado='pendiente',
+            observaciones=observaciones or None,
+            total_reserva=total_final,
+        )
+        
+        # Crear detalles de reserva para cada juego
+        for juego_item in juegos_validos:
+            DetalleReserva.objects.create(
+                reserva=reserva,
+                juego=juego_item['juego'],
+                cantidad=juego_item['cantidad'],
+                precio_unitario=juego_item['precio_unitario'],
+                subtotal=juego_item['subtotal'],
+            )
+        
+        return JsonResponse({
+            'success': True,
+            'message': '¡Reserva creada exitosamente! Nos pondremos en contacto contigo pronto para confirmar.',
+            'reserva_id': reserva.id
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'errors': [f'Error al crear la reserva: {str(e)}']
+        }, status=500)
 
 def login_view(request):
     """
@@ -763,9 +1295,44 @@ def repartos_list(request):
     query = request.GET.get('q', '').strip()
     estado_filter = request.GET.get('estado', '').strip()
     
-    # Obtener fecha de hoy
-    from datetime import date
+    # Obtener parámetros de vista
+    vista = request.GET.get('vista', 'diaria').strip()  # diaria, semanal, mensual
+    fecha_seleccionada = request.GET.get('fecha', '').strip()
+    
+    # Obtener fecha base
+    from datetime import date, timedelta, datetime
+    from calendar import monthrange
+    
     fecha_hoy = date.today()
+    
+    # Determinar rango de fechas según la vista
+    if fecha_seleccionada:
+        try:
+            fecha_base = datetime.strptime(fecha_seleccionada, '%Y-%m-%d').date()
+        except ValueError:
+            fecha_base = fecha_hoy
+    else:
+        fecha_base = fecha_hoy
+    
+    if vista == 'semanal':
+        # Semana: lunes a domingo
+        # Obtener el lunes de la semana
+        dias_desde_lunes = fecha_base.weekday()
+        fecha_inicio = fecha_base - timedelta(days=dias_desde_lunes)
+        fecha_fin = fecha_inicio + timedelta(days=6)
+        rango_fechas = (fecha_inicio, fecha_fin)
+    elif vista == 'mensual':
+        # Mes: primer día al último día del mes
+        primer_dia = fecha_base.replace(day=1)
+        ultimo_dia_num = monthrange(fecha_base.year, fecha_base.month)[1]
+        ultimo_dia = fecha_base.replace(day=ultimo_dia_num)
+        fecha_inicio = primer_dia
+        fecha_fin = ultimo_dia
+        rango_fechas = (fecha_inicio, fecha_fin)
+    else:  # diaria
+        fecha_inicio = fecha_base
+        fecha_fin = fecha_base
+        rango_fechas = (fecha_inicio, fecha_fin)
     
     # Filtrar instalaciones
     instalaciones_qs = Instalacion.objects.select_related(
@@ -807,9 +1374,18 @@ def repartos_list(request):
         estado_retiro = estado_map.get(estado_filter, estado_filter)
         retiros_qs = retiros_qs.filter(estado_retiro=estado_retiro)
     
-    # Agenda de hoy
-    instalaciones_hoy = instalaciones_qs.filter(fecha_instalacion=fecha_hoy)
-    retiros_hoy = retiros_qs.filter(fecha_retiro=fecha_hoy)
+    # Agenda según vista seleccionada (solo futuros o del día actual)
+    # Asegurar que la fecha_inicio sea al menos la fecha de hoy
+    fecha_inicio_efectiva = max(fecha_inicio, fecha_hoy)
+    
+    instalaciones_agenda = instalaciones_qs.filter(
+        fecha_instalacion__gte=fecha_inicio_efectiva,
+        fecha_instalacion__lte=fecha_fin
+    )
+    retiros_agenda = retiros_qs.filter(
+        fecha_retiro__gte=fecha_inicio_efectiva,
+        fecha_retiro__lte=fecha_fin
+    )
     
     # Repartidores disponibles
     repartidores_disponibles = Usuario.objects.filter(
@@ -820,15 +1396,111 @@ def repartos_list(request):
     context = {
         'query': query,
         'estado_filter': estado_filter,
+        'vista': vista,
+        'fecha_base': fecha_base,
+        'fecha_inicio': fecha_inicio,
+        'fecha_fin': fecha_fin,
         'fecha_hoy': fecha_hoy,
         'instalaciones': instalaciones_qs[:50],  # Limitar resultados
         'retiros': retiros_qs[:50],
-        'instalaciones_hoy': instalaciones_hoy,
-        'retiros_hoy': retiros_hoy,
+        'instalaciones_agenda': instalaciones_agenda,
+        'retiros_agenda': retiros_agenda,
         'repartidores_disponibles': repartidores_disponibles,
     }
     
     return render(request, 'jio_app/repartos_list.html', context)
+
+
+@login_required
+@require_http_methods(["GET"])
+def agenda_repartos_json(request):
+    """Endpoint JSON para obtener agenda de repartos por rango de fechas"""
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    vista = request.GET.get('vista', 'diaria').strip()
+    fecha_seleccionada = request.GET.get('fecha', '').strip()
+    
+    from datetime import date, timedelta, datetime
+    from calendar import monthrange
+    
+    fecha_hoy = date.today()
+    
+    if fecha_seleccionada:
+        try:
+            fecha_base = datetime.strptime(fecha_seleccionada, '%Y-%m-%d').date()
+        except ValueError:
+            fecha_base = fecha_hoy
+    else:
+        fecha_base = fecha_hoy
+    
+    if vista == 'semanal':
+        dias_desde_lunes = fecha_base.weekday()
+        fecha_inicio = fecha_base - timedelta(days=dias_desde_lunes)
+        fecha_fin = fecha_inicio + timedelta(days=6)
+    elif vista == 'mensual':
+        primer_dia = fecha_base.replace(day=1)
+        ultimo_dia_num = monthrange(fecha_base.year, fecha_base.month)[1]
+        ultimo_dia = fecha_base.replace(day=ultimo_dia_num)
+        fecha_inicio = primer_dia
+        fecha_fin = ultimo_dia
+    else:  # diaria
+        fecha_inicio = fecha_base
+        fecha_fin = fecha_base
+    
+    # Obtener instalaciones (solo futuras o del día actual)
+    # Asegurar que la fecha_inicio sea al menos la fecha de hoy
+    fecha_inicio_efectiva = max(fecha_inicio, fecha_hoy)
+    
+    instalaciones = Instalacion.objects.filter(
+        fecha_instalacion__gte=fecha_inicio_efectiva,
+        fecha_instalacion__lte=fecha_fin
+    ).select_related(
+        'reserva__cliente__usuario', 'repartidor__usuario'
+    ).order_by('fecha_instalacion', 'hora_instalacion')
+    
+    # Obtener retiros (solo futuros o del día actual)
+    retiros = Retiro.objects.filter(
+        fecha_retiro__gte=fecha_inicio_efectiva,
+        fecha_retiro__lte=fecha_fin
+    ).select_related(
+        'reserva__cliente__usuario', 'repartidor__usuario'
+    ).order_by('fecha_retiro', 'hora_retiro')
+    
+    # Serializar instalaciones
+    instalaciones_data = []
+    for inst in instalaciones:
+        instalaciones_data.append({
+            'id': inst.id,
+            'fecha': inst.fecha_instalacion.strftime('%Y-%m-%d'),
+            'hora': inst.hora_instalacion.strftime('%H:%M'),
+            'cliente': inst.reserva.cliente.usuario.get_full_name(),
+            'direccion': inst.direccion_instalacion,
+            'repartidor': inst.repartidor.usuario.get_full_name() if inst.repartidor else None,
+            'estado': inst.estado_instalacion,
+        })
+    
+    # Serializar retiros
+    retiros_data = []
+    for ret in retiros:
+        retiros_data.append({
+            'id': ret.id,
+            'fecha': ret.fecha_retiro.strftime('%Y-%m-%d'),
+            'hora': ret.hora_retiro.strftime('%H:%M'),
+            'cliente': ret.reserva.cliente.usuario.get_full_name(),
+            'direccion': ret.reserva.direccion_evento,
+            'repartidor': ret.repartidor.usuario.get_full_name() if ret.repartidor else None,
+            'estado': ret.estado_retiro,
+        })
+    
+    return JsonResponse({
+        'vista': vista,
+        'fecha_base': fecha_base.strftime('%Y-%m-%d'),
+        'fecha_inicio': fecha_inicio.strftime('%Y-%m-%d'),
+        'fecha_fin': fecha_fin.strftime('%Y-%m-%d'),
+        'instalaciones': instalaciones_data,
+        'retiros': retiros_data,
+    })
 
 
 @login_required
@@ -932,7 +1604,10 @@ def detalle_instalacion_json(request, instalacion_id: int):
             # Intentar obtener URL de imagen del juego
             imagen_url = None
             if detalle.juego.foto:
-                imagen_url = detalle.juego.foto
+                try:
+                    imagen_url = request.build_absolute_uri(detalle.juego.foto.url)
+                except:
+                    imagen_url = None
             
             juegos.append({
                 'nombre': detalle.juego.nombre,
@@ -1033,7 +1708,34 @@ def juegos_list(request):
     categoria_filter = request.GET.get('categoria', '').strip()
     estado_filter = request.GET.get('estado', '').strip()
     
-    base_qs = Juego.objects.all().order_by('nombre')
+    # Parámetros de ordenamiento
+    order_by = request.GET.get('order_by', 'nombre').strip()
+    direction = request.GET.get('direction', 'asc').strip()
+    
+    # Campos válidos para ordenar
+    valid_order_fields = {
+        'id': 'id',
+        'nombre': 'nombre',
+        'categoria': 'categoria',
+        'capacidad_personas': 'capacidad_personas',
+        'precio_base': 'precio_base',
+        'estado': 'estado',
+    }
+    
+    # Validar campo de ordenamiento
+    if order_by not in valid_order_fields:
+        order_by = 'nombre'
+    
+    # Validar dirección
+    if direction not in ['asc', 'desc']:
+        direction = 'asc'
+    
+    # Aplicar ordenamiento
+    order_field = valid_order_fields[order_by]
+    if direction == 'desc':
+        order_field = '-' + order_field
+    
+    base_qs = Juego.objects.all().order_by(order_field)
     
     if query:
         base_qs = base_qs.filter(
@@ -1053,6 +1755,8 @@ def juegos_list(request):
         'query': query,
         'categoria_filter': categoria_filter,
         'estado_filter': estado_filter,
+        'order_by': order_by,
+        'direction': direction,
         'categoria_choices': Juego.CATEGORIA_CHOICES,
         'estado_choices': Juego.ESTADO_CHOICES,
     })
@@ -1077,7 +1781,10 @@ def juego_detail_json(request, juego_id: int):
             'nombre': juego.nombre,
             'descripcion': juego.descripcion or '',
             'categoria': juego.categoria,
-            'dimensiones': juego.dimensiones,
+            'dimension_largo': float(juego.dimension_largo),
+            'dimension_ancho': float(juego.dimension_ancho),
+            'dimension_alto': float(juego.dimension_alto),
+            'dimensiones': juego.dimensiones,  # Para compatibilidad
             'capacidad_personas': juego.capacidad_personas,
             'peso_maximo': juego.peso_maximo,
             'precio_base': int(juego.precio_base),
@@ -1103,7 +1810,9 @@ def juego_create_json(request):
     nombre = request.POST.get('nombre', '').strip()
     descripcion = request.POST.get('descripcion', '').strip()
     categoria = request.POST.get('categoria', '').strip()
-    dimensiones = request.POST.get('dimensiones', '').strip()
+    dimension_largo = request.POST.get('dimension_largo', '').strip()
+    dimension_ancho = request.POST.get('dimension_ancho', '').strip()
+    dimension_alto = request.POST.get('dimension_alto', '').strip()
     capacidad_personas = request.POST.get('capacidad_personas', '').strip()
     peso_maximo = request.POST.get('peso_maximo', '').strip()
     precio_base = request.POST.get('precio_base', '').strip()
@@ -1114,6 +1823,9 @@ def juego_create_json(request):
     capacidad = None
     peso = None
     precio = None
+    largo = None
+    ancho = None
+    alto = None
     
     # Validaciones
     if not nombre:
@@ -1127,10 +1839,36 @@ def juego_create_json(request):
     if not categoria or categoria not in [choice[0] for choice in Juego.CATEGORIA_CHOICES]:
         errors.append('Categoría inválida o no seleccionada')
     
-    if not dimensiones:
-        errors.append('Las dimensiones son obligatorias')
-    elif len(dimensiones) > 50:
-        errors.append('Las dimensiones no pueden exceder 50 caracteres')
+    # Validar dimensiones
+    if not dimension_largo:
+        errors.append('El largo es obligatorio')
+    else:
+        try:
+            largo = float(dimension_largo)
+            if largo <= 0:
+                errors.append('El largo debe ser mayor a 0')
+        except (ValueError, TypeError):
+            errors.append('El largo debe ser un número válido')
+    
+    if not dimension_ancho:
+        errors.append('El ancho es obligatorio')
+    else:
+        try:
+            ancho = float(dimension_ancho)
+            if ancho <= 0:
+                errors.append('El ancho debe ser mayor a 0')
+        except (ValueError, TypeError):
+            errors.append('El ancho debe ser un número válido')
+    
+    if not dimension_alto:
+        errors.append('El alto es obligatorio')
+    else:
+        try:
+            alto = float(dimension_alto)
+            if alto <= 0:
+                errors.append('El alto debe ser mayor a 0')
+        except (ValueError, TypeError):
+            errors.append('El alto debe ser un número válido')
     
     if not capacidad_personas:
         errors.append('La capacidad de personas es obligatoria')
@@ -1187,7 +1925,9 @@ def juego_create_json(request):
             nombre=nombre,
             descripcion=descripcion or None,
             categoria=categoria,
-            dimensiones=dimensiones,
+            dimension_largo=largo,
+            dimension_ancho=ancho,
+            dimension_alto=alto,
             capacidad_personas=capacidad,
             peso_maximo=peso,
             precio_base=precio,
@@ -1315,7 +2055,10 @@ def detalle_instalacion_json(request, instalacion_id: int):
             # Intentar obtener URL de imagen del juego
             imagen_url = None
             if detalle.juego.foto:
-                imagen_url = detalle.juego.foto
+                try:
+                    imagen_url = request.build_absolute_uri(detalle.juego.foto.url)
+                except:
+                    imagen_url = None
             
             juegos.append({
                 'nombre': detalle.juego.nombre,
@@ -1659,7 +2402,10 @@ def detalle_instalacion_json(request, instalacion_id: int):
             # Intentar obtener URL de imagen del juego
             imagen_url = None
             if detalle.juego.foto:
-                imagen_url = detalle.juego.foto
+                try:
+                    imagen_url = request.build_absolute_uri(detalle.juego.foto.url)
+                except:
+                    imagen_url = None
             
             juegos.append({
                 'nombre': detalle.juego.nombre,
@@ -1820,7 +2566,9 @@ def juego_update_json(request, juego_id: int):
     nombre = request.POST.get('nombre', '').strip()
     descripcion = request.POST.get('descripcion', '').strip()
     categoria = request.POST.get('categoria', '').strip()
-    dimensiones = request.POST.get('dimensiones', '').strip()
+    dimension_largo = request.POST.get('dimension_largo', '').strip()
+    dimension_ancho = request.POST.get('dimension_ancho', '').strip()
+    dimension_alto = request.POST.get('dimension_alto', '').strip()
     capacidad_personas = request.POST.get('capacidad_personas', '').strip()
     peso_maximo = request.POST.get('peso_maximo', '').strip()
     precio_base = request.POST.get('precio_base', '').strip()
@@ -1829,6 +2577,9 @@ def juego_update_json(request, juego_id: int):
     estado = request.POST.get('estado', '').strip()
 
     errors = []
+    largo = None
+    ancho = None
+    alto = None
     
     # Validaciones
     if not nombre:
@@ -1844,10 +2595,36 @@ def juego_update_json(request, juego_id: int):
     elif categoria not in [choice[0] for choice in Juego.CATEGORIA_CHOICES]:
         errors.append('Categoría inválida')
     
-    if not dimensiones:
-        errors.append('Las dimensiones son obligatorias')
-    elif len(dimensiones) > 50:
-        errors.append('Las dimensiones no pueden exceder 50 caracteres')
+    # Validar dimensiones
+    if not dimension_largo:
+        errors.append('El largo es obligatorio')
+    else:
+        try:
+            largo = float(dimension_largo)
+            if largo <= 0:
+                errors.append('El largo debe ser mayor a 0')
+        except (ValueError, TypeError):
+            errors.append('El largo debe ser un número válido')
+    
+    if not dimension_ancho:
+        errors.append('El ancho es obligatorio')
+    else:
+        try:
+            ancho = float(dimension_ancho)
+            if ancho <= 0:
+                errors.append('El ancho debe ser mayor a 0')
+        except (ValueError, TypeError):
+            errors.append('El ancho debe ser un número válido')
+    
+    if not dimension_alto:
+        errors.append('El alto es obligatorio')
+    else:
+        try:
+            alto = float(dimension_alto)
+            if alto <= 0:
+                errors.append('El alto debe ser mayor a 0')
+        except (ValueError, TypeError):
+            errors.append('El alto debe ser un número válido')
     
     try:
         capacidad = int(capacidad_personas)
@@ -1896,7 +2673,9 @@ def juego_update_json(request, juego_id: int):
         juego.nombre = nombre
         juego.descripcion = descripcion or None
         juego.categoria = categoria
-        juego.dimensiones = dimensiones
+        juego.dimension_largo = largo
+        juego.dimension_ancho = ancho
+        juego.dimension_alto = alto
         juego.capacidad_personas = capacidad
         juego.peso_maximo = peso
         juego.precio_base = precio
@@ -1953,4 +2732,1390 @@ def juego_delete_json(request, juego_id: int):
         return JsonResponse({
             'success': False, 
             'errors': [f'Error al eliminar el juego: {str(e)}']
+        }, status=500)
+
+@login_required
+def estadisticas(request):
+    """
+    Muestra las estadísticas de la aplicación
+    """
+    if not request.user.tipo_usuario == 'administrador':
+        raise PermissionDenied("Solo los administradores pueden acceder a este recurso.")
+    
+    from datetime import datetime, timedelta
+    from collections import defaultdict
+    import json
+    from calendar import monthrange
+    from django.db.models import Sum, Count, Q
+    
+    # Obtener fecha actual
+    hoy = datetime.now().date()
+    
+    # Obtener parámetros de mes y año (si existen) para el período a analizar
+    año_seleccionado = request.GET.get('year', hoy.year)
+    mes_seleccionado = request.GET.get('month', hoy.month)
+    
+    try:
+        año_seleccionado = int(año_seleccionado)
+        mes_seleccionado = int(mes_seleccionado)
+        # Validar rango
+        if mes_seleccionado < 1 or mes_seleccionado > 12:
+            mes_seleccionado = hoy.month
+        if año_seleccionado < 2000 or año_seleccionado > 2100:
+            año_seleccionado = hoy.year
+    except (ValueError, TypeError):
+        año_seleccionado = hoy.year
+        mes_seleccionado = hoy.month
+    
+    # Mapeo de meses en español
+    meses_espanol = {
+        1: 'Enero', 2: 'Febrero', 3: 'Marzo', 4: 'Abril', 5: 'Mayo', 6: 'Junio',
+        7: 'Julio', 8: 'Agosto', 9: 'Septiembre', 10: 'Octubre', 11: 'Noviembre', 12: 'Diciembre'
+    }
+    
+    # Obtener reservas confirmadas y completadas (no canceladas)
+    reservas = Reserva.objects.filter(
+        Q(estado='Confirmada') | Q(estado='confirmada') | Q(estado='completada')
+    ).select_related('cliente__usuario').prefetch_related('detalles__juego')
+    
+    # ========== VENTAS SEMANALES ==========
+    ventas_semanales = defaultdict(float)
+    ventas_semanales_labels = []
+    
+    # Últimas 8 semanas
+    for i in range(7, -1, -1):
+        semana_inicio = hoy - timedelta(days=hoy.weekday() + (i * 7))
+        semana_fin = semana_inicio + timedelta(days=6)
+        semana_key = semana_inicio.strftime('%d/%m')
+        
+        total_semana = reservas.filter(
+            fecha_evento__gte=semana_inicio,
+            fecha_evento__lte=semana_fin
+        ).aggregate(total=Sum('total_reserva'))['total'] or 0
+        
+        ventas_semanales[semana_key] = float(total_semana)
+        ventas_semanales_labels.append(semana_key)
+    
+    ventas_semanales_data = [ventas_semanales[label] for label in ventas_semanales_labels]
+    
+    # ========== VENTAS MENSUALES ==========
+    # Mapeo de meses en español
+    meses_espanol = {
+        1: 'Ene', 2: 'Feb', 3: 'Mar', 4: 'Abr', 5: 'May', 6: 'Jun',
+        7: 'Jul', 8: 'Ago', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dic'
+    }
+    
+    ventas_mensuales = defaultdict(float)
+    ventas_mensuales_labels = []
+    
+    # Últimos 12 meses
+    for i in range(11, -1, -1):
+        fecha = hoy - timedelta(days=i * 30)
+        mes_nombre = meses_espanol[fecha.month]
+        mes_key = f'{mes_nombre} {fecha.year}'
+        
+        # Filtrar reservas del mes
+        total_mes = reservas.filter(
+            fecha_evento__year=fecha.year,
+            fecha_evento__month=fecha.month
+        ).aggregate(total=Sum('total_reserva'))['total'] or 0
+        
+        ventas_mensuales[mes_key] = float(total_mes)
+        ventas_mensuales_labels.append(mes_key)
+    
+    ventas_mensuales_data = [ventas_mensuales[label] for label in ventas_mensuales_labels]
+    
+    # ========== VENTAS ANUALES ==========
+    ventas_anuales = defaultdict(float)
+    ventas_anuales_labels = []
+    
+    # Últimos 5 años
+    año_actual = hoy.year
+    for i in range(4, -1, -1):
+        año = año_actual - i
+        año_key = str(año)
+        
+        total_año = reservas.filter(
+            fecha_evento__year=año
+        ).aggregate(total=Sum('total_reserva'))['total'] or 0
+        
+        ventas_anuales[año_key] = float(total_año)
+        ventas_anuales_labels.append(año_key)
+    
+    ventas_anuales_data = [ventas_anuales[label] for label in ventas_anuales_labels]
+    
+    # ========== VENTAS POR CATEGORÍA ==========
+    # Obtener categorías ordenadas según el modelo
+    categorias_orden = ['Pequeño', 'Mediano', 'Grande']
+    categorias_db = Juego.objects.values_list('categoria', flat=True).distinct()
+    # Ordenar las categorías según el orden definido, agregando las que no estén en la lista
+    categorias_unicas = []
+    for cat in categorias_orden:
+        if cat in categorias_db:
+            categorias_unicas.append(cat)
+    # Agregar cualquier categoría que no esté en la lista ordenada
+    for cat in categorias_db:
+        if cat not in categorias_unicas:
+            categorias_unicas.append(cat)
+    
+    # Ventas por categoría - DIARIAS (últimos 7 días)
+    ventas_categoria_diarias = defaultdict(lambda: defaultdict(float))
+    for i in range(6, -1, -1):
+        fecha = hoy - timedelta(days=i)
+        reservas_dia = reservas.filter(fecha_evento=fecha)
+        
+        for reserva in reservas_dia:
+            for detalle in reserva.detalles.all():
+                categoria = detalle.juego.categoria
+                ventas_categoria_diarias[categoria][fecha.strftime('%d/%m')] += float(detalle.subtotal)
+    
+    ventas_categoria_diarias_data = []
+    for categoria in categorias_unicas:
+        if categoria in ventas_categoria_diarias:
+            total_cat = sum(ventas_categoria_diarias[categoria].values())
+            ventas_categoria_diarias_data.append(total_cat)
+        else:
+            ventas_categoria_diarias_data.append(0)
+    
+    # Ventas por categoría - SEMANALES (últimas 4 semanas)
+    ventas_categoria_semanales = defaultdict(float)
+    semana_inicio = hoy - timedelta(days=hoy.weekday() + (3 * 7))
+    semana_fin = hoy
+    reservas_semana = reservas.filter(fecha_evento__gte=semana_inicio, fecha_evento__lte=semana_fin)
+    
+    for reserva in reservas_semana:
+        for detalle in reserva.detalles.all():
+            categoria = detalle.juego.categoria
+            ventas_categoria_semanales[categoria] += float(detalle.subtotal)
+    
+    ventas_categoria_semanales_data = [
+        ventas_categoria_semanales.get(cat, 0) for cat in categorias_unicas
+    ]
+    
+    # Ventas por categoría - MENSUALES (últimos 6 meses)
+    ventas_categoria_mensuales = defaultdict(float)
+    fecha_inicio = hoy - timedelta(days=180)
+    reservas_mes = reservas.filter(fecha_evento__gte=fecha_inicio)
+    
+    for reserva in reservas_mes:
+        for detalle in reserva.detalles.all():
+            categoria = detalle.juego.categoria
+            ventas_categoria_mensuales[categoria] += float(detalle.subtotal)
+    
+    ventas_categoria_mensuales_data = [
+        ventas_categoria_mensuales.get(cat, 0) for cat in categorias_unicas
+    ]
+    
+    # Ventas por categoría - ANUALES (último año)
+    ventas_categoria_anuales = defaultdict(float)
+    año_inicio = hoy - timedelta(days=365)
+    reservas_año = reservas.filter(fecha_evento__gte=año_inicio)
+    
+    for reserva in reservas_año:
+        for detalle in reserva.detalles.all():
+            categoria = detalle.juego.categoria
+            ventas_categoria_anuales[categoria] += float(detalle.subtotal)
+    
+    ventas_categoria_anuales_data = [
+        ventas_categoria_anuales.get(cat, 0) for cat in categorias_unicas
+    ]
+    
+    # ========== DÍAS CON MAYOR DEMANDA ==========
+    dias_semana_nombres = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+    
+    # Semanal - Últimas 4 semanas
+    demanda_semanal = defaultdict(int)
+    semana_inicio = hoy - timedelta(days=hoy.weekday() + (3 * 7))
+    reservas_semana_dias = reservas.filter(fecha_evento__gte=semana_inicio, fecha_evento__lte=hoy)
+    
+    for reserva in reservas_semana_dias:
+        dia_semana = reserva.fecha_evento.weekday()
+        demanda_semanal[dias_semana_nombres[dia_semana]] += 1
+    
+    dias_semana_semanales_labels = dias_semana_nombres
+    dias_semana_semanales_data = [demanda_semanal.get(dia, 0) for dia in dias_semana_nombres]
+    
+    # Mensual - Últimos 3 meses
+    demanda_mensual = defaultdict(int)
+    fecha_inicio = hoy - timedelta(days=90)
+    reservas_mes_dias = reservas.filter(fecha_evento__gte=fecha_inicio)
+    
+    for reserva in reservas_mes_dias:
+        dia_semana = reserva.fecha_evento.weekday()
+        demanda_mensual[dias_semana_nombres[dia_semana]] += 1
+    
+    dias_semana_mensuales_labels = dias_semana_nombres
+    dias_semana_mensuales_data = [demanda_mensual.get(dia, 0) for dia in dias_semana_nombres]
+    
+    # Anual - Último año
+    demanda_anual = defaultdict(int)
+    año_inicio = hoy - timedelta(days=365)
+    reservas_año_dias = reservas.filter(fecha_evento__gte=año_inicio)
+    
+    for reserva in reservas_año_dias:
+        dia_semana = reserva.fecha_evento.weekday()
+        demanda_anual[dias_semana_nombres[dia_semana]] += 1
+    
+    dias_semana_anuales_labels = dias_semana_nombres
+    dias_semana_anuales_data = [demanda_anual.get(dia, 0) for dia in dias_semana_nombres]
+    
+    # ========== KPIs Y MÉTRICAS CLAVE ==========
+    from jio_app.models import Pago
+    
+    # Total de reservas del mes seleccionado
+    reservas_mes_seleccionado = reservas.filter(
+        fecha_evento__year=año_seleccionado,
+        fecha_evento__month=mes_seleccionado
+    )
+    total_reservas_mes = reservas_mes_seleccionado.count()
+    
+    # Total de reservas del mes anterior al seleccionado
+    if mes_seleccionado == 1:
+        mes_anterior_num = 12
+        año_anterior_num = año_seleccionado - 1
+    else:
+        mes_anterior_num = mes_seleccionado - 1
+        año_anterior_num = año_seleccionado
+    
+    reservas_mes_anterior = reservas.filter(
+        fecha_evento__year=año_anterior_num,
+        fecha_evento__month=mes_anterior_num
+    )
+    total_reservas_mes_anterior = reservas_mes_anterior.count()
+    
+    # Cálculo de crecimiento de reservas (mes vs mes anterior)
+    if total_reservas_mes_anterior > 0:
+        crecimiento_reservas = ((total_reservas_mes - total_reservas_mes_anterior) / total_reservas_mes_anterior) * 100
+    else:
+        crecimiento_reservas = 100.0 if total_reservas_mes > 0 else 0.0
+    
+    # Ventas del mes seleccionado
+    ventas_mes_seleccionado = reservas_mes_seleccionado.aggregate(total=Sum('total_reserva'))['total'] or 0
+    ventas_mes_seleccionado = float(ventas_mes_seleccionado)
+    
+    # Ventas del mes anterior
+    ventas_mes_anterior = reservas_mes_anterior.aggregate(total=Sum('total_reserva'))['total'] or 0
+    ventas_mes_anterior = float(ventas_mes_anterior)
+    
+    # Crecimiento de ventas
+    if ventas_mes_anterior > 0:
+        crecimiento_ventas = ((ventas_mes_seleccionado - ventas_mes_anterior) / ventas_mes_anterior) * 100
+    else:
+        crecimiento_ventas = 100.0 if ventas_mes_seleccionado > 0 else 0.0
+    
+    # Clientes nuevos vs recurrentes (mes seleccionado)
+    clientes_mes_seleccionado = Cliente.objects.filter(
+        reservas__fecha_evento__year=año_seleccionado,
+        reservas__fecha_evento__month=mes_seleccionado
+    ).distinct()
+    
+    clientes_nuevos = 0
+    clientes_recurrentes = 0
+    
+    fecha_inicio_mes_seleccionado = datetime(año_seleccionado, mes_seleccionado, 1).date()
+    
+    for cliente in clientes_mes_seleccionado:
+        reservas_anteriores = Reserva.objects.filter(
+            cliente=cliente,
+            fecha_evento__lt=fecha_inicio_mes_seleccionado
+        ).exists()
+        if reservas_anteriores:
+            clientes_recurrentes += 1
+        else:
+            clientes_nuevos += 1
+    
+    total_clientes_mes = clientes_mes_seleccionado.count()
+    
+    # ========== COMPARACIONES AÑO A AÑO ==========
+    # Ventas del año seleccionado
+    ventas_año_seleccionado = reservas.filter(
+        fecha_evento__year=año_seleccionado
+    ).aggregate(total=Sum('total_reserva'))['total'] or 0
+    ventas_año_seleccionado = float(ventas_año_seleccionado)
+    
+    # Ventas del año anterior
+    ventas_año_anterior = reservas.filter(
+        fecha_evento__year=año_seleccionado - 1
+    ).aggregate(total=Sum('total_reserva'))['total'] or 0
+    ventas_año_anterior = float(ventas_año_anterior)
+    
+    # Crecimiento año a año
+    if ventas_año_anterior > 0:
+        crecimiento_año = ((ventas_año_seleccionado - ventas_año_anterior) / ventas_año_anterior) * 100
+    else:
+        crecimiento_año = 100.0 if ventas_año_seleccionado > 0 else 0.0
+    
+    # Reservas del año seleccionado
+    reservas_año_seleccionado = reservas.filter(fecha_evento__year=año_seleccionado).count()
+    
+    # Reservas del año anterior
+    reservas_año_anterior = reservas.filter(fecha_evento__year=año_seleccionado - 1).count()
+    
+    # Crecimiento de reservas año a año
+    if reservas_año_anterior > 0:
+        crecimiento_reservas_año = ((reservas_año_seleccionado - reservas_año_anterior) / reservas_año_anterior) * 100
+    else:
+        crecimiento_reservas_año = 100.0 if reservas_año_seleccionado > 0 else 0.0
+    
+    # Generar lista de años disponibles (desde 2020 hasta el año actual)
+    años_disponibles = list(range(2020, hoy.year + 1))
+    
+    # Meses anteriores y siguientes para navegación
+    if mes_seleccionado == 1:
+        mes_anterior_nav = 12
+        año_anterior_nav = año_seleccionado - 1
+    else:
+        mes_anterior_nav = mes_seleccionado - 1
+        año_anterior_nav = año_seleccionado
+    
+    if mes_seleccionado == 12:
+        mes_siguiente_nav = 1
+        año_siguiente_nav = año_seleccionado + 1
+    else:
+        mes_siguiente_nav = mes_seleccionado + 1
+        año_siguiente_nav = año_seleccionado
+    
+    # Verificar si hay meses futuros (no permitir ir más allá del mes actual)
+    puede_avanzar = (año_siguiente_nav < hoy.year) or (año_siguiente_nav == hoy.year and mes_siguiente_nav <= hoy.month)
+    
+    # Preparar contexto con datos JSON
+    context = {
+        # Parámetros de selección
+        'mes_seleccionado': mes_seleccionado,
+        'año_seleccionado': año_seleccionado,
+        'mes_nombre': meses_espanol[mes_seleccionado],
+        'mes_anterior_nav': mes_anterior_nav,
+        'año_anterior_nav': año_anterior_nav,
+        'mes_siguiente_nav': mes_siguiente_nav,
+        'año_siguiente_nav': año_siguiente_nav,
+        'puede_avanzar': puede_avanzar,
+        'meses_espanol': meses_espanol,
+        'años_disponibles': años_disponibles,
+        # Comparaciones mes a mes
+        'mes_anterior_nombre': meses_espanol[mes_anterior_num],
+        'año_anterior_num': año_anterior_num,
+        # KPIs
+        'total_reservas_mes': total_reservas_mes,
+        'total_reservas_mes_anterior': total_reservas_mes_anterior,
+        'crecimiento_reservas': crecimiento_reservas,
+        'ventas_mes_actual': ventas_mes_seleccionado,
+        'ventas_mes_anterior': ventas_mes_anterior,
+        'crecimiento_ventas': crecimiento_ventas,
+        'clientes_nuevos': clientes_nuevos,
+        'clientes_recurrentes': clientes_recurrentes,
+        'total_clientes_mes': total_clientes_mes,
+        # Comparaciones año a año
+        'ventas_año_actual': ventas_año_seleccionado,
+        'ventas_año_anterior': ventas_año_anterior,
+        'crecimiento_año': crecimiento_año,
+        'reservas_año_actual': reservas_año_seleccionado,
+        'reservas_año_anterior': reservas_año_anterior,
+        'crecimiento_reservas_año': crecimiento_reservas_año,
+        # Datos de gráficos
+        'ventas_semanales_labels': json.dumps(ventas_semanales_labels),
+        'ventas_semanales_data': json.dumps(ventas_semanales_data),
+        'ventas_mensuales_labels': json.dumps(ventas_mensuales_labels),
+        'ventas_mensuales_data': json.dumps(ventas_mensuales_data),
+        'ventas_anuales_labels': json.dumps(ventas_anuales_labels),
+        'ventas_anuales_data': json.dumps(ventas_anuales_data),
+        'ventas_categoria_diarias_data': json.dumps(ventas_categoria_diarias_data),
+        'ventas_categoria_semanales_data': json.dumps(ventas_categoria_semanales_data),
+        'ventas_categoria_mensuales_data': json.dumps(ventas_categoria_mensuales_data),
+        'ventas_categoria_anuales_data': json.dumps(ventas_categoria_anuales_data),
+        'categorias_unicas': json.dumps(categorias_unicas),
+        'dias_semana_semanales_labels': json.dumps(dias_semana_semanales_labels),
+        'dias_semana_semanales_data': json.dumps(dias_semana_semanales_data),
+        'dias_semana_mensuales_labels': json.dumps(dias_semana_mensuales_labels),
+        'dias_semana_mensuales_data': json.dumps(dias_semana_mensuales_data),
+        'dias_semana_anuales_labels': json.dumps(dias_semana_anuales_labels),
+        'dias_semana_anuales_data': json.dumps(dias_semana_anuales_data),
+    }
+    
+    return render(request, 'jio_app/estadisticas.html', context)
+
+
+@login_required
+def contabilidad(request):
+    """
+    Vista de contabilidad con ingresos, egresos y calendario mensual
+    """
+    if not request.user.tipo_usuario == 'administrador':
+        raise PermissionDenied("Solo los administradores pueden acceder a este recurso.")
+    
+    from datetime import datetime, timedelta
+    from collections import defaultdict
+    from calendar import monthrange
+    from django.db.models import Sum, Q
+    
+    # Obtener parámetros de mes y año (si existen)
+    hoy = datetime.now().date()
+    año_seleccionado = request.GET.get('year', hoy.year)
+    mes_seleccionado = request.GET.get('month', hoy.month)
+    
+    try:
+        año_seleccionado = int(año_seleccionado)
+        mes_seleccionado = int(mes_seleccionado)
+        # Validar rango
+        if mes_seleccionado < 1 or mes_seleccionado > 12:
+            mes_seleccionado = hoy.month
+        if año_seleccionado < 2000 or año_seleccionado > 2100:
+            año_seleccionado = hoy.year
+    except (ValueError, TypeError):
+        año_seleccionado = hoy.year
+        mes_seleccionado = hoy.month
+    
+    # ========== CALENDARIO MENSUAL CON ESTADÍSTICAS ==========
+    meses_espanol = {
+        1: 'Enero', 2: 'Febrero', 3: 'Marzo', 4: 'Abril', 5: 'Mayo', 6: 'Junio',
+        7: 'Julio', 8: 'Agosto', 9: 'Septiembre', 10: 'Octubre', 11: 'Noviembre', 12: 'Diciembre'
+    }
+    
+    # Calcular primer y último día del mes seleccionado
+    primer_dia_mes = datetime(año_seleccionado, mes_seleccionado, 1).date()
+    ultimo_dia_mes = datetime(año_seleccionado, mes_seleccionado, monthrange(año_seleccionado, mes_seleccionado)[1]).date()
+    
+    # ========== INGRESOS (Pagos recibidos) ==========
+    from jio_app.models import Pago, Reserva
+    
+    # Obtener pagos pagados del mes seleccionado
+    pagos_mes = Pago.objects.filter(
+        estado='pagado',
+        fecha_pago__year=año_seleccionado,
+        fecha_pago__month=mes_seleccionado
+    )
+    
+    # También incluir pagos sin fecha_pago pero de reservas del mes
+    reservas_mes = Reserva.objects.filter(
+        fecha_evento__year=año_seleccionado,
+        fecha_evento__month=mes_seleccionado
+    )
+    
+    pagos_sin_fecha = Pago.objects.filter(
+        estado='pagado',
+        reserva__in=reservas_mes,
+        fecha_pago__isnull=True
+    )
+    
+    # Calcular ingresos por día del mes
+    ingresos_por_dia = defaultdict(float)
+    pagos_por_dia = defaultdict(int)
+    
+    # Ingresos de pagos con fecha_pago
+    for pago in pagos_mes:
+        if pago.fecha_pago:
+            dia = pago.fecha_pago.day
+            ingresos_por_dia[dia] += float(pago.monto)
+            pagos_por_dia[dia] += 1
+    
+    # Ingresos de pagos sin fecha_pago pero de reservas del mes
+    for pago in pagos_sin_fecha:
+        dia = pago.reserva.fecha_evento.day
+        ingresos_por_dia[dia] += float(pago.monto)
+        pagos_por_dia[dia] += 1
+    
+    # Total de ingresos del mes
+    total_ingresos_mes = sum(ingresos_por_dia.values())
+    total_pagos_mes = sum(pagos_por_dia.values())
+    
+    # ========== EGRESOS (Por ahora vacío, se puede expandir después) ==========
+    egresos_por_dia = defaultdict(float)
+    total_egresos_mes = 0.0
+    
+    # ========== CALENDARIO ==========
+    # Crear estructura de calendario
+    calendario_datos = []
+    primer_dia_semana = primer_dia_mes.weekday()  # 0 = Lunes, 6 = Domingo
+    
+    # Días de la semana en español
+    dias_semana = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
+    
+    # Llenar días vacíos al inicio del mes
+    for i in range(primer_dia_semana):
+        calendario_datos.append({
+            'dia': None,
+            'ingresos': 0,
+            'egresos': 0,
+            'saldo': 0,
+            'pagos': 0,
+            'es_hoy': False
+        })
+    
+    # Llenar días del mes
+    for dia in range(1, ultimo_dia_mes.day + 1):
+        fecha_dia = datetime(año_seleccionado, mes_seleccionado, dia).date()
+        es_hoy = (fecha_dia == hoy and mes_seleccionado == hoy.month and año_seleccionado == hoy.year)
+        
+        ingresos_dia = ingresos_por_dia.get(dia, 0)
+        egresos_dia = egresos_por_dia.get(dia, 0)
+        saldo_dia = ingresos_dia - egresos_dia
+        
+        calendario_datos.append({
+            'dia': dia,
+            'ingresos': ingresos_dia,
+            'egresos': egresos_dia,
+            'saldo': saldo_dia,
+            'pagos': pagos_por_dia.get(dia, 0),
+            'es_hoy': es_hoy,
+            'fecha': fecha_dia.strftime('%Y-%m-%d')
+        })
+    
+    # Meses anteriores y siguientes para navegación
+    if mes_seleccionado == 1:
+        mes_anterior = 12
+        año_anterior = año_seleccionado - 1
+    else:
+        mes_anterior = mes_seleccionado - 1
+        año_anterior = año_seleccionado
+    
+    if mes_seleccionado == 12:
+        mes_siguiente = 1
+        año_siguiente = año_seleccionado + 1
+    else:
+        mes_siguiente = mes_seleccionado + 1
+        año_siguiente = año_seleccionado
+    
+    # Verificar si hay meses futuros (no permitir ir más allá del mes actual)
+    puede_avanzar = (año_siguiente < hoy.year) or (año_siguiente == hoy.year and mes_siguiente <= hoy.month)
+    
+    # Generar lista de años disponibles (desde 2020 hasta el año actual)
+    años_disponibles = list(range(2020, hoy.year + 1))
+    
+    # Calcular saldo neto del mes
+    saldo_neto_mes = total_ingresos_mes - total_egresos_mes
+    
+    context = {
+        # Datos del calendario mensual
+        'mes_seleccionado': mes_seleccionado,
+        'año_seleccionado': año_seleccionado,
+        'mes_nombre': meses_espanol[mes_seleccionado],
+        'calendario_datos': calendario_datos,
+        'dias_semana': dias_semana,
+        'total_ingresos_mes': total_ingresos_mes,
+        'total_egresos_mes': total_egresos_mes,
+        'saldo_neto_mes': saldo_neto_mes,
+        'total_pagos_mes': total_pagos_mes,
+        'mes_anterior': mes_anterior,
+        'año_anterior': año_anterior,
+        'mes_siguiente': mes_siguiente,
+        'año_siguiente': año_siguiente,
+        'puede_avanzar': puede_avanzar,
+        'meses_espanol': meses_espanol,
+        'años_disponibles': años_disponibles,
+    }
+    
+    return render(request, 'jio_app/contabilidad.html', context)
+
+
+# --------- CRUD de Arriendos (solo administrador) ---------
+
+@login_required
+def arriendos_list(request):
+    """
+    Lista todos los arriendos (reservas) con filtros de búsqueda
+    """
+    if not request.user.tipo_usuario == 'administrador':
+        raise PermissionDenied("Solo los administradores pueden acceder a este recurso.")
+
+    query = request.GET.get('q', '').strip()
+    estado_filter = request.GET.get('estado', '').strip()
+    fecha_desde = request.GET.get('fecha_desde', '').strip()
+    fecha_hasta = request.GET.get('fecha_hasta', '').strip()
+    
+    # Parámetros de ordenamiento
+    order_by = request.GET.get('order_by', '-fecha_creacion').strip()
+    direction = request.GET.get('direction', 'desc').strip()
+    
+    # Campos válidos para ordenar
+    valid_order_fields = {
+        'id': 'id',
+        'fecha_creacion': 'fecha_creacion',
+        'fecha_evento': 'fecha_evento',
+        'total_reserva': 'total_reserva',
+        'estado': 'estado',
+        'cliente': 'cliente__usuario__last_name',
+    }
+    
+    # Validar campo de ordenamiento
+    if order_by.lstrip('-') not in valid_order_fields:
+        order_by = '-fecha_creacion'
+    
+    # Validar dirección
+    if direction not in ['asc', 'desc']:
+        direction = 'desc'
+    
+    # Aplicar ordenamiento
+    order_field = valid_order_fields.get(order_by.lstrip('-'), 'fecha_creacion')
+    if order_by.startswith('-'):
+        order_field = '-' + order_field
+    elif direction == 'desc':
+        order_field = '-' + order_field
+    
+    base_qs = Reserva.objects.all().select_related('cliente__usuario').prefetch_related('detalles__juego').order_by(order_field)
+    
+    if query:
+        base_qs = base_qs.filter(
+            Q(cliente__usuario__first_name__icontains=query) |
+            Q(cliente__usuario__last_name__icontains=query) |
+            Q(cliente__usuario__email__icontains=query) |
+            Q(direccion_evento__icontains=query) |
+            Q(id__icontains=query)
+        )
+    
+    if estado_filter:
+        base_qs = base_qs.filter(estado=estado_filter)
+    
+    if fecha_desde:
+        try:
+            from datetime import datetime
+            fecha_desde_obj = datetime.strptime(fecha_desde, '%Y-%m-%d').date()
+            base_qs = base_qs.filter(fecha_evento__gte=fecha_desde_obj)
+        except ValueError:
+            pass
+    
+    if fecha_hasta:
+        try:
+            from datetime import datetime
+            fecha_hasta_obj = datetime.strptime(fecha_hasta, '%Y-%m-%d').date()
+            base_qs = base_qs.filter(fecha_evento__lte=fecha_hasta_obj)
+        except ValueError:
+            pass
+
+    # Obtener clientes y juegos para los modales
+    clientes = Cliente.objects.select_related('usuario').all().order_by('usuario__last_name', 'usuario__first_name')
+    juegos_disponibles = Juego.objects.filter(estado='disponible').order_by('nombre')
+
+    return render(request, 'jio_app/arriendos_list.html', {
+        'arriendos': base_qs,
+        'query': query,
+        'estado_filter': estado_filter,
+        'fecha_desde': fecha_desde,
+        'fecha_hasta': fecha_hasta,
+        'order_by': order_by.lstrip('-'),
+        'direction': direction,
+        'estado_choices': Reserva.ESTADO_CHOICES,
+        'clientes': clientes,
+        'juegos_disponibles': juegos_disponibles,
+    })
+
+
+@login_required
+@require_http_methods(["GET"])
+def juegos_disponibles_fecha_json(request):
+    """
+    Obtiene los juegos disponibles para una fecha específica
+    Si se proporciona arriendo_id, excluye ese arriendo del cálculo (para edición)
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    fecha_str = request.GET.get('fecha', '').strip()
+    arriendo_id = request.GET.get('arriendo_id', '').strip()  # Para excluir el arriendo actual al editar
+    
+    if not fecha_str:
+        return JsonResponse({'error': 'Fecha requerida'}, status=400)
+    
+    try:
+        from datetime import datetime
+        fecha_obj = datetime.strptime(fecha_str, '%Y-%m-%d').date()
+    except ValueError:
+        return JsonResponse({'error': 'Formato de fecha inválido'}, status=400)
+    
+    # Obtener todos los juegos habilitados
+    todos_juegos = Juego.objects.filter(estado='disponible').order_by('nombre')
+    
+    # Obtener reservas confirmadas para esa fecha (excluyendo el arriendo actual si se está editando)
+    reservas_fecha = Reserva.objects.filter(
+        fecha_evento=fecha_obj,
+        estado__in=['Pendiente', 'Confirmada', 'confirmada']
+    )
+    
+    # Si se está editando, excluir el arriendo actual
+    if arriendo_id:
+        try:
+            reservas_fecha = reservas_fecha.exclude(id=int(arriendo_id))
+        except (ValueError, TypeError):
+            pass
+    
+    reservas_fecha = reservas_fecha.prefetch_related('detalles__juego')
+    
+    # Obtener IDs de juegos ocupados ese día
+    juegos_ocupados = set()
+    for reserva in reservas_fecha:
+        for detalle in reserva.detalles.all():
+            juegos_ocupados.add(detalle.juego.id)
+    
+    # Si se está editando, agregar los juegos del arriendo actual a disponibles
+    juegos_arriendo_actual = set()
+    if arriendo_id:
+        try:
+            reserva_actual = Reserva.objects.get(id=int(arriendo_id))
+            for detalle in reserva_actual.detalles.all():
+                juegos_arriendo_actual.add(detalle.juego.id)
+                # Remover de ocupados si están ahí (para que aparezcan disponibles)
+                juegos_ocupados.discard(detalle.juego.id)
+        except (Reserva.DoesNotExist, ValueError, TypeError):
+            pass
+    
+    # Filtrar juegos disponibles (no ocupados)
+    juegos_disponibles = todos_juegos.exclude(id__in=juegos_ocupados)
+    
+    juegos_data = []
+    for juego in juegos_disponibles:
+        juegos_data.append({
+            'id': juego.id,
+            'nombre': juego.nombre,
+            'precio': juego.precio_base,
+            'categoria': juego.get_categoria_display(),
+        })
+    
+    return JsonResponse({
+        'juegos': juegos_data,
+        'fecha': fecha_str,
+        'total_disponibles': len(juegos_data),
+    })
+
+
+@login_required
+@require_http_methods(["GET"])
+def arriendo_detail_json(request, arriendo_id: int):
+    """
+    Obtiene los detalles de un arriendo en formato JSON
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    try:
+        reserva = Reserva.objects.select_related('cliente__usuario').prefetch_related('detalles__juego').get(id=arriendo_id)
+        
+        detalles = []
+        for detalle in reserva.detalles.all():
+            detalles.append({
+                'juego_id': detalle.juego.id,
+                'juego_nombre': detalle.juego.nombre,
+                'cantidad': detalle.cantidad,
+                'precio_unitario': float(detalle.precio_unitario),
+                'subtotal': float(detalle.subtotal),
+            })
+        
+        return JsonResponse({
+            'id': reserva.id,
+            'cliente_id': reserva.cliente.id,
+            'cliente_nombre': reserva.cliente.usuario.get_full_name(),
+            'cliente_email': reserva.cliente.usuario.email,
+            'cliente_telefono': reserva.cliente.usuario.telefono or '',
+            'cliente_rut': reserva.cliente.rut,
+            'cliente_tipo': reserva.cliente.get_tipo_cliente_display(),
+            'fecha_evento': reserva.fecha_evento.strftime('%Y-%m-%d'),
+            'hora_instalacion': reserva.hora_instalacion.strftime('%H:%M'),
+            'hora_retiro': reserva.hora_retiro.strftime('%H:%M'),
+            'direccion_evento': reserva.direccion_evento,
+            'distancia_km': reserva.distancia_km,
+            'precio_distancia': float(reserva.precio_distancia),
+            'estado': reserva.estado,
+            'observaciones': reserva.observaciones or '',
+            'total_reserva': float(reserva.total_reserva),
+            'detalles': detalles,
+        })
+    except Reserva.DoesNotExist:
+        return JsonResponse({'error': 'Arriendo no encontrado'}, status=404)
+
+
+@login_required
+@require_http_methods(["POST"])
+def arriendo_create_json(request):
+    """
+    Crea un nuevo arriendo (reserva)
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+
+    # Datos del cliente (ingresados manualmente)
+    cliente_first_name = request.POST.get('cliente_first_name', '').strip()
+    cliente_last_name = request.POST.get('cliente_last_name', '').strip()
+    cliente_email = request.POST.get('cliente_email', '').strip()
+    cliente_telefono = request.POST.get('cliente_telefono', '').strip()
+    cliente_rut = request.POST.get('cliente_rut', '').strip()
+    cliente_tipo = request.POST.get('cliente_tipo', 'particular').strip()
+    
+    fecha_evento = request.POST.get('fecha_evento', '').strip()
+    hora_instalacion = request.POST.get('hora_instalacion', '').strip()
+    hora_retiro = request.POST.get('hora_retiro', '').strip()
+    direccion_evento = request.POST.get('direccion_evento', '').strip()
+    distancia_km = request.POST.get('distancia_km', '0').strip()
+    estado = request.POST.get('estado', 'Pendiente').strip()
+    observaciones = request.POST.get('observaciones', '').strip()
+    
+    # Detalles de juegos (JSON string)
+    juegos_json = request.POST.get('juegos', '[]')
+    
+    errors = []
+    
+    # Validaciones de cliente
+    if not all([cliente_first_name, cliente_last_name, cliente_email, cliente_rut]):
+        errors.append('Todos los datos del cliente son obligatorios')
+    
+    # Validar formato RUT
+    rut_regex = re.compile(r'^\d{7,8}-[\dkK]$')
+    if cliente_rut and not rut_regex.match(cliente_rut):
+        errors.append('El RUT debe tener el formato 12345678-9 o 1234567-K')
+    
+    # Validar email
+    email_regex = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
+    if cliente_email and not email_regex.match(cliente_email):
+        errors.append('Email inválido')
+    
+    if cliente_tipo not in ['particular', 'empresa']:
+        errors.append('Tipo de cliente inválido')
+    
+    # Buscar o crear cliente
+    cliente = None
+    if not errors:
+        try:
+            # Buscar por RUT (único) - Si existe, usar ese cliente directamente
+            cliente = Cliente.objects.get(rut=cliente_rut)
+            # Actualizar solo datos que no causen conflictos (no el email si ya existe en otro usuario)
+            # Solo actualizar si el email proporcionado es el mismo que tiene el cliente actual
+            if cliente.usuario.email == cliente_email:
+                # Si el email coincide, podemos actualizar otros campos
+                if cliente_first_name and cliente.usuario.first_name != cliente_first_name:
+                    cliente.usuario.first_name = cliente_first_name
+                if cliente_last_name and cliente.usuario.last_name != cliente_last_name:
+                    cliente.usuario.last_name = cliente_last_name
+                if cliente_telefono:
+                    cliente.usuario.telefono = cliente_telefono
+                cliente.usuario.save()
+            else:
+                # Si el email es diferente, verificar si podemos actualizarlo
+                # Solo actualizar si no existe otro usuario con ese email
+                if not Usuario.objects.filter(email=cliente_email).exclude(id=cliente.usuario.id).exists():
+                    # El email no existe en otro usuario, podemos actualizarlo
+                    cliente.usuario.email = cliente_email
+                    if cliente_first_name:
+                        cliente.usuario.first_name = cliente_first_name
+                    if cliente_last_name:
+                        cliente.usuario.last_name = cliente_last_name
+                    if cliente_telefono:
+                        cliente.usuario.telefono = cliente_telefono
+                    cliente.usuario.save()
+                else:
+                    # El email existe en otro usuario, solo actualizar otros campos
+                    if cliente_first_name:
+                        cliente.usuario.first_name = cliente_first_name
+                    if cliente_last_name:
+                        cliente.usuario.last_name = cliente_last_name
+                    if cliente_telefono:
+                        cliente.usuario.telefono = cliente_telefono
+                    cliente.usuario.save()
+        except Cliente.DoesNotExist:
+            # No existe cliente con ese RUT, verificar si el email ya existe
+            if Usuario.objects.filter(email=cliente_email).exists():
+                # El email ya existe, buscar si ese usuario tiene un cliente asociado
+                usuario_existente = Usuario.objects.get(email=cliente_email)
+                if hasattr(usuario_existente, 'cliente'):
+                    # Si el usuario tiene cliente, usar ese cliente directamente
+                    # No intentar cambiar el RUT ya que es único y podría causar conflictos
+                    cliente = usuario_existente.cliente
+                    # Actualizar solo datos no conflictivos
+                    if cliente_first_name:
+                        cliente.usuario.first_name = cliente_first_name
+                    if cliente_last_name:
+                        cliente.usuario.last_name = cliente_last_name
+                    if cliente_telefono:
+                        cliente.usuario.telefono = cliente_telefono
+                    cliente.usuario.save()
+                    # No actualizar el RUT ni el tipo_cliente para evitar conflictos
+                else:
+                    # El usuario existe pero no tiene cliente asociado
+                    # No crear cliente automáticamente, solo devolver error
+                    errors.append('Ya existe un usuario con ese email. Use el RUT correcto para ese cliente.')
+            else:
+                # El email no existe, crear nuevo cliente
+                try:
+                    # Verificar que el RUT no esté ya en uso
+                    if Cliente.objects.filter(rut=cliente_rut).exists():
+                        errors.append(f'Ya existe un cliente con el RUT {cliente_rut}')
+                    else:
+                        # Generar username único
+                        base_username = slugify(f"{cliente_first_name}_{cliente_last_name}")
+                        username = base_username
+                        counter = 1
+                        while Usuario.objects.filter(username=username).exists():
+                            username = f"{base_username}_{counter}"
+                            counter += 1
+                        
+                        # Crear usuario con password aleatorio
+                        random_password = secrets.token_urlsafe(12)
+                        usuario = Usuario.objects.create_user(
+                            username=username,
+                            email=cliente_email,
+                            password=random_password,
+                            first_name=cliente_first_name,
+                            last_name=cliente_last_name,
+                            tipo_usuario='cliente',
+                            is_active=True,
+                        )
+                        if cliente_telefono:
+                            usuario.telefono = cliente_telefono
+                            usuario.save(update_fields=['telefono'])
+                        
+                        cliente = Cliente.objects.create(
+                            usuario=usuario,
+                            rut=cliente_rut,
+                            tipo_cliente=cliente_tipo,
+                        )
+                except Exception as e:
+                    errors.append(f'Error al crear cliente: {str(e)}')
+    
+    if not fecha_evento:
+        errors.append('La fecha del evento es obligatoria')
+    else:
+        try:
+            from datetime import datetime
+            fecha_obj = datetime.strptime(fecha_evento, '%Y-%m-%d').date()
+        except ValueError:
+            errors.append('Formato de fecha inválido (use YYYY-MM-DD)')
+    
+    if not hora_instalacion:
+        errors.append('La hora de instalación es obligatoria')
+    else:
+        try:
+            hora_inst_obj = datetime.strptime(hora_instalacion, '%H:%M').time()
+        except ValueError:
+            errors.append('Formato de hora inválido (use HH:MM)')
+    
+    if not hora_retiro:
+        errors.append('La hora de retiro es obligatoria')
+    else:
+        try:
+            hora_ret_obj = datetime.strptime(hora_retiro, '%H:%M').time()
+        except ValueError:
+            errors.append('Formato de hora inválido (use HH:MM)')
+    
+    if not direccion_evento:
+        errors.append('La dirección del evento es obligatoria')
+    elif len(direccion_evento) > 300:
+        errors.append('La dirección no puede exceder 300 caracteres')
+    
+    # Validar distancia
+    distancia_km_int = 0
+    if distancia_km:
+        try:
+            distancia_km_int = int(distancia_km)
+            if distancia_km_int < 0:
+                errors.append('La distancia no puede ser negativa')
+        except ValueError:
+            errors.append('La distancia debe ser un número válido')
+    
+    # Calcular precio por distancia ($1.000 por km)
+    PRECIO_POR_KM = 1000
+    precio_distancia = distancia_km_int * PRECIO_POR_KM
+    
+    if estado not in [choice[0] for choice in Reserva.ESTADO_CHOICES]:
+        errors.append('Estado inválido')
+    
+    # Validar y procesar juegos
+    try:
+        import json
+        if isinstance(juegos_json, str):
+            juegos_data = json.loads(juegos_json)
+        else:
+            juegos_data = juegos_json
+        
+        if not juegos_data or len(juegos_data) == 0:
+            errors.append('Debe seleccionar al menos un juego')
+        
+        juegos_validos = []
+        total = 0
+        for juego_item in juegos_data:
+            juego_id = juego_item.get('juego_id') or juego_item.get('id')
+            
+            if not juego_id:
+                errors.append('Juego inválido en los detalles')
+                continue
+            
+            try:
+                juego = Juego.objects.get(id=int(juego_id))
+                # Verificar que el juego esté habilitado
+                if juego.estado != 'Habilitado':
+                    errors.append(f'Juego con ID {juego_id} no está habilitado (estado: {juego.estado})')
+                    continue
+                
+                # Cantidad siempre es 1
+                cantidad_int = 1
+                precio_unitario = juego.precio_base
+                subtotal = cantidad_int * precio_unitario
+                total += subtotal
+                
+                juegos_validos.append({
+                    'juego': juego,
+                    'cantidad': cantidad_int,
+                    'precio_unitario': precio_unitario,
+                    'subtotal': subtotal,
+                })
+            except (ValueError, Juego.DoesNotExist):
+                errors.append(f'Juego con ID {juego_id} no encontrado')
+    except json.JSONDecodeError:
+        errors.append('Formato de juegos inválido')
+    
+    if errors:
+        return JsonResponse({'success': False, 'errors': errors}, status=400)
+    
+    # Total incluye juegos + distancia
+    total_final = total + precio_distancia
+    
+    try:
+        reserva = Reserva.objects.create(
+            cliente=cliente,
+            fecha_evento=fecha_obj,
+            hora_instalacion=hora_inst_obj,
+            hora_retiro=hora_ret_obj,
+            direccion_evento=direccion_evento,
+            distancia_km=distancia_km_int,
+            precio_distancia=precio_distancia,
+            estado=estado,
+            observaciones=observaciones or None,
+            total_reserva=total_final,
+        )
+        
+        # Crear detalles de reserva
+        for juego_item in juegos_validos:
+            DetalleReserva.objects.create(
+                reserva=reserva,
+                juego=juego_item['juego'],
+                cantidad=juego_item['cantidad'],
+                precio_unitario=juego_item['precio_unitario'],
+                subtotal=juego_item['subtotal'],
+            )
+        
+        # Crear instalación automáticamente si no existe
+        try:
+            instalacion = Instalacion.objects.get(reserva=reserva)
+            # Actualizar si ya existe
+            instalacion.fecha_instalacion = fecha_obj
+            instalacion.hora_instalacion = hora_inst_obj
+            instalacion.direccion_instalacion = direccion_evento
+            if cliente.usuario.telefono:
+                instalacion.telefono_cliente = cliente.usuario.telefono
+            if observaciones:
+                instalacion.observaciones_instalacion = observaciones
+            instalacion.save()
+        except Instalacion.DoesNotExist:
+            Instalacion.objects.create(
+                reserva=reserva,
+                fecha_instalacion=fecha_obj,
+                hora_instalacion=hora_inst_obj,
+                direccion_instalacion=direccion_evento,
+                telefono_cliente=cliente.usuario.telefono or '',
+                estado_instalacion='programada',
+                observaciones_instalacion=observaciones or None,
+            )
+        
+        # Crear retiro automáticamente si no existe
+        try:
+            retiro = Retiro.objects.get(reserva=reserva)
+            # Actualizar si ya existe
+            retiro.fecha_retiro = fecha_obj
+            retiro.hora_retiro = hora_ret_obj
+            if observaciones:
+                retiro.observaciones_retiro = observaciones
+            retiro.save()
+        except Retiro.DoesNotExist:
+            Retiro.objects.create(
+                reserva=reserva,
+                fecha_retiro=fecha_obj,
+                hora_retiro=hora_ret_obj,
+                estado_retiro='programado',
+                observaciones_retiro=observaciones or None,
+            )
+        
+        return JsonResponse({
+            'success': True, 
+            'message': f'Arriendo #{reserva.id} creado correctamente.',
+            'arriendo_id': reserva.id
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False, 
+            'errors': [f'Error al crear el arriendo: {str(e)}']
+        }, status=500)
+
+
+@login_required
+@require_http_methods(["POST"])
+def arriendo_update_json(request, arriendo_id: int):
+    """
+    Actualiza un arriendo existente
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    try:
+        reserva = Reserva.objects.get(id=arriendo_id)
+    except Reserva.DoesNotExist:
+        return JsonResponse({'error': 'Arriendo no encontrado'}, status=404)
+    
+    cliente_id = request.POST.get('cliente_id', '').strip()
+    cliente_nombre = request.POST.get('cliente_nombre', '').strip()
+    cliente_apellido = request.POST.get('cliente_apellido', '').strip()
+    cliente_rut = request.POST.get('cliente_rut', '').strip()
+    cliente_email = request.POST.get('cliente_email', '').strip()
+    cliente_telefono = request.POST.get('cliente_telefono', '').strip()
+    cliente_tipo = request.POST.get('cliente_tipo', '').strip()
+    fecha_evento = request.POST.get('fecha_evento', '').strip()
+    hora_instalacion = request.POST.get('hora_instalacion', '').strip()
+    hora_retiro = request.POST.get('hora_retiro', '').strip()
+    direccion_evento = request.POST.get('direccion_evento', '').strip()
+    distancia_km = request.POST.get('distancia_km', '0').strip()
+    estado = request.POST.get('estado', '').strip()
+    observaciones = request.POST.get('observaciones', '').strip()
+    
+    # Detalles de juegos (JSON string)
+    juegos_json = request.POST.get('juegos', '[]')
+    
+    errors = []
+    
+    # Actualizar datos del cliente
+    if cliente_id:
+        try:
+            cliente = Cliente.objects.get(id=int(cliente_id))
+            reserva.cliente = cliente
+            
+            # Actualizar datos del cliente si se proporcionan
+            if cliente_nombre:
+                cliente.usuario.first_name = cliente_nombre
+            if cliente_apellido:
+                cliente.usuario.last_name = cliente_apellido
+            if cliente_email:
+                cliente.usuario.email = cliente_email
+            if cliente_telefono:
+                cliente.usuario.telefono = cliente_telefono
+            if cliente_rut:
+                cliente.rut = cliente_rut
+            if cliente_tipo:
+                cliente.tipo_cliente = cliente_tipo
+            
+            # Guardar cambios del usuario y cliente
+            cliente.usuario.save()
+            cliente.save()
+            
+        except (ValueError, Cliente.DoesNotExist):
+            errors.append('Cliente no válido')
+    
+    if fecha_evento:
+        try:
+            from datetime import datetime
+            reserva.fecha_evento = datetime.strptime(fecha_evento, '%Y-%m-%d').date()
+        except ValueError:
+            errors.append('Formato de fecha inválido (use YYYY-MM-DD)')
+    
+    if hora_instalacion:
+        try:
+            from datetime import datetime
+            reserva.hora_instalacion = datetime.strptime(hora_instalacion, '%H:%M').time()
+        except ValueError:
+            errors.append('Formato de hora inválido (use HH:MM)')
+    
+    if hora_retiro:
+        try:
+            from datetime import datetime
+            reserva.hora_retiro = datetime.strptime(hora_retiro, '%H:%M').time()
+        except ValueError:
+            errors.append('Formato de hora inválido (use HH:MM)')
+    
+    if direccion_evento:
+        if len(direccion_evento) > 300:
+            errors.append('La dirección no puede exceder 300 caracteres')
+        else:
+            reserva.direccion_evento = direccion_evento
+    
+    # Validar y actualizar distancia
+    if distancia_km:
+        try:
+            distancia_km_int = int(distancia_km)
+            if distancia_km_int < 0:
+                errors.append('La distancia no puede ser negativa')
+            else:
+                PRECIO_POR_KM = 1000
+                reserva.distancia_km = distancia_km_int
+                reserva.precio_distancia = distancia_km_int * PRECIO_POR_KM
+        except ValueError:
+            errors.append('La distancia debe ser un número válido')
+    
+    if estado:
+        if estado not in [choice[0] for choice in Reserva.ESTADO_CHOICES]:
+            errors.append('Estado inválido')
+        else:
+            reserva.estado = estado
+    
+    if observaciones is not None:
+        reserva.observaciones = observaciones.strip() or None
+    
+    # Validar y procesar juegos
+    try:
+        import json
+        if isinstance(juegos_json, str):
+            juegos_data = json.loads(juegos_json)
+        else:
+            juegos_data = juegos_json
+        
+        if juegos_data and len(juegos_data) > 0:
+            juegos_validos = []
+            total = 0
+            
+            for juego_item in juegos_data:
+                juego_id = juego_item.get('juego_id') or juego_item.get('id')
+                
+                if not juego_id:
+                    errors.append('Juego inválido en los detalles')
+                    continue
+                
+                try:
+                    juego = Juego.objects.get(id=int(juego_id))
+                    # Verificar que el juego esté habilitado
+                    if juego.estado != 'Habilitado':
+                        errors.append(f'Juego con ID {juego_id} no está habilitado (estado: {juego.estado})')
+                        continue
+                    
+                    # Cantidad siempre es 1
+                    cantidad_int = 1
+                    precio_unitario = juego.precio_base
+                    subtotal = cantidad_int * precio_unitario
+                    total += subtotal
+                    
+                    juegos_validos.append({
+                        'juego': juego,
+                        'cantidad': cantidad_int,
+                        'precio_unitario': precio_unitario,
+                        'subtotal': subtotal,
+                    })
+                except (ValueError, Juego.DoesNotExist):
+                    errors.append(f'Juego con ID {juego_id} no encontrado')
+            
+            if not errors:
+                # Eliminar detalles antiguos y crear nuevos
+                reserva.detalles.all().delete()
+                # Total incluye juegos + distancia
+                total_final = total + reserva.precio_distancia
+                reserva.total_reserva = total_final
+                
+                for juego_item in juegos_validos:
+                    DetalleReserva.objects.create(
+                        reserva=reserva,
+                        juego=juego_item['juego'],
+                        cantidad=juego_item['cantidad'],
+                        precio_unitario=juego_item['precio_unitario'],
+                        subtotal=juego_item['subtotal'],
+                    )
+    except json.JSONDecodeError:
+        errors.append('Formato de juegos inválido')
+    
+    if errors:
+        return JsonResponse({'success': False, 'errors': errors}, status=400)
+    
+    try:
+        reserva.save()
+        
+        # Actualizar o crear instalación
+        try:
+            instalacion = Instalacion.objects.get(reserva=reserva)
+            # Actualizar si ya existe
+            if fecha_evento:
+                from datetime import datetime
+                fecha_obj = datetime.strptime(fecha_evento, '%Y-%m-%d').date()
+                instalacion.fecha_instalacion = fecha_obj
+            if hora_instalacion:
+                from datetime import datetime
+                hora_inst_obj = datetime.strptime(hora_instalacion, '%H:%M').time()
+                instalacion.hora_instalacion = hora_inst_obj
+            if direccion_evento:
+                instalacion.direccion_instalacion = direccion_evento
+            if cliente_telefono:
+                instalacion.telefono_cliente = cliente_telefono
+            if observaciones is not None:
+                instalacion.observaciones_instalacion = observaciones.strip() or None
+            instalacion.save()
+        except Instalacion.DoesNotExist:
+            # Crear instalación si no existe
+            from datetime import datetime
+            fecha_obj_inst = datetime.strptime(fecha_evento, '%Y-%m-%d').date() if fecha_evento else reserva.fecha_evento
+            hora_inst_obj_inst = datetime.strptime(hora_instalacion, '%H:%M').time() if hora_instalacion else reserva.hora_instalacion
+            direccion_inst = direccion_evento if direccion_evento else reserva.direccion_evento
+            telefono_inst = cliente_telefono if cliente_telefono else (reserva.cliente.usuario.telefono or '')
+            
+            Instalacion.objects.create(
+                reserva=reserva,
+                fecha_instalacion=fecha_obj_inst,
+                hora_instalacion=hora_inst_obj_inst,
+                direccion_instalacion=direccion_inst,
+                telefono_cliente=telefono_inst,
+                estado_instalacion='programada',
+                observaciones_instalacion=observaciones.strip() if observaciones else None,
+            )
+        
+        # Actualizar o crear retiro
+        try:
+            retiro = Retiro.objects.get(reserva=reserva)
+            # Actualizar si ya existe
+            if fecha_evento:
+                from datetime import datetime
+                fecha_obj = datetime.strptime(fecha_evento, '%Y-%m-%d').date()
+                retiro.fecha_retiro = fecha_obj
+            if hora_retiro:
+                from datetime import datetime
+                hora_ret_obj = datetime.strptime(hora_retiro, '%H:%M').time()
+                retiro.hora_retiro = hora_ret_obj
+            if observaciones is not None:
+                retiro.observaciones_retiro = observaciones.strip() or None
+            retiro.save()
+        except Retiro.DoesNotExist:
+            # Crear retiro si no existe
+            from datetime import datetime
+            fecha_obj_ret = datetime.strptime(fecha_evento, '%Y-%m-%d').date() if fecha_evento else reserva.fecha_evento
+            hora_ret_obj_ret = datetime.strptime(hora_retiro, '%H:%M').time() if hora_retiro else reserva.hora_retiro
+            
+            Retiro.objects.create(
+                reserva=reserva,
+                fecha_retiro=fecha_obj_ret,
+                hora_retiro=hora_ret_obj_ret,
+                estado_retiro='programado',
+                observaciones_retiro=observaciones.strip() if observaciones else None,
+            )
+        
+        return JsonResponse({
+            'success': True, 
+            'message': f'Arriendo #{reserva.id} actualizado correctamente.',
+            'arriendo_id': reserva.id
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False, 
+            'errors': [f'Error al actualizar el arriendo: {str(e)}']
+        }, status=500)
+
+
+@login_required
+@require_http_methods(["POST"])
+def arriendo_delete_json(request, arriendo_id: int):
+    """
+    Elimina un arriendo (reserva)
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    try:
+        reserva = Reserva.objects.get(id=arriendo_id)
+    except Reserva.DoesNotExist:
+        return JsonResponse({'error': 'Arriendo no encontrado'}, status=404)
+
+    try:
+        arriendo_id_str = str(reserva.id)
+        reserva.delete()
+        return JsonResponse({
+            'success': True, 
+            'message': f'Arriendo #{arriendo_id_str} eliminado correctamente.'
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False, 
+            'errors': [f'Error al eliminar el arriendo: {str(e)}']
         }, status=500)
