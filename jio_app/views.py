@@ -1292,18 +1292,55 @@ def repartos_list(request):
     if request.user.tipo_usuario != 'administrador':
         raise PermissionDenied("Solo los administradores pueden acceder a este recurso.")
 
+    # Obtener fecha base
+    from datetime import date, timedelta, datetime
+    from calendar import monthrange
+    from django.utils import timezone
+    
+    fecha_hoy = date.today()
+    
+    # Cancelar automáticamente instalaciones fuera de fecha que no están realizadas ni canceladas
+    instalaciones_vencidas = Instalacion.objects.filter(
+        fecha_instalacion__lt=fecha_hoy,
+        estado_instalacion__in=['programada', 'pendiente']
+    )
+    count_instalaciones_canceladas = 0
+    for instalacion in instalaciones_vencidas:
+        obs_actual = instalacion.observaciones_instalacion or ''
+        nueva_obs = f"[{timezone.now().strftime('%d/%m/%Y %H:%M')}] Cancelada automáticamente por estar fuera de fecha y no haber sido realizada."
+        instalacion.observaciones_instalacion = f"{obs_actual}\n{nueva_obs}".strip() if obs_actual else nueva_obs
+        instalacion.estado_instalacion = 'cancelada'
+        instalacion.save()
+        count_instalaciones_canceladas += 1
+    
+    # Cancelar automáticamente retiros fuera de fecha que no están realizados ni cancelados
+    retiros_vencidos = Retiro.objects.filter(
+        fecha_retiro__lt=fecha_hoy,
+        estado_retiro__in=['programado', 'pendiente']
+    )
+    count_retiros_cancelados = 0
+    for retiro in retiros_vencidos:
+        obs_actual = retiro.observaciones_retiro or ''
+        nueva_obs = f"[{timezone.now().strftime('%d/%m/%Y %H:%M')}] Cancelado automáticamente por estar fuera de fecha y no haber sido realizado."
+        retiro.observaciones_retiro = f"{obs_actual}\n{nueva_obs}".strip() if obs_actual else nueva_obs
+        retiro.estado_retiro = 'cancelado'
+        retiro.save()
+        count_retiros_cancelados += 1
+
     query = request.GET.get('q', '').strip()
     estado_filter = request.GET.get('estado', '').strip()
+    
+    # Parámetros de ordenamiento para instalaciones
+    order_by_inst = request.GET.get('order_by_inst', 'fecha_instalacion').strip()
+    direction_inst = request.GET.get('direction_inst', 'asc').strip()
+    
+    # Parámetros de ordenamiento para retiros
+    order_by_ret = request.GET.get('order_by_ret', 'fecha_retiro').strip()
+    direction_ret = request.GET.get('direction_ret', 'asc').strip()
     
     # Obtener parámetros de vista
     vista = request.GET.get('vista', 'diaria').strip()  # diaria, semanal, mensual
     fecha_seleccionada = request.GET.get('fecha', '').strip()
-    
-    # Obtener fecha base
-    from datetime import date, timedelta, datetime
-    from calendar import monthrange
-    
-    fecha_hoy = date.today()
     
     # Determinar rango de fechas según la vista
     if fecha_seleccionada:
@@ -1337,7 +1374,29 @@ def repartos_list(request):
     # Filtrar instalaciones
     instalaciones_qs = Instalacion.objects.select_related(
         'reserva__cliente__usuario', 'repartidor__usuario'
-    ).order_by('fecha_instalacion', 'hora_instalacion')
+    )
+    
+    # Campos válidos para ordenar instalaciones
+    valid_order_fields_inst = {
+        'id': 'id',
+        'fecha_instalacion': 'fecha_instalacion',
+        'hora_instalacion': 'hora_instalacion',
+        'cliente': 'reserva__cliente__usuario__last_name',
+        'direccion': 'direccion_instalacion',
+        'estado': 'estado_instalacion',
+    }
+    
+    # Validar y aplicar ordenamiento de instalaciones
+    if order_by_inst not in valid_order_fields_inst:
+        order_by_inst = 'fecha_instalacion'
+    if direction_inst not in ['asc', 'desc']:
+        direction_inst = 'asc'
+    
+    order_field_inst = valid_order_fields_inst[order_by_inst]
+    if direction_inst == 'desc':
+        order_field_inst = '-' + order_field_inst
+    
+    instalaciones_qs = instalaciones_qs.order_by(order_field_inst)
     
     if query:
         instalaciones_qs = instalaciones_qs.filter(
@@ -1354,7 +1413,29 @@ def repartos_list(request):
     # Filtrar retiros
     retiros_qs = Retiro.objects.select_related(
         'reserva__cliente__usuario', 'repartidor__usuario'
-    ).order_by('fecha_retiro', 'hora_retiro')
+    )
+    
+    # Campos válidos para ordenar retiros
+    valid_order_fields_ret = {
+        'id': 'id',
+        'fecha_retiro': 'fecha_retiro',
+        'hora_retiro': 'hora_retiro',
+        'cliente': 'reserva__cliente__usuario__last_name',
+        'direccion': 'reserva__direccion_evento',
+        'estado': 'estado_retiro',
+    }
+    
+    # Validar y aplicar ordenamiento de retiros
+    if order_by_ret not in valid_order_fields_ret:
+        order_by_ret = 'fecha_retiro'
+    if direction_ret not in ['asc', 'desc']:
+        direction_ret = 'asc'
+    
+    order_field_ret = valid_order_fields_ret[order_by_ret]
+    if direction_ret == 'desc':
+        order_field_ret = '-' + order_field_ret
+    
+    retiros_qs = retiros_qs.order_by(order_field_ret)
     
     if query:
         retiros_qs = retiros_qs.filter(
@@ -1401,6 +1482,10 @@ def repartos_list(request):
         'fecha_inicio': fecha_inicio,
         'fecha_fin': fecha_fin,
         'fecha_hoy': fecha_hoy,
+        'order_by_inst': order_by_inst,
+        'direction_inst': direction_inst,
+        'order_by_ret': order_by_ret,
+        'direction_ret': direction_ret,
         'instalaciones': instalaciones_qs[:50],  # Limitar resultados
         'retiros': retiros_qs[:50],
         'instalaciones_agenda': instalaciones_agenda,
@@ -2742,7 +2827,7 @@ def estadisticas(request):
     if not request.user.tipo_usuario == 'administrador':
         raise PermissionDenied("Solo los administradores pueden acceder a este recurso.")
     
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, date
     from collections import defaultdict
     import json
     from calendar import monthrange
@@ -2778,29 +2863,65 @@ def estadisticas(request):
         Q(estado='Confirmada') | Q(estado='confirmada') | Q(estado='completada')
     ).select_related('cliente__usuario').prefetch_related('detalles__juego')
     
-    # ========== VENTAS SEMANALES ==========
+    # ========== VENTAS ==========
+    # Obtener parámetros para ventas
+    ventas_periodo = request.GET.get('ventas_periodo', 'weekly').strip()
+    ventas_semana = request.GET.get('ventas_semana', '').strip()
+    ventas_mes = request.GET.get('ventas_mes', '').strip()
+    ventas_año = request.GET.get('ventas_año', '').strip()
+    
+    # Ventas semanales - Últimas 8 semanas o semana específica
     ventas_semanales = defaultdict(float)
     ventas_semanales_labels = []
     
-    # Últimas 8 semanas
-    for i in range(7, -1, -1):
-        semana_inicio = hoy - timedelta(days=hoy.weekday() + (i * 7))
-        semana_fin = semana_inicio + timedelta(days=6)
-        semana_key = semana_inicio.strftime('%d/%m')
+    if ventas_semana:
+        try:
+            if 'W' in ventas_semana:
+                año_semana, semana_num = ventas_semana.split('-W')
+                año_semana = int(año_semana)
+                semana_num = int(semana_num)
+                fecha_base = date(año_semana, 1, 4)
+                lunes_semana1 = fecha_base - timedelta(days=fecha_base.weekday())
+                semana_inicio = lunes_semana1 + timedelta(weeks=semana_num - 1)
+                semana_fin = semana_inicio + timedelta(days=6)
+            else:
+                fecha_semana = datetime.strptime(ventas_semana, '%Y-%m-%d').date()
+                semana_inicio = fecha_semana - timedelta(days=fecha_semana.weekday())
+                semana_fin = semana_inicio + timedelta(days=6)
+            semana_inicio_str = semana_inicio.strftime('%d/%m/%Y')
+            semana_fin_str = semana_fin.strftime('%d/%m/%Y')
+            semanas_a_mostrar = [(semana_inicio + timedelta(days=i)) for i in range(7)]
+        except:
+            semana_inicio = hoy - timedelta(days=hoy.weekday())
+            semana_fin = semana_inicio + timedelta(days=6)
+            semana_inicio_str = semana_inicio.strftime('%d/%m/%Y')
+            semana_fin_str = semana_fin.strftime('%d/%m/%Y')
+            semanas_a_mostrar = [(hoy - timedelta(days=hoy.weekday() + (i * 7))) for i in range(7, -1, -1)]
+    else:
+        # Últimas 8 semanas
+        semana_inicio = hoy - timedelta(days=hoy.weekday() + (7 * 7))
+        semana_fin = hoy
+        semana_inicio_str = semana_inicio.strftime('%d/%m/%Y')
+        semana_fin_str = semana_fin.strftime('%d/%m/%Y')
+        semanas_a_mostrar = [(hoy - timedelta(days=hoy.weekday() + (i * 7))) for i in range(7, -1, -1)]
+    
+    for semana_inicio_item in semanas_a_mostrar:
+        semana_fin_item = semana_inicio_item + timedelta(days=6)
+        semana_key = semana_inicio_item.strftime('%d/%m')
         
         total_semana = reservas.filter(
-            fecha_evento__gte=semana_inicio,
-            fecha_evento__lte=semana_fin
+            fecha_evento__gte=semana_inicio_item,
+            fecha_evento__lte=semana_fin_item
         ).aggregate(total=Sum('total_reserva'))['total'] or 0
         
         ventas_semanales[semana_key] = float(total_semana)
         ventas_semanales_labels.append(semana_key)
     
     ventas_semanales_data = [ventas_semanales[label] for label in ventas_semanales_labels]
+    ventas_semanales_rango = f"{semana_inicio_str} - {semana_fin_str}"
     
-    # ========== VENTAS MENSUALES ==========
-    # Mapeo de meses en español
-    meses_espanol = {
+    # Ventas mensuales - Últimos 12 meses o mes específico
+    meses_espanol_short = {
         1: 'Ene', 2: 'Feb', 3: 'Mar', 4: 'Abr', 5: 'May', 6: 'Jun',
         7: 'Jul', 8: 'Ago', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dic'
     }
@@ -2808,13 +2929,37 @@ def estadisticas(request):
     ventas_mensuales = defaultdict(float)
     ventas_mensuales_labels = []
     
-    # Últimos 12 meses
-    for i in range(11, -1, -1):
-        fecha = hoy - timedelta(days=i * 30)
-        mes_nombre = meses_espanol[fecha.month]
+    if ventas_mes and ventas_año:
+        try:
+            mes_num = int(ventas_mes)
+            año_num = int(ventas_año)
+            if 1 <= mes_num <= 12:
+                fecha_inicio = date(año_num, mes_num, 1)
+                ultimo_dia_num = monthrange(año_num, mes_num)[1]
+                fecha_fin = date(año_num, mes_num, ultimo_dia_num)
+                fecha_inicio_str = fecha_inicio.strftime('%d/%m/%Y')
+                fecha_fin_str = fecha_fin.strftime('%d/%m/%Y')
+                meses_a_mostrar = [fecha_inicio]
+            else:
+                raise ValueError
+        except:
+            fecha_inicio = hoy - timedelta(days=330)
+            fecha_fin = hoy
+            fecha_inicio_str = fecha_inicio.strftime('%d/%m/%Y')
+            fecha_fin_str = fecha_fin.strftime('%d/%m/%Y')
+            meses_a_mostrar = [(hoy - timedelta(days=i * 30)) for i in range(11, -1, -1)]
+    else:
+        # Últimos 12 meses
+        fecha_inicio = hoy - timedelta(days=330)
+        fecha_fin = hoy
+        fecha_inicio_str = fecha_inicio.strftime('%d/%m/%Y')
+        fecha_fin_str = fecha_fin.strftime('%d/%m/%Y')
+        meses_a_mostrar = [(hoy - timedelta(days=i * 30)) for i in range(11, -1, -1)]
+    
+    for fecha in meses_a_mostrar:
+        mes_nombre = meses_espanol_short[fecha.month]
         mes_key = f'{mes_nombre} {fecha.year}'
         
-        # Filtrar reservas del mes
         total_mes = reservas.filter(
             fecha_evento__year=fecha.year,
             fecha_evento__month=fecha.month
@@ -2824,15 +2969,37 @@ def estadisticas(request):
         ventas_mensuales_labels.append(mes_key)
     
     ventas_mensuales_data = [ventas_mensuales[label] for label in ventas_mensuales_labels]
+    ventas_mensuales_rango = f"{fecha_inicio_str} - {fecha_fin_str}"
     
-    # ========== VENTAS ANUALES ==========
+    # Ventas anuales - Últimos 5 años o año específico
     ventas_anuales = defaultdict(float)
     ventas_anuales_labels = []
     
-    # Últimos 5 años
-    año_actual = hoy.year
-    for i in range(4, -1, -1):
-        año = año_actual - i
+    if ventas_año and not ventas_mes:
+        try:
+            año_num = int(ventas_año)
+            año_inicio = date(año_num, 1, 1)
+            año_fin = date(año_num, 12, 31)
+            año_inicio_str = año_inicio.strftime('%d/%m/%Y')
+            año_fin_str = año_fin.strftime('%d/%m/%Y')
+            años_a_mostrar = [año_num]
+        except:
+            año_actual = hoy.year
+            años_a_mostrar = [(año_actual - i) for i in range(4, -1, -1)]
+            año_inicio = date(años_a_mostrar[0], 1, 1)
+            año_fin = date(años_a_mostrar[-1], 12, 31)
+            año_inicio_str = año_inicio.strftime('%d/%m/%Y')
+            año_fin_str = año_fin.strftime('%d/%m/%Y')
+    else:
+        # Últimos 5 años
+        año_actual = hoy.year
+        años_a_mostrar = [(año_actual - i) for i in range(4, -1, -1)]
+        año_inicio = date(años_a_mostrar[0], 1, 1)
+        año_fin = date(años_a_mostrar[-1], 12, 31)
+        año_inicio_str = año_inicio.strftime('%d/%m/%Y')
+        año_fin_str = año_fin.strftime('%d/%m/%Y')
+    
+    for año in años_a_mostrar:
         año_key = str(año)
         
         total_año = reservas.filter(
@@ -2843,6 +3010,7 @@ def estadisticas(request):
         ventas_anuales_labels.append(año_key)
     
     ventas_anuales_data = [ventas_anuales[label] for label in ventas_anuales_labels]
+    ventas_anuales_rango = f"{año_inicio_str} - {año_fin_str}"
     
     # ========== VENTAS POR CATEGORÍA ==========
     # Obtener categorías ordenadas según el modelo
@@ -2857,6 +3025,13 @@ def estadisticas(request):
     for cat in categorias_db:
         if cat not in categorias_unicas:
             categorias_unicas.append(cat)
+    
+    # ========== VENTAS POR CATEGORÍA ==========
+    # Obtener parámetros para ventas por categoría
+    categoria_periodo = request.GET.get('categoria_periodo', 'weekly').strip()
+    categoria_semana = request.GET.get('categoria_semana', '').strip()
+    categoria_mes = request.GET.get('categoria_mes', '').strip()
+    categoria_año = request.GET.get('categoria_año', '').strip()
     
     # Ventas por categoría - DIARIAS (últimos 7 días)
     ventas_categoria_diarias = defaultdict(lambda: defaultdict(float))
@@ -2877,13 +3052,39 @@ def estadisticas(request):
         else:
             ventas_categoria_diarias_data.append(0)
     
-    # Ventas por categoría - SEMANALES (últimas 4 semanas)
+    # Ventas por categoría - SEMANALES (últimas 4 semanas o semana específica)
     ventas_categoria_semanales = defaultdict(float)
-    semana_inicio = hoy - timedelta(days=hoy.weekday() + (3 * 7))
-    semana_fin = hoy
-    reservas_semana = reservas.filter(fecha_evento__gte=semana_inicio, fecha_evento__lte=semana_fin)
+    if categoria_semana:
+        try:
+            if 'W' in categoria_semana:
+                año_semana, semana_num = categoria_semana.split('-W')
+                año_semana = int(año_semana)
+                semana_num = int(semana_num)
+                fecha_base = date(año_semana, 1, 4)
+                lunes_semana1 = fecha_base - timedelta(days=fecha_base.weekday())
+                semana_inicio_cat = lunes_semana1 + timedelta(weeks=semana_num - 1)
+                semana_fin_cat = semana_inicio_cat + timedelta(days=6)
+            else:
+                fecha_semana = datetime.strptime(categoria_semana, '%Y-%m-%d').date()
+                semana_inicio_cat = fecha_semana - timedelta(days=fecha_semana.weekday())
+                semana_fin_cat = semana_inicio_cat + timedelta(days=6)
+            semana_inicio_cat_str = semana_inicio_cat.strftime('%d/%m/%Y')
+            semana_fin_cat_str = semana_fin_cat.strftime('%d/%m/%Y')
+        except:
+            semana_inicio_cat = hoy - timedelta(days=hoy.weekday() + (3 * 7))
+            semana_fin_cat = hoy
+            semana_inicio_cat_str = semana_inicio_cat.strftime('%d/%m/%Y')
+            semana_fin_cat_str = semana_fin_cat.strftime('%d/%m/%Y')
+    else:
+        # Últimas 4 semanas
+        semana_inicio_cat = hoy - timedelta(days=hoy.weekday() + (3 * 7))
+        semana_fin_cat = hoy
+        semana_inicio_cat_str = semana_inicio_cat.strftime('%d/%m/%Y')
+        semana_fin_cat_str = semana_fin_cat.strftime('%d/%m/%Y')
     
-    for reserva in reservas_semana:
+    reservas_semana_cat = reservas.filter(fecha_evento__gte=semana_inicio_cat, fecha_evento__lte=semana_fin_cat)
+    
+    for reserva in reservas_semana_cat:
         for detalle in reserva.detalles.all():
             categoria = detalle.juego.categoria
             ventas_categoria_semanales[categoria] += float(detalle.subtotal)
@@ -2891,13 +3092,37 @@ def estadisticas(request):
     ventas_categoria_semanales_data = [
         ventas_categoria_semanales.get(cat, 0) for cat in categorias_unicas
     ]
+    ventas_categoria_semanales_rango = f"{semana_inicio_cat_str} - {semana_fin_cat_str}"
     
-    # Ventas por categoría - MENSUALES (últimos 6 meses)
+    # Ventas por categoría - MENSUALES (últimos 6 meses o mes específico)
     ventas_categoria_mensuales = defaultdict(float)
-    fecha_inicio = hoy - timedelta(days=180)
-    reservas_mes = reservas.filter(fecha_evento__gte=fecha_inicio)
+    if categoria_mes and categoria_año:
+        try:
+            mes_num = int(categoria_mes)
+            año_num = int(categoria_año)
+            if 1 <= mes_num <= 12:
+                fecha_inicio_cat = date(año_num, mes_num, 1)
+                ultimo_dia_num = monthrange(año_num, mes_num)[1]
+                fecha_fin_cat = date(año_num, mes_num, ultimo_dia_num)
+                fecha_inicio_cat_str = fecha_inicio_cat.strftime('%d/%m/%Y')
+                fecha_fin_cat_str = fecha_fin_cat.strftime('%d/%m/%Y')
+            else:
+                raise ValueError
+        except:
+            fecha_inicio_cat = hoy - timedelta(days=180)
+            fecha_fin_cat = hoy
+            fecha_inicio_cat_str = fecha_inicio_cat.strftime('%d/%m/%Y')
+            fecha_fin_cat_str = fecha_fin_cat.strftime('%d/%m/%Y')
+    else:
+        # Últimos 6 meses
+        fecha_inicio_cat = hoy - timedelta(days=180)
+        fecha_fin_cat = hoy
+        fecha_inicio_cat_str = fecha_inicio_cat.strftime('%d/%m/%Y')
+        fecha_fin_cat_str = fecha_fin_cat.strftime('%d/%m/%Y')
     
-    for reserva in reservas_mes:
+    reservas_mes_cat = reservas.filter(fecha_evento__gte=fecha_inicio_cat, fecha_evento__lte=fecha_fin_cat)
+    
+    for reserva in reservas_mes_cat:
         for detalle in reserva.detalles.all():
             categoria = detalle.juego.categoria
             ventas_categoria_mensuales[categoria] += float(detalle.subtotal)
@@ -2905,13 +3130,32 @@ def estadisticas(request):
     ventas_categoria_mensuales_data = [
         ventas_categoria_mensuales.get(cat, 0) for cat in categorias_unicas
     ]
+    ventas_categoria_mensuales_rango = f"{fecha_inicio_cat_str} - {fecha_fin_cat_str}"
     
-    # Ventas por categoría - ANUALES (último año)
+    # Ventas por categoría - ANUALES (último año o año específico)
     ventas_categoria_anuales = defaultdict(float)
-    año_inicio = hoy - timedelta(days=365)
-    reservas_año = reservas.filter(fecha_evento__gte=año_inicio)
+    if categoria_año and not categoria_mes:
+        try:
+            año_num = int(categoria_año)
+            año_inicio_cat = date(año_num, 1, 1)
+            año_fin_cat = date(año_num, 12, 31)
+            año_inicio_cat_str = año_inicio_cat.strftime('%d/%m/%Y')
+            año_fin_cat_str = año_fin_cat.strftime('%d/%m/%Y')
+        except:
+            año_inicio_cat = hoy - timedelta(days=365)
+            año_fin_cat = hoy
+            año_inicio_cat_str = año_inicio_cat.strftime('%d/%m/%Y')
+            año_fin_cat_str = año_fin_cat.strftime('%d/%m/%Y')
+    else:
+        # Último año
+        año_inicio_cat = hoy - timedelta(days=365)
+        año_fin_cat = hoy
+        año_inicio_cat_str = año_inicio_cat.strftime('%d/%m/%Y')
+        año_fin_cat_str = año_fin_cat.strftime('%d/%m/%Y')
     
-    for reserva in reservas_año:
+    reservas_año_cat = reservas.filter(fecha_evento__gte=año_inicio_cat, fecha_evento__lte=año_fin_cat)
+    
+    for reserva in reservas_año_cat:
         for detalle in reserva.detalles.all():
             categoria = detalle.juego.categoria
             ventas_categoria_anuales[categoria] += float(detalle.subtotal)
@@ -2919,14 +3163,55 @@ def estadisticas(request):
     ventas_categoria_anuales_data = [
         ventas_categoria_anuales.get(cat, 0) for cat in categorias_unicas
     ]
+    ventas_categoria_anuales_rango = f"{año_inicio_cat_str} - {año_fin_cat_str}"
     
     # ========== DÍAS CON MAYOR DEMANDA ==========
     dias_semana_nombres = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
     
-    # Semanal - Últimas 4 semanas
+    # Obtener parámetros para días con mayor demanda
+    demanda_periodo = request.GET.get('demanda_periodo', 'weekly').strip()
+    demanda_semana = request.GET.get('demanda_semana', '').strip()
+    demanda_mes = request.GET.get('demanda_mes', '').strip()
+    demanda_año = request.GET.get('demanda_año', '').strip()
+    
+    # Semanal - Últimas 4 semanas o semana específica
     demanda_semanal = defaultdict(int)
-    semana_inicio = hoy - timedelta(days=hoy.weekday() + (3 * 7))
-    reservas_semana_dias = reservas.filter(fecha_evento__gte=semana_inicio, fecha_evento__lte=hoy)
+    if demanda_semana:
+        try:
+            # Formato input type="week" es "YYYY-Www" (ej: "2024-W15")
+            if 'W' in demanda_semana:
+                año_semana, semana_num = demanda_semana.split('-W')
+                año_semana = int(año_semana)
+                semana_num = int(semana_num)
+                # Calcular el primer día de la semana ISO (lunes)
+                # 4 de enero siempre está en la semana 1
+                fecha_base = date(año_semana, 1, 4)
+                # Obtener el lunes de la semana 1
+                lunes_semana1 = fecha_base - timedelta(days=fecha_base.weekday())
+                # Calcular el lunes de la semana solicitada
+                semana_inicio = lunes_semana1 + timedelta(weeks=semana_num - 1)
+                semana_fin = semana_inicio + timedelta(days=6)
+            else:
+                # Si no es formato semana, usar fecha directa
+                fecha_semana = datetime.strptime(demanda_semana, '%Y-%m-%d').date()
+                semana_inicio = fecha_semana - timedelta(days=fecha_semana.weekday())
+                semana_fin = semana_inicio + timedelta(days=6)
+            semana_inicio_str = semana_inicio.strftime('%d/%m/%Y')
+            semana_fin_str = semana_fin.strftime('%d/%m/%Y')
+        except Exception as e:
+            # Si hay error, usar última semana
+            semana_inicio = hoy - timedelta(days=hoy.weekday())
+            semana_fin = semana_inicio + timedelta(days=6)
+            semana_inicio_str = semana_inicio.strftime('%d/%m/%Y')
+            semana_fin_str = semana_fin.strftime('%d/%m/%Y')
+    else:
+        # Últimas 4 semanas desde hoy (rango acumulado)
+        semana_inicio = hoy - timedelta(days=hoy.weekday() + (3 * 7))
+        semana_fin = hoy
+        semana_inicio_str = semana_inicio.strftime('%d/%m/%Y')
+        semana_fin_str = semana_fin.strftime('%d/%m/%Y')
+    
+    reservas_semana_dias = reservas.filter(fecha_evento__gte=semana_inicio, fecha_evento__lte=semana_fin)
     
     for reserva in reservas_semana_dias:
         dia_semana = reserva.fecha_evento.weekday()
@@ -2934,11 +3219,35 @@ def estadisticas(request):
     
     dias_semana_semanales_labels = dias_semana_nombres
     dias_semana_semanales_data = [demanda_semanal.get(dia, 0) for dia in dias_semana_nombres]
+    dias_semana_semanales_rango = f"{semana_inicio_str} - {semana_fin_str}"
     
-    # Mensual - Últimos 3 meses
+    # Mensual - Mes específico o últimos 3 meses
     demanda_mensual = defaultdict(int)
-    fecha_inicio = hoy - timedelta(days=90)
-    reservas_mes_dias = reservas.filter(fecha_evento__gte=fecha_inicio)
+    if demanda_mes and demanda_año:
+        try:
+            mes_num = int(demanda_mes)
+            año_num = int(demanda_año)
+            if 1 <= mes_num <= 12:
+                fecha_inicio = date(año_num, mes_num, 1)
+                ultimo_dia_num = monthrange(año_num, mes_num)[1]
+                fecha_fin = date(año_num, mes_num, ultimo_dia_num)
+                fecha_inicio_str = fecha_inicio.strftime('%d/%m/%Y')
+                fecha_fin_str = fecha_fin.strftime('%d/%m/%Y')
+            else:
+                raise ValueError
+        except:
+            fecha_inicio = hoy - timedelta(days=90)
+            fecha_fin = hoy
+            fecha_inicio_str = fecha_inicio.strftime('%d/%m/%Y')
+            fecha_fin_str = fecha_fin.strftime('%d/%m/%Y')
+    else:
+        # Últimos 3 meses
+        fecha_inicio = hoy - timedelta(days=90)
+        fecha_fin = hoy
+        fecha_inicio_str = fecha_inicio.strftime('%d/%m/%Y')
+        fecha_fin_str = fecha_fin.strftime('%d/%m/%Y')
+    
+    reservas_mes_dias = reservas.filter(fecha_evento__gte=fecha_inicio, fecha_evento__lte=fecha_fin)
     
     for reserva in reservas_mes_dias:
         dia_semana = reserva.fecha_evento.weekday()
@@ -2946,11 +3255,30 @@ def estadisticas(request):
     
     dias_semana_mensuales_labels = dias_semana_nombres
     dias_semana_mensuales_data = [demanda_mensual.get(dia, 0) for dia in dias_semana_nombres]
+    dias_semana_mensuales_rango = f"{fecha_inicio_str} - {fecha_fin_str}"
     
-    # Anual - Último año
+    # Anual - Año específico o último año
     demanda_anual = defaultdict(int)
-    año_inicio = hoy - timedelta(days=365)
-    reservas_año_dias = reservas.filter(fecha_evento__gte=año_inicio)
+    if demanda_año and not demanda_mes:
+        try:
+            año_num = int(demanda_año)
+            año_inicio = date(año_num, 1, 1)
+            año_fin = date(año_num, 12, 31)
+            año_inicio_str = año_inicio.strftime('%d/%m/%Y')
+            año_fin_str = año_fin.strftime('%d/%m/%Y')
+        except:
+            año_inicio = hoy - timedelta(days=365)
+            año_fin = hoy
+            año_inicio_str = año_inicio.strftime('%d/%m/%Y')
+            año_fin_str = año_fin.strftime('%d/%m/%Y')
+    else:
+        # Último año
+        año_inicio = hoy - timedelta(days=365)
+        año_fin = hoy
+        año_inicio_str = año_inicio.strftime('%d/%m/%Y')
+        año_fin_str = año_fin.strftime('%d/%m/%Y')
+    
+    reservas_año_dias = reservas.filter(fecha_evento__gte=año_inicio, fecha_evento__lte=año_fin)
     
     for reserva in reservas_año_dias:
         dia_semana = reserva.fecha_evento.weekday()
@@ -2958,6 +3286,7 @@ def estadisticas(request):
     
     dias_semana_anuales_labels = dias_semana_nombres
     dias_semana_anuales_data = [demanda_anual.get(dia, 0) for dia in dias_semana_nombres]
+    dias_semana_anuales_rango = f"{año_inicio_str} - {año_fin_str}"
     
     # ========== KPIs Y MÉTRICAS CLAVE ==========
     from jio_app.models import Pago
@@ -3114,21 +3443,42 @@ def estadisticas(request):
         # Datos de gráficos
         'ventas_semanales_labels': json.dumps(ventas_semanales_labels),
         'ventas_semanales_data': json.dumps(ventas_semanales_data),
+        'ventas_semanales_rango': ventas_semanales_rango,
         'ventas_mensuales_labels': json.dumps(ventas_mensuales_labels),
         'ventas_mensuales_data': json.dumps(ventas_mensuales_data),
+        'ventas_mensuales_rango': ventas_mensuales_rango,
         'ventas_anuales_labels': json.dumps(ventas_anuales_labels),
         'ventas_anuales_data': json.dumps(ventas_anuales_data),
+        'ventas_anuales_rango': ventas_anuales_rango,
+        'ventas_periodo': ventas_periodo,
+        'ventas_semana': ventas_semana,
+        'ventas_mes': ventas_mes if ventas_mes else '',
+        'ventas_año': ventas_año if ventas_año else '',
         'ventas_categoria_diarias_data': json.dumps(ventas_categoria_diarias_data),
         'ventas_categoria_semanales_data': json.dumps(ventas_categoria_semanales_data),
+        'ventas_categoria_semanales_rango': ventas_categoria_semanales_rango,
         'ventas_categoria_mensuales_data': json.dumps(ventas_categoria_mensuales_data),
+        'ventas_categoria_mensuales_rango': ventas_categoria_mensuales_rango,
         'ventas_categoria_anuales_data': json.dumps(ventas_categoria_anuales_data),
+        'ventas_categoria_anuales_rango': ventas_categoria_anuales_rango,
+        'categoria_periodo': categoria_periodo,
+        'categoria_semana': categoria_semana,
+        'categoria_mes': categoria_mes if categoria_mes else '',
+        'categoria_año': categoria_año if categoria_año else '',
         'categorias_unicas': json.dumps(categorias_unicas),
         'dias_semana_semanales_labels': json.dumps(dias_semana_semanales_labels),
         'dias_semana_semanales_data': json.dumps(dias_semana_semanales_data),
+        'dias_semana_semanales_rango': dias_semana_semanales_rango,
         'dias_semana_mensuales_labels': json.dumps(dias_semana_mensuales_labels),
         'dias_semana_mensuales_data': json.dumps(dias_semana_mensuales_data),
+        'dias_semana_mensuales_rango': dias_semana_mensuales_rango,
         'dias_semana_anuales_labels': json.dumps(dias_semana_anuales_labels),
         'dias_semana_anuales_data': json.dumps(dias_semana_anuales_data),
+        'dias_semana_anuales_rango': dias_semana_anuales_rango,
+        'demanda_periodo': demanda_periodo,
+        'demanda_semana': demanda_semana,
+        'demanda_mes': demanda_mes if demanda_mes else '',
+        'demanda_año': demanda_año if demanda_año else '',
     }
     
     return render(request, 'jio_app/estadisticas.html', context)

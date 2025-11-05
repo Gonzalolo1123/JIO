@@ -39,16 +39,32 @@ function initMoneyChart() {
     const ctx = document.getElementById('moneyChart');
     if (!ctx) return;
 
-    const weeklyLabels = getDataFromElement('ventas-semanales-labels');
-    const weeklyData = getDataFromElement('ventas-semanales-data');
+    // Determinar qué período mostrar según parámetros de URL o defecto
+    const urlParams = new URLSearchParams(window.location.search);
+    const periodo = urlParams.get('ventas_periodo') || 'weekly';
+    
+    let labels, data;
+    switch (periodo) {
+        case 'monthly':
+            labels = getDataFromElement('ventas-mensuales-labels');
+            data = getDataFromElement('ventas-mensuales-data');
+            break;
+        case 'yearly':
+            labels = getDataFromElement('ventas-anuales-labels');
+            data = getDataFromElement('ventas-anuales-data');
+            break;
+        default: // weekly
+            labels = getDataFromElement('ventas-semanales-labels');
+            data = getDataFromElement('ventas-semanales-data');
+    }
 
     moneyChart = new Chart(ctx, {
         type: 'line',
         data: {
-            labels: weeklyLabels,
+            labels: labels,
             datasets: [{
                 label: 'Ventas ($)',
-                data: weeklyData,
+                data: data,
                 borderColor: '#2E7D32',
                 backgroundColor: 'rgba(46, 125, 50, 0.1)',
                 tension: 0.4,
@@ -84,15 +100,13 @@ function initMoneyChart() {
         }
     });
 
-    // Activar botón semanal por defecto y desactivar otros
+    // NO forzar activación del primer botón - respetar el estado del template
+    // Solo limpiar estilos inline que puedan interferir
     const buttons = document.querySelectorAll('#time-filter button');
     buttons.forEach(btn => {
-        btn.classList.remove('active');
         btn.removeAttribute('style');
     });
-    if (buttons.length > 0) {
-        buttons[0].classList.add('active');
-    }
+    // El estado activo se maneja desde el template según ventas_periodo
 }
 
 // Actualizar gráfico de dinero según período
@@ -163,8 +177,22 @@ function initCategoryChart() {
     const ctx = document.getElementById('categoryChart');
     if (!ctx) return;
 
+    // Determinar qué período mostrar según parámetros de URL o defecto
+    const urlParams = new URLSearchParams(window.location.search);
+    const periodo = urlParams.get('categoria_periodo') || 'weekly';
+    
     const categories = getDataFromElement('categorias-unicas');
-    const weeklyData = getDataFromElement('ventas-categoria-semanales-data');
+    let weeklyData;
+    switch (periodo) {
+        case 'monthly':
+            weeklyData = getDataFromElement('ventas-categoria-mensuales-data');
+            break;
+        case 'yearly':
+            weeklyData = getDataFromElement('ventas-categoria-anuales-data');
+            break;
+        default: // weekly
+            weeklyData = getDataFromElement('ventas-categoria-semanales-data');
+    }
 
     // Validar datos
     if (!Array.isArray(categories) || categories.length === 0) {
@@ -244,15 +272,13 @@ function initCategoryChart() {
         }
     });
 
-    // Activar botón semanal por defecto y desactivar otros
+    // NO forzar activación del primer botón - respetar el estado del template
+    // Solo limpiar estilos inline que puedan interferir
     const buttons = document.querySelectorAll('#category-filter button');
     buttons.forEach(btn => {
-        btn.classList.remove('active');
         btn.removeAttribute('style');
     });
-    if (buttons.length > 0) {
-        buttons[0].classList.add('active');
-    }
+    // El estado activo se maneja desde el template según categoria_periodo
 }
 
 // Actualizar gráfico de categorías según período
@@ -321,8 +347,24 @@ function initDaysChart() {
     const ctx = document.getElementById('daysChart');
     if (!ctx) return;
 
-    const labels = getDataFromElement('dias-semana-semanales-labels');
-    const data = getDataFromElement('dias-semana-semanales-data');
+    // Determinar qué período mostrar según parámetros de URL o defecto
+    const urlParams = new URLSearchParams(window.location.search);
+    const periodo = urlParams.get('demanda_periodo') || 'weekly';
+    
+    let labels, data;
+    switch (periodo) {
+        case 'monthly':
+            labels = getDataFromElement('dias-semana-mensuales-labels');
+            data = getDataFromElement('dias-semana-mensuales-data');
+            break;
+        case 'yearly':
+            labels = getDataFromElement('dias-semana-anuales-labels');
+            data = getDataFromElement('dias-semana-anuales-data');
+            break;
+        default: // weekly
+            labels = getDataFromElement('dias-semana-semanales-labels');
+            data = getDataFromElement('dias-semana-semanales-data');
+    }
 
     daysChart = new Chart(ctx, {
         type: 'bar',
@@ -363,15 +405,13 @@ function initDaysChart() {
         }
     });
 
-    // Activar botón semanal por defecto y desactivar otros
+    // NO forzar activación del primer botón - respetar el estado del template
+    // Solo limpiar estilos inline que puedan interferir
     const buttons = document.querySelectorAll('#days-filter button');
     buttons.forEach(btn => {
-        btn.classList.remove('active');
         btn.removeAttribute('style');
     });
-    if (buttons.length > 0) {
-        buttons[0].classList.add('active');
-    }
+    // El estado activo se maneja desde el template según demanda_periodo
 }
 
 // Actualizar gráfico de días según período

@@ -1,0 +1,98 @@
+@startuml Caso_de_Uso_Juegos
+!theme plain
+skinparam packageStyle rectangle
+skinparam usecase {
+  BackgroundColor #E3F2FD
+  BorderColor #1976D2
+}
+
+left to right direction
+
+actor "Administrador" as Admin
+
+package "Gestión de Juegos Inflables" {
+  usecase "Crear nuevo juego inflable" as UC1
+  usecase "Editar juego existente" as UC2
+  usecase "Eliminar juego" as UC3
+  usecase "Subir o actualizar imagen\ndel juego" as UC4
+  usecase "Gestionar estado del juego\n(Habilitado/Deshabilitado)" as UC5
+  usecase "Filtrar y buscar juegos" as UC6
+  usecase "Ordenar lista de juegos" as UC7
+  usecase "Ver detalles de juego" as UC8
+}
+
+Admin --> UC1
+Admin --> UC2
+Admin --> UC3
+Admin --> UC4
+Admin --> UC5
+Admin --> UC6
+Admin --> UC7
+Admin --> UC8
+
+UC1 ..> UC4 : <<include>>
+UC2 ..> UC4 : <<include>>
+
+note right of UC1
+  Campos requeridos:
+  - Nombre
+  - Categoría (Pequeño/Mediano/Grande)
+  - Dimensiones (largo, ancho, alto)
+  - Capacidad de personas
+  - Peso máximo
+  - Precio base
+  - Descripción
+  - Imagen (opcional)
+  - Estado
+end note
+
+note right of UC2
+  Permite editar todos los
+  campos del juego, incluyendo:
+  - Cambiar imagen
+  - Eliminar imagen actual
+  - Actualizar estado
+end note
+
+note right of UC4
+  Funcionalidades:
+  - Subir nueva imagen (JPG, PNG, GIF, WEBP)
+  - Máximo 5MB
+  - Preview de imagen
+  - Eliminar imagen existente
+end note
+
+note right of UC5
+  Estados disponibles:
+  - Habilitado (disponible para arriendo)
+  - Deshabilitado (no disponible)
+end note
+
+note right of UC6
+  Filtros disponibles:
+  - Por nombre o descripción
+  - Por categoría
+  - Por estado
+end note
+
+note right of UC7
+  Ordenamiento por:
+  - ID
+  - Nombre
+  - Categoría
+  - Capacidad
+  - Precio base
+  - Estado
+end note
+
+note right of UC8
+  Muestra información completa:
+  - Datos básicos
+  - Dimensiones
+  - Precio
+  - Imagen
+  - Estado actual
+end note
+
+@enduml
+
