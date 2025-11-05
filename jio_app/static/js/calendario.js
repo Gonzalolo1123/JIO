@@ -1354,61 +1354,20 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     async function procesarReserva() {
-        const formData = new FormData(formularioReserva);
+        if (!selectedDate) {
+            mostrarErroresValidacion(['Debe seleccionar una fecha'], 'Error en el Formulario');
+            return;
+        }
+        
         const fechaStr = selectedDate.toISOString().split('T')[0];
-        
-        // Validar que haya al menos un juego
-        const juegosContainer = document.getElementById('juegos-container');
-        const juegosRows = juegosContainer ? juegosContainer.querySelectorAll('.juego-row') : [];
-        if (juegosRows.length === 0) {
-            mostrarErrores(['Debe agregar al menos un juego']);
-            return;
-        }
-        
-        // Validar que todos los juegos estén completos
-        let hayErrores = false;
-        juegosRows.forEach(row => {
-            const select = row.querySelector('.juego-select');
-            if (!select.value) {
-                hayErrores = true;
-            }
-        });
-        
-        if (hayErrores) {
-            mostrarErrores(['Todos los juegos deben estar seleccionados']);
-            return;
-        }
         
         // Actualizar JSON de juegos antes de obtener los datos
         const juegosActualizados = actualizarJuegosJson();
         
-        if (!juegosActualizados || juegosActualizados.length === 0) {
-            mostrarErrores(['Debe agregar al menos un juego válido']);
-            return;
-        }
-        
         // Usar dirección completa de Google Maps si está disponible, sino usar la dirección ingresada
         const direccionFinal = direccionCompletaInput && direccionCompletaInput.value 
             ? direccionCompletaInput.value 
-            : formData.get('direccion');
-        
-        const juegosJsonInput = document.getElementById('juegos-json');
-        const juegosJson = juegosJsonInput ? juegosJsonInput.value : '[]';
-        
-        let juegosParsed = [];
-        try {
-            juegosParsed = JSON.parse(juegosJson);
-            console.log('📋 Juegos parseados:', juegosParsed);
-            
-            if (!Array.isArray(juegosParsed) || juegosParsed.length === 0) {
-                mostrarErrores(['Debe agregar al menos un juego']);
-                return;
-            }
-        } catch (e) {
-            console.error('❌ Error al parsear juegos JSON:', e, 'JSON:', juegosJson);
-            mostrarErrores(['Error al procesar los juegos. Por favor, intenta nuevamente.']);
-            return;
-        }
+            : (direccionInput ? direccionInput.value.trim() : '');
         
         // Obtener valores directamente de los inputs
         const nombreInput = document.getElementById('nombre');
@@ -1433,7 +1392,7 @@ document.addEventListener('DOMContentLoaded', function() {
             direccion_lng: direccionLngInput ? direccionLngInput.value : '',
             observaciones: observacionesInput ? observacionesInput.value.trim() : '',
             distancia_km: distanciaInput ? (distanciaInput.value || '0') : '0',
-            juegos: juegosParsed
+            juegos: juegosActualizados || []
         };
         
         console.log('📤 Datos a enviar:', datosReserva);
@@ -1443,7 +1402,7 @@ document.addEventListener('DOMContentLoaded', function() {
             retiro: datosReserva.hora_retiro
         });
         
-        // Validar datos básicos
+        // Validar datos con funciones estandarizadas (incluye validación de juegos)
         if (!validarDatosReserva(datosReserva)) {
             return;
         }
@@ -1468,18 +1427,18 @@ document.addEventListener('DOMContentLoaded', function() {
             const data = await response.json();
             
             if (data.success) {
-                mostrarMensajeExito(data.message || '¡Reserva creada exitosamente!');
+                mostrarExitoValidacion(data.message || '¡Reserva creada exitosamente!', '¡Éxito!');
                 cerrarModal();
                 // Recargar calendario para actualizar disponibilidad
                 setTimeout(() => {
                     renderCalendario();
                 }, 2000);
             } else {
-                mostrarErrores(data.errors || ['Error al crear la reserva']);
+                mostrarErroresValidacion(data.errors || ['Error al crear la reserva'], 'Error al Crear Reserva');
             }
         } catch (error) {
             console.error('Error al enviar reserva:', error);
-            mostrarErrores(['Error de conexión. Por favor, intenta nuevamente.']);
+            mostrarErroresValidacion(['Error de conexión. Por favor, intenta nuevamente.'], 'Error de Conexión');
         } finally {
             btnSubmit.disabled = false;
             btnSubmit.textContent = 'Confirmar Reserva';
@@ -1487,71 +1446,71 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     function validarDatosReserva(datos) {
-        const errores = [];
+        const todosLosErrores = [];
         
-        if (!datos.nombre || !datos.nombre.trim()) {
-            errores.push('El nombre es obligatorio');
+        // Validar fecha (aunque viene del calendario, validar que no sea pasada)
+        if (datos.fecha) {
+            const erroresFecha = validarFecha(datos.fecha, 'fecha del evento', true, false);
+            todosLosErrores.push(...erroresFecha);
+        } else {
+            todosLosErrores.push('La fecha del evento es obligatoria');
         }
         
-        if (!datos.apellido || !datos.apellido.trim()) {
-            errores.push('El apellido es obligatorio');
+        // Validar nombre
+        const erroresNombre = validarNombre(datos.nombre, 'nombre', 3, 30, false, false);
+        todosLosErrores.push(...erroresNombre);
+        
+        // Validar apellido
+        const erroresApellido = validarNombre(datos.apellido, 'apellido', 3, 30, false, false);
+        todosLosErrores.push(...erroresApellido);
+        
+        // Validar email
+        const erroresEmail = validarEmail(datos.email, 'email', 100, true, false);
+        todosLosErrores.push(...erroresEmail);
+        
+        // Validar teléfono (opcional, pero si se ingresa debe ser válido)
+        if (datos.telefono && datos.telefono.trim()) {
+            const erroresTelefono = validarTelefonoChileno(datos.telefono, 'teléfono', false, false);
+            todosLosErrores.push(...erroresTelefono);
         }
         
-        if (!datos.email || !datos.email.trim()) {
-            errores.push('El email es obligatorio');
-        } else if (!isValidEmail(datos.email)) {
-            errores.push('El email no es válido');
+        // Validar hora de instalación
+        const erroresHoraInstalacion = validarHorario(datos.hora_instalacion, 'hora de instalación', 0, 23, true, false);
+        todosLosErrores.push(...erroresHoraInstalacion);
+        
+        // Validar hora de retiro
+        const erroresHoraRetiro = validarHorario(datos.hora_retiro, 'hora de retiro', 0, 23, true, false);
+        todosLosErrores.push(...erroresHoraRetiro);
+        
+        // Validar que la hora de retiro sea posterior a la hora de instalación
+        if (datos.hora_instalacion && datos.hora_retiro) {
+            const erroresHorarioPosterior = validarHorarioRetiroPosterior(datos.hora_instalacion, datos.hora_retiro, false);
+            todosLosErrores.push(...erroresHorarioPosterior);
         }
         
-        if (!datos.hora_instalacion || !datos.hora_instalacion.trim()) {
-            errores.push('La hora de instalación es obligatoria');
-        }
+        // Validar dirección
+        const erroresDireccion = validarDireccionChilena(datos.direccion, 'dirección', 5, 200, false);
+        todosLosErrores.push(...erroresDireccion);
         
-        if (!datos.hora_retiro || !datos.hora_retiro.trim()) {
-            errores.push('La hora de retiro es obligatoria');
-        }
-        
+        // Validar que haya al menos un juego
         if (!datos.juegos || !Array.isArray(datos.juegos) || datos.juegos.length === 0) {
-            errores.push('Debe agregar al menos un juego');
+            todosLosErrores.push('Debe agregar al menos un juego');
+        } else {
+            // Validar que todos los juegos tengan un juego_id válido
+            datos.juegos.forEach((juego, index) => {
+                if (!juego.juego_id || juego.juego_id <= 0) {
+                    todosLosErrores.push(`El juego ${index + 1} debe estar seleccionado correctamente`);
+                }
+            });
         }
         
-        if (!datos.direccion || !datos.direccion.trim()) {
-            errores.push('La dirección es obligatoria');
-        }
-        
-        if (errores.length > 0) {
-            mostrarErrores(errores);
+        // Mostrar errores si los hay
+        if (todosLosErrores.length > 0) {
+            mostrarErroresValidacion(todosLosErrores, 'Errores en el Formulario de Reserva');
             return false;
         }
         
         return true;
-    }
-    
-    function isValidEmail(email) {
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        return emailRegex.test(email);
-    }
-    
-    function mostrarErrores(errores) {
-        formErrors.style.display = 'block';
-        formErrors.innerHTML = '<ul>' + errores.map(error => `<li>${error}</li>`).join('') + '</ul>';
-        
-        // Scroll al área de errores
-        formErrors.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
-    
-    function mostrarMensajeExito(mensaje) {
-        // Usar alert simple o mejor, SweetAlert si está disponible
-        if (typeof Swal !== 'undefined') {
-            Swal.fire({
-                icon: 'success',
-                title: '¡Éxito!',
-                text: mensaje,
-                confirmButtonColor: '#2c5530'
-            });
-        } else {
-            alert(mensaje);
-        }
     }
     
     // Función auxiliar para obtener cookie CSRF

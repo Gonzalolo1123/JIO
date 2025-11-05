@@ -1295,9 +1295,44 @@ def repartos_list(request):
     query = request.GET.get('q', '').strip()
     estado_filter = request.GET.get('estado', '').strip()
     
-    # Obtener fecha de hoy
-    from datetime import date
+    # Obtener parámetros de vista
+    vista = request.GET.get('vista', 'diaria').strip()  # diaria, semanal, mensual
+    fecha_seleccionada = request.GET.get('fecha', '').strip()
+    
+    # Obtener fecha base
+    from datetime import date, timedelta, datetime
+    from calendar import monthrange
+    
     fecha_hoy = date.today()
+    
+    # Determinar rango de fechas según la vista
+    if fecha_seleccionada:
+        try:
+            fecha_base = datetime.strptime(fecha_seleccionada, '%Y-%m-%d').date()
+        except ValueError:
+            fecha_base = fecha_hoy
+    else:
+        fecha_base = fecha_hoy
+    
+    if vista == 'semanal':
+        # Semana: lunes a domingo
+        # Obtener el lunes de la semana
+        dias_desde_lunes = fecha_base.weekday()
+        fecha_inicio = fecha_base - timedelta(days=dias_desde_lunes)
+        fecha_fin = fecha_inicio + timedelta(days=6)
+        rango_fechas = (fecha_inicio, fecha_fin)
+    elif vista == 'mensual':
+        # Mes: primer día al último día del mes
+        primer_dia = fecha_base.replace(day=1)
+        ultimo_dia_num = monthrange(fecha_base.year, fecha_base.month)[1]
+        ultimo_dia = fecha_base.replace(day=ultimo_dia_num)
+        fecha_inicio = primer_dia
+        fecha_fin = ultimo_dia
+        rango_fechas = (fecha_inicio, fecha_fin)
+    else:  # diaria
+        fecha_inicio = fecha_base
+        fecha_fin = fecha_base
+        rango_fechas = (fecha_inicio, fecha_fin)
     
     # Filtrar instalaciones
     instalaciones_qs = Instalacion.objects.select_related(
@@ -1339,9 +1374,18 @@ def repartos_list(request):
         estado_retiro = estado_map.get(estado_filter, estado_filter)
         retiros_qs = retiros_qs.filter(estado_retiro=estado_retiro)
     
-    # Agenda de hoy
-    instalaciones_hoy = instalaciones_qs.filter(fecha_instalacion=fecha_hoy)
-    retiros_hoy = retiros_qs.filter(fecha_retiro=fecha_hoy)
+    # Agenda según vista seleccionada (solo futuros o del día actual)
+    # Asegurar que la fecha_inicio sea al menos la fecha de hoy
+    fecha_inicio_efectiva = max(fecha_inicio, fecha_hoy)
+    
+    instalaciones_agenda = instalaciones_qs.filter(
+        fecha_instalacion__gte=fecha_inicio_efectiva,
+        fecha_instalacion__lte=fecha_fin
+    )
+    retiros_agenda = retiros_qs.filter(
+        fecha_retiro__gte=fecha_inicio_efectiva,
+        fecha_retiro__lte=fecha_fin
+    )
     
     # Repartidores disponibles
     repartidores_disponibles = Usuario.objects.filter(
@@ -1352,15 +1396,111 @@ def repartos_list(request):
     context = {
         'query': query,
         'estado_filter': estado_filter,
+        'vista': vista,
+        'fecha_base': fecha_base,
+        'fecha_inicio': fecha_inicio,
+        'fecha_fin': fecha_fin,
         'fecha_hoy': fecha_hoy,
         'instalaciones': instalaciones_qs[:50],  # Limitar resultados
         'retiros': retiros_qs[:50],
-        'instalaciones_hoy': instalaciones_hoy,
-        'retiros_hoy': retiros_hoy,
+        'instalaciones_agenda': instalaciones_agenda,
+        'retiros_agenda': retiros_agenda,
         'repartidores_disponibles': repartidores_disponibles,
     }
     
     return render(request, 'jio_app/repartos_list.html', context)
+
+
+@login_required
+@require_http_methods(["GET"])
+def agenda_repartos_json(request):
+    """Endpoint JSON para obtener agenda de repartos por rango de fechas"""
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    vista = request.GET.get('vista', 'diaria').strip()
+    fecha_seleccionada = request.GET.get('fecha', '').strip()
+    
+    from datetime import date, timedelta, datetime
+    from calendar import monthrange
+    
+    fecha_hoy = date.today()
+    
+    if fecha_seleccionada:
+        try:
+            fecha_base = datetime.strptime(fecha_seleccionada, '%Y-%m-%d').date()
+        except ValueError:
+            fecha_base = fecha_hoy
+    else:
+        fecha_base = fecha_hoy
+    
+    if vista == 'semanal':
+        dias_desde_lunes = fecha_base.weekday()
+        fecha_inicio = fecha_base - timedelta(days=dias_desde_lunes)
+        fecha_fin = fecha_inicio + timedelta(days=6)
+    elif vista == 'mensual':
+        primer_dia = fecha_base.replace(day=1)
+        ultimo_dia_num = monthrange(fecha_base.year, fecha_base.month)[1]
+        ultimo_dia = fecha_base.replace(day=ultimo_dia_num)
+        fecha_inicio = primer_dia
+        fecha_fin = ultimo_dia
+    else:  # diaria
+        fecha_inicio = fecha_base
+        fecha_fin = fecha_base
+    
+    # Obtener instalaciones (solo futuras o del día actual)
+    # Asegurar que la fecha_inicio sea al menos la fecha de hoy
+    fecha_inicio_efectiva = max(fecha_inicio, fecha_hoy)
+    
+    instalaciones = Instalacion.objects.filter(
+        fecha_instalacion__gte=fecha_inicio_efectiva,
+        fecha_instalacion__lte=fecha_fin
+    ).select_related(
+        'reserva__cliente__usuario', 'repartidor__usuario'
+    ).order_by('fecha_instalacion', 'hora_instalacion')
+    
+    # Obtener retiros (solo futuros o del día actual)
+    retiros = Retiro.objects.filter(
+        fecha_retiro__gte=fecha_inicio_efectiva,
+        fecha_retiro__lte=fecha_fin
+    ).select_related(
+        'reserva__cliente__usuario', 'repartidor__usuario'
+    ).order_by('fecha_retiro', 'hora_retiro')
+    
+    # Serializar instalaciones
+    instalaciones_data = []
+    for inst in instalaciones:
+        instalaciones_data.append({
+            'id': inst.id,
+            'fecha': inst.fecha_instalacion.strftime('%Y-%m-%d'),
+            'hora': inst.hora_instalacion.strftime('%H:%M'),
+            'cliente': inst.reserva.cliente.usuario.get_full_name(),
+            'direccion': inst.direccion_instalacion,
+            'repartidor': inst.repartidor.usuario.get_full_name() if inst.repartidor else None,
+            'estado': inst.estado_instalacion,
+        })
+    
+    # Serializar retiros
+    retiros_data = []
+    for ret in retiros:
+        retiros_data.append({
+            'id': ret.id,
+            'fecha': ret.fecha_retiro.strftime('%Y-%m-%d'),
+            'hora': ret.hora_retiro.strftime('%H:%M'),
+            'cliente': ret.reserva.cliente.usuario.get_full_name(),
+            'direccion': ret.reserva.direccion_evento,
+            'repartidor': ret.repartidor.usuario.get_full_name() if ret.repartidor else None,
+            'estado': ret.estado_retiro,
+        })
+    
+    return JsonResponse({
+        'vista': vista,
+        'fecha_base': fecha_base.strftime('%Y-%m-%d'),
+        'fecha_inicio': fecha_inicio.strftime('%Y-%m-%d'),
+        'fecha_fin': fecha_fin.strftime('%Y-%m-%d'),
+        'instalaciones': instalaciones_data,
+        'retiros': retiros_data,
+    })
 
 
 @login_required
@@ -1464,7 +1604,10 @@ def detalle_instalacion_json(request, instalacion_id: int):
             # Intentar obtener URL de imagen del juego
             imagen_url = None
             if detalle.juego.foto:
-                imagen_url = detalle.juego.foto
+                try:
+                    imagen_url = request.build_absolute_uri(detalle.juego.foto.url)
+                except:
+                    imagen_url = None
             
             juegos.append({
                 'nombre': detalle.juego.nombre,
@@ -1912,7 +2055,10 @@ def detalle_instalacion_json(request, instalacion_id: int):
             # Intentar obtener URL de imagen del juego
             imagen_url = None
             if detalle.juego.foto:
-                imagen_url = detalle.juego.foto
+                try:
+                    imagen_url = request.build_absolute_uri(detalle.juego.foto.url)
+                except:
+                    imagen_url = None
             
             juegos.append({
                 'nombre': detalle.juego.nombre,
@@ -2256,7 +2402,10 @@ def detalle_instalacion_json(request, instalacion_id: int):
             # Intentar obtener URL de imagen del juego
             imagen_url = None
             if detalle.juego.foto:
-                imagen_url = detalle.juego.foto
+                try:
+                    imagen_url = request.build_absolute_uri(detalle.juego.foto.url)
+                except:
+                    imagen_url = None
             
             juegos.append({
                 'nombre': detalle.juego.nombre,
@@ -3422,55 +3571,100 @@ def arriendo_create_json(request):
     cliente = None
     if not errors:
         try:
-            # Buscar por RUT (único)
+            # Buscar por RUT (único) - Si existe, usar ese cliente directamente
             cliente = Cliente.objects.get(rut=cliente_rut)
-            # Actualizar datos si es necesario
-            if cliente.usuario.email != cliente_email:
-                cliente.usuario.email = cliente_email
-            if cliente_first_name and cliente.usuario.first_name != cliente_first_name:
-                cliente.usuario.first_name = cliente_first_name
-            if cliente_last_name and cliente.usuario.last_name != cliente_last_name:
-                cliente.usuario.last_name = cliente_last_name
-            if cliente_telefono:
-                cliente.usuario.telefono = cliente_telefono
-            cliente.usuario.save()
-        except Cliente.DoesNotExist:
-            # Crear nuevo cliente
-            try:
-                # Verificar si el email ya existe
-                if Usuario.objects.filter(email=cliente_email).exists():
-                    errors.append('Ya existe un usuario con ese email')
-                else:
-                    # Generar username único
-                    base_username = slugify(f"{cliente_first_name}_{cliente_last_name}")
-                    username = base_username
-                    counter = 1
-                    while Usuario.objects.filter(username=username).exists():
-                        username = f"{base_username}_{counter}"
-                        counter += 1
-                    
-                    # Crear usuario con password aleatorio
-                    random_password = secrets.token_urlsafe(12)
-                    usuario = Usuario.objects.create_user(
-                        username=username,
-                        email=cliente_email,
-                        password=random_password,
-                        first_name=cliente_first_name,
-                        last_name=cliente_last_name,
-                        tipo_usuario='cliente',
-                        is_active=True,
-                    )
+            # Actualizar solo datos que no causen conflictos (no el email si ya existe en otro usuario)
+            # Solo actualizar si el email proporcionado es el mismo que tiene el cliente actual
+            if cliente.usuario.email == cliente_email:
+                # Si el email coincide, podemos actualizar otros campos
+                if cliente_first_name and cliente.usuario.first_name != cliente_first_name:
+                    cliente.usuario.first_name = cliente_first_name
+                if cliente_last_name and cliente.usuario.last_name != cliente_last_name:
+                    cliente.usuario.last_name = cliente_last_name
+                if cliente_telefono:
+                    cliente.usuario.telefono = cliente_telefono
+                cliente.usuario.save()
+            else:
+                # Si el email es diferente, verificar si podemos actualizarlo
+                # Solo actualizar si no existe otro usuario con ese email
+                if not Usuario.objects.filter(email=cliente_email).exclude(id=cliente.usuario.id).exists():
+                    # El email no existe en otro usuario, podemos actualizarlo
+                    cliente.usuario.email = cliente_email
+                    if cliente_first_name:
+                        cliente.usuario.first_name = cliente_first_name
+                    if cliente_last_name:
+                        cliente.usuario.last_name = cliente_last_name
                     if cliente_telefono:
-                        usuario.telefono = cliente_telefono
-                        usuario.save(update_fields=['telefono'])
-                    
-                    cliente = Cliente.objects.create(
-                        usuario=usuario,
-                        rut=cliente_rut,
-                        tipo_cliente=cliente_tipo,
-                    )
-            except Exception as e:
-                errors.append(f'Error al crear cliente: {str(e)}')
+                        cliente.usuario.telefono = cliente_telefono
+                    cliente.usuario.save()
+                else:
+                    # El email existe en otro usuario, solo actualizar otros campos
+                    if cliente_first_name:
+                        cliente.usuario.first_name = cliente_first_name
+                    if cliente_last_name:
+                        cliente.usuario.last_name = cliente_last_name
+                    if cliente_telefono:
+                        cliente.usuario.telefono = cliente_telefono
+                    cliente.usuario.save()
+        except Cliente.DoesNotExist:
+            # No existe cliente con ese RUT, verificar si el email ya existe
+            if Usuario.objects.filter(email=cliente_email).exists():
+                # El email ya existe, buscar si ese usuario tiene un cliente asociado
+                usuario_existente = Usuario.objects.get(email=cliente_email)
+                if hasattr(usuario_existente, 'cliente'):
+                    # Si el usuario tiene cliente, usar ese cliente directamente
+                    # No intentar cambiar el RUT ya que es único y podría causar conflictos
+                    cliente = usuario_existente.cliente
+                    # Actualizar solo datos no conflictivos
+                    if cliente_first_name:
+                        cliente.usuario.first_name = cliente_first_name
+                    if cliente_last_name:
+                        cliente.usuario.last_name = cliente_last_name
+                    if cliente_telefono:
+                        cliente.usuario.telefono = cliente_telefono
+                    cliente.usuario.save()
+                    # No actualizar el RUT ni el tipo_cliente para evitar conflictos
+                else:
+                    # El usuario existe pero no tiene cliente asociado
+                    # No crear cliente automáticamente, solo devolver error
+                    errors.append('Ya existe un usuario con ese email. Use el RUT correcto para ese cliente.')
+            else:
+                # El email no existe, crear nuevo cliente
+                try:
+                    # Verificar que el RUT no esté ya en uso
+                    if Cliente.objects.filter(rut=cliente_rut).exists():
+                        errors.append(f'Ya existe un cliente con el RUT {cliente_rut}')
+                    else:
+                        # Generar username único
+                        base_username = slugify(f"{cliente_first_name}_{cliente_last_name}")
+                        username = base_username
+                        counter = 1
+                        while Usuario.objects.filter(username=username).exists():
+                            username = f"{base_username}_{counter}"
+                            counter += 1
+                        
+                        # Crear usuario con password aleatorio
+                        random_password = secrets.token_urlsafe(12)
+                        usuario = Usuario.objects.create_user(
+                            username=username,
+                            email=cliente_email,
+                            password=random_password,
+                            first_name=cliente_first_name,
+                            last_name=cliente_last_name,
+                            tipo_usuario='cliente',
+                            is_active=True,
+                        )
+                        if cliente_telefono:
+                            usuario.telefono = cliente_telefono
+                            usuario.save(update_fields=['telefono'])
+                        
+                        cliente = Cliente.objects.create(
+                            usuario=usuario,
+                            rut=cliente_rut,
+                            tipo_cliente=cliente_tipo,
+                        )
+                except Exception as e:
+                    errors.append(f'Error al crear cliente: {str(e)}')
     
     if not fecha_evento:
         errors.append('La fecha del evento es obligatoria')
@@ -3540,7 +3734,12 @@ def arriendo_create_json(request):
                 continue
             
             try:
-                juego = Juego.objects.get(id=int(juego_id), estado='disponible')
+                juego = Juego.objects.get(id=int(juego_id))
+                # Verificar que el juego esté habilitado
+                if juego.estado != 'Habilitado':
+                    errors.append(f'Juego con ID {juego_id} no está habilitado (estado: {juego.estado})')
+                    continue
+                
                 # Cantidad siempre es 1
                 cantidad_int = 1
                 precio_unitario = juego.precio_base
@@ -3554,7 +3753,7 @@ def arriendo_create_json(request):
                     'subtotal': subtotal,
                 })
             except (ValueError, Juego.DoesNotExist):
-                errors.append(f'Juego con ID {juego_id} no encontrado o no disponible')
+                errors.append(f'Juego con ID {juego_id} no encontrado')
     except json.JSONDecodeError:
         errors.append('Formato de juegos inválido')
     
@@ -3588,6 +3787,47 @@ def arriendo_create_json(request):
                 subtotal=juego_item['subtotal'],
             )
         
+        # Crear instalación automáticamente si no existe
+        try:
+            instalacion = Instalacion.objects.get(reserva=reserva)
+            # Actualizar si ya existe
+            instalacion.fecha_instalacion = fecha_obj
+            instalacion.hora_instalacion = hora_inst_obj
+            instalacion.direccion_instalacion = direccion_evento
+            if cliente.usuario.telefono:
+                instalacion.telefono_cliente = cliente.usuario.telefono
+            if observaciones:
+                instalacion.observaciones_instalacion = observaciones
+            instalacion.save()
+        except Instalacion.DoesNotExist:
+            Instalacion.objects.create(
+                reserva=reserva,
+                fecha_instalacion=fecha_obj,
+                hora_instalacion=hora_inst_obj,
+                direccion_instalacion=direccion_evento,
+                telefono_cliente=cliente.usuario.telefono or '',
+                estado_instalacion='programada',
+                observaciones_instalacion=observaciones or None,
+            )
+        
+        # Crear retiro automáticamente si no existe
+        try:
+            retiro = Retiro.objects.get(reserva=reserva)
+            # Actualizar si ya existe
+            retiro.fecha_retiro = fecha_obj
+            retiro.hora_retiro = hora_ret_obj
+            if observaciones:
+                retiro.observaciones_retiro = observaciones
+            retiro.save()
+        except Retiro.DoesNotExist:
+            Retiro.objects.create(
+                reserva=reserva,
+                fecha_retiro=fecha_obj,
+                hora_retiro=hora_ret_obj,
+                estado_retiro='programado',
+                observaciones_retiro=observaciones or None,
+            )
+        
         return JsonResponse({
             'success': True, 
             'message': f'Arriendo #{reserva.id} creado correctamente.',
@@ -3615,6 +3855,12 @@ def arriendo_update_json(request, arriendo_id: int):
         return JsonResponse({'error': 'Arriendo no encontrado'}, status=404)
     
     cliente_id = request.POST.get('cliente_id', '').strip()
+    cliente_nombre = request.POST.get('cliente_nombre', '').strip()
+    cliente_apellido = request.POST.get('cliente_apellido', '').strip()
+    cliente_rut = request.POST.get('cliente_rut', '').strip()
+    cliente_email = request.POST.get('cliente_email', '').strip()
+    cliente_telefono = request.POST.get('cliente_telefono', '').strip()
+    cliente_tipo = request.POST.get('cliente_tipo', '').strip()
     fecha_evento = request.POST.get('fecha_evento', '').strip()
     hora_instalacion = request.POST.get('hora_instalacion', '').strip()
     hora_retiro = request.POST.get('hora_retiro', '').strip()
@@ -3628,11 +3874,30 @@ def arriendo_update_json(request, arriendo_id: int):
     
     errors = []
     
-    # Validaciones
+    # Actualizar datos del cliente
     if cliente_id:
         try:
             cliente = Cliente.objects.get(id=int(cliente_id))
             reserva.cliente = cliente
+            
+            # Actualizar datos del cliente si se proporcionan
+            if cliente_nombre:
+                cliente.usuario.first_name = cliente_nombre
+            if cliente_apellido:
+                cliente.usuario.last_name = cliente_apellido
+            if cliente_email:
+                cliente.usuario.email = cliente_email
+            if cliente_telefono:
+                cliente.usuario.telefono = cliente_telefono
+            if cliente_rut:
+                cliente.rut = cliente_rut
+            if cliente_tipo:
+                cliente.tipo_cliente = cliente_tipo
+            
+            # Guardar cambios del usuario y cliente
+            cliente.usuario.save()
+            cliente.save()
+            
         except (ValueError, Cliente.DoesNotExist):
             errors.append('Cliente no válido')
     
@@ -3705,7 +3970,12 @@ def arriendo_update_json(request, arriendo_id: int):
                     continue
                 
                 try:
-                    juego = Juego.objects.get(id=int(juego_id), estado='disponible')
+                    juego = Juego.objects.get(id=int(juego_id))
+                    # Verificar que el juego esté habilitado
+                    if juego.estado != 'Habilitado':
+                        errors.append(f'Juego con ID {juego_id} no está habilitado (estado: {juego.estado})')
+                        continue
+                    
                     # Cantidad siempre es 1
                     cantidad_int = 1
                     precio_unitario = juego.precio_base
@@ -3719,7 +3989,7 @@ def arriendo_update_json(request, arriendo_id: int):
                         'subtotal': subtotal,
                     })
                 except (ValueError, Juego.DoesNotExist):
-                    errors.append(f'Juego con ID {juego_id} no encontrado o no disponible')
+                    errors.append(f'Juego con ID {juego_id} no encontrado')
             
             if not errors:
                 # Eliminar detalles antiguos y crear nuevos
@@ -3744,6 +4014,73 @@ def arriendo_update_json(request, arriendo_id: int):
     
     try:
         reserva.save()
+        
+        # Actualizar o crear instalación
+        try:
+            instalacion = Instalacion.objects.get(reserva=reserva)
+            # Actualizar si ya existe
+            if fecha_evento:
+                from datetime import datetime
+                fecha_obj = datetime.strptime(fecha_evento, '%Y-%m-%d').date()
+                instalacion.fecha_instalacion = fecha_obj
+            if hora_instalacion:
+                from datetime import datetime
+                hora_inst_obj = datetime.strptime(hora_instalacion, '%H:%M').time()
+                instalacion.hora_instalacion = hora_inst_obj
+            if direccion_evento:
+                instalacion.direccion_instalacion = direccion_evento
+            if cliente_telefono:
+                instalacion.telefono_cliente = cliente_telefono
+            if observaciones is not None:
+                instalacion.observaciones_instalacion = observaciones.strip() or None
+            instalacion.save()
+        except Instalacion.DoesNotExist:
+            # Crear instalación si no existe
+            from datetime import datetime
+            fecha_obj_inst = datetime.strptime(fecha_evento, '%Y-%m-%d').date() if fecha_evento else reserva.fecha_evento
+            hora_inst_obj_inst = datetime.strptime(hora_instalacion, '%H:%M').time() if hora_instalacion else reserva.hora_instalacion
+            direccion_inst = direccion_evento if direccion_evento else reserva.direccion_evento
+            telefono_inst = cliente_telefono if cliente_telefono else (reserva.cliente.usuario.telefono or '')
+            
+            Instalacion.objects.create(
+                reserva=reserva,
+                fecha_instalacion=fecha_obj_inst,
+                hora_instalacion=hora_inst_obj_inst,
+                direccion_instalacion=direccion_inst,
+                telefono_cliente=telefono_inst,
+                estado_instalacion='programada',
+                observaciones_instalacion=observaciones.strip() if observaciones else None,
+            )
+        
+        # Actualizar o crear retiro
+        try:
+            retiro = Retiro.objects.get(reserva=reserva)
+            # Actualizar si ya existe
+            if fecha_evento:
+                from datetime import datetime
+                fecha_obj = datetime.strptime(fecha_evento, '%Y-%m-%d').date()
+                retiro.fecha_retiro = fecha_obj
+            if hora_retiro:
+                from datetime import datetime
+                hora_ret_obj = datetime.strptime(hora_retiro, '%H:%M').time()
+                retiro.hora_retiro = hora_ret_obj
+            if observaciones is not None:
+                retiro.observaciones_retiro = observaciones.strip() or None
+            retiro.save()
+        except Retiro.DoesNotExist:
+            # Crear retiro si no existe
+            from datetime import datetime
+            fecha_obj_ret = datetime.strptime(fecha_evento, '%Y-%m-%d').date() if fecha_evento else reserva.fecha_evento
+            hora_ret_obj_ret = datetime.strptime(hora_retiro, '%H:%M').time() if hora_retiro else reserva.hora_retiro
+            
+            Retiro.objects.create(
+                reserva=reserva,
+                fecha_retiro=fecha_obj_ret,
+                hora_retiro=hora_ret_obj_ret,
+                estado_retiro='programado',
+                observaciones_retiro=observaciones.strip() if observaciones else None,
+            )
+        
         return JsonResponse({
             'success': True, 
             'message': f'Arriendo #{reserva.id} actualizado correctamente.',

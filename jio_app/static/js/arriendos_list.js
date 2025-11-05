@@ -51,6 +51,148 @@
         }
         if (!window.juegosDisponibles) {
             console.warn('Advertencia: window.juegosDisponibles no está definido aún');
+            window.juegosDisponibles = [];
+        }
+        if (!window.juegosOcupados) {
+            window.juegosOcupados = [];
+        }
+        
+        // Función para actualizar otros selects cuando se cambia un juego
+        function actualizarOtrosSelects(containerId, filaActualId, juegoSeleccionadoId) {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+            
+            const juegoIdNum = juegoSeleccionadoId ? parseInt(juegoSeleccionadoId) : null;
+            
+            // Obtener todos los otros selects del mismo contenedor y reconstruirlos
+            container.querySelectorAll('.juego-select').forEach(select => {
+                const selectRow = select.closest('.juego-row');
+                if (selectRow && selectRow.id !== filaActualId) {
+                    const selectedValue = select.value;
+                    const rowId = select.dataset.rowId;
+                    
+                    // Obtener IDs de juegos ya seleccionados en otras filas
+                    const juegosYaSeleccionados = new Set();
+                    container.querySelectorAll('.juego-row').forEach(otherRow => {
+                        if (otherRow !== selectRow) {
+                            const otherSelect = otherRow.querySelector('.juego-select');
+                            if (otherSelect && otherSelect.value) {
+                                juegosYaSeleccionados.add(parseInt(otherSelect.value));
+                            }
+                        }
+                    });
+                    
+                    // Limpiar select
+                    select.innerHTML = '<option value="">Selecciona un juego disponible</option>';
+                    
+                    // Si hay un juego seleccionado, agregarlo primero
+                    const selectedId = selectedValue ? parseInt(selectedValue) : null;
+                    
+                    // CATEGORÍA 1: Juego seleccionado
+                    if (selectedId && !juegosYaSeleccionados.has(selectedId)) {
+                        const juegoSeleccionado = window.juegosDisponibles.find(j => parseInt(j.id) === selectedId);
+                        if (juegoSeleccionado) {
+                            // Encabezado de categoría
+                            const headerSeleccionado = document.createElement('option');
+                            headerSeleccionado.disabled = true;
+                            headerSeleccionado.textContent = '━━━ JUEGO SELECCIONADO ━━━';
+                            headerSeleccionado.style.fontWeight = 'bold';
+                            headerSeleccionado.style.color = '#1976d2';
+                            headerSeleccionado.style.backgroundColor = '#e3f2fd';
+                            headerSeleccionado.style.fontSize = '0.875rem';
+                            select.appendChild(headerSeleccionado);
+                            
+                            const option = document.createElement('option');
+                            option.value = juegoSeleccionado.id;
+                            option.textContent = `✓ ${juegoSeleccionado.nombre} - ${formatearPrecioChileno(juegoSeleccionado.precio)}`;
+                            option.dataset.precio = juegoSeleccionado.precio;
+                            option.classList.add('juego-seleccionado');
+                            option.selected = true;
+                            option.style.fontWeight = '600';
+                            option.style.color = '#1976d2';
+                            select.appendChild(option);
+                            
+                            // Separador
+                            const separator1 = document.createElement('option');
+                            separator1.disabled = true;
+                            separator1.textContent = '';
+                            select.appendChild(separator1);
+                        }
+                    } else if (selectedId && juegosYaSeleccionados.has(selectedId)) {
+                        // El juego seleccionado ya está en otra fila, limpiar
+                        const rowId = select.dataset.rowId;
+                        if (rowId) {
+                            actualizarSubtotal(rowId);
+                        }
+                    }
+                    
+                    // CATEGORÍA 2: Juegos disponibles (excluyendo los ya seleccionados)
+                    const otrosDisponibles = window.juegosDisponibles.filter(j => {
+                        const juegoIdActual = parseInt(j.id);
+                        if (selectedId && juegoIdActual === selectedId) {
+                            return false;
+                        }
+                        return !juegosYaSeleccionados.has(juegoIdActual);
+                    });
+                    
+                    if (otrosDisponibles.length > 0) {
+                        // Encabezado de categoría
+                        const headerDisponibles = document.createElement('option');
+                        headerDisponibles.disabled = true;
+                        headerDisponibles.textContent = '━━━ JUEGOS DISPONIBLES ━━━';
+                        headerDisponibles.style.fontWeight = 'bold';
+                        headerDisponibles.style.color = '#2e7d32';
+                        headerDisponibles.style.backgroundColor = '#e8f5e9';
+                        headerDisponibles.style.fontSize = '0.875rem';
+                        select.appendChild(headerDisponibles);
+                        
+                        otrosDisponibles.forEach(juego => {
+                            const option = document.createElement('option');
+                            option.value = juego.id;
+                            option.textContent = `${juego.nombre} - ${formatearPrecioChileno(juego.precio)}`;
+                            option.dataset.precio = juego.precio;
+                            option.classList.add('juego-disponible');
+                            select.appendChild(option);
+                        });
+                    }
+                    
+                    // CATEGORÍA 3: Juegos no disponibles (ocupados)
+                    if (window.juegosOcupados.length > 0) {
+                        // Separador antes de ocupados
+                        const separator2 = document.createElement('option');
+                        separator2.disabled = true;
+                        separator2.textContent = '';
+                        select.appendChild(separator2);
+                        
+                        // Encabezado de categoría
+                        const headerOcupados = document.createElement('option');
+                        headerOcupados.disabled = true;
+                        headerOcupados.textContent = '━━━ JUEGOS NO DISPONIBLES ━━━';
+                        headerOcupados.style.fontWeight = 'bold';
+                        headerOcupados.style.color = '#d32f2f';
+                        headerOcupados.style.backgroundColor = '#ffebee';
+                        headerOcupados.style.fontSize = '0.875rem';
+                        select.appendChild(headerOcupados);
+                        
+                        window.juegosOcupados.forEach(juego => {
+                            const option = document.createElement('option');
+                            option.value = juego.id;
+                            option.disabled = true;
+                            option.textContent = `${juego.nombre} - ${formatearPrecioChileno(juego.precio)}`;
+                            option.dataset.precio = juego.precio;
+                            option.classList.add('juego-ocupado');
+                            option.style.color = '#d32f2f';
+                            option.style.backgroundColor = '#fff5f5';
+                            option.style.fontStyle = 'italic';
+                            select.appendChild(option);
+                        });
+                    }
+                }
+            });
+            
+            // Actualizar totales
+            actualizarTotal(containerId);
+            actualizarJuegosJson(containerId === 'juegosContainerCreate' ? 'create' : 'edit');
         }
         
         // Función para agregar fila de juego
@@ -63,16 +205,36 @@
             
             if (!window.juegosDisponibles || !Array.isArray(window.juegosDisponibles)) {
                 console.error('juegosDisponibles no está disponible');
-                mostrarErroresValidacion(['Error: No se pudieron cargar los juegos disponibles'], 'Error');
-                return;
+                // En lugar de mostrar error y retornar, crear una fila vacía que se actualizará cuando se carguen los juegos
+                console.warn('Creando fila de juego sin opciones (se actualizará cuando se carguen los juegos)');
+                window.juegosDisponibles = []; // Asegurar que sea un array vacío
             }
             
             const juegoId = juego ? (juego.juego_id || juego.id) : '';
             const cantidad = juego ? juego.cantidad : 1;
             const precioUnitario = juego ? juego.precio_unitario : 0;
             
+            // Si estamos agregando un juego específico (edición) y no está en disponibles, agregarlo
+            if (juegoId && juego) {
+                const juegoData = window.juegosDisponibles.find(j => j.id == juegoId);
+                if (!juegoData) {
+                    // Agregar el juego a disponibles usando la información del objeto juego
+                    const juegoArriendo = {
+                        id: juegoId,
+                        nombre: juego.juego_nombre || juego.nombre || `Juego ${juegoId}`,
+                        precio: precioUnitario || juego.precio || 0,
+                        categoria: juego.categoria || ''
+                    };
+                    window.juegosDisponibles.push(juegoArriendo);
+                    console.log(`✅ Agregado juego a disponibles en agregarFilaJuego: ${juegoArriendo.nombre} (ID: ${juegoId})`);
+                    
+                    // Remover de ocupados si está ahí
+                    window.juegosOcupados = window.juegosOcupados.filter(j => j.id != juegoId);
+                }
+            }
+            
             const juegoData = window.juegosDisponibles.find(j => j.id == juegoId);
-            const nombreJuego = juegoData ? juegoData.nombre : '';
+            const nombreJuego = juegoData ? juegoData.nombre : (juego ? (juego.juego_nombre || juego.nombre) : '');
             const precioBase = juegoData ? juegoData.precio : precioUnitario;
             
             const rowId = `juego-row-${juegoCounter++}`;
@@ -81,14 +243,20 @@
             row.className = 'juego-row';
             row.style.cssText = 'display:grid;grid-template-columns:2fr 1fr auto;gap:0.75rem;align-items:end;padding:0.75rem;background:#f8f9fa;border-radius:8px;';
             
+            // Crear estructura HTML del row
+            // Si hay un juego seleccionado, mostrar un texto indicando cuál es el juego actual
+            const juegoSeleccionadoText = juegoId && nombreJuego ? 
+                `<div style="margin-bottom:0.5rem;padding:0.5rem;background:#e3f2fd;border-left:3px solid #2196f3;border-radius:4px;">
+                    <span style="font-size:0.875rem;font-weight:600;color:#1976d2;">Juego seleccionado:</span>
+                    <span style="font-size:0.875rem;color:#333;margin-left:0.25rem;">${nombreJuego} - ${formatearPrecioChileno(precioBase)}</span>
+                </div>` : '';
+            
             row.innerHTML = `
                 <div style="grid-column: 1 / 3;">
                     <label style="font-size:0.875rem;color:#666;margin-bottom:0.25rem;display:block;">Juego</label>
+                    ${juegoSeleccionadoText}
                     <select class="juego-select" data-row-id="${rowId}" required>
                         <option value="">Selecciona un juego disponible</option>
-                        ${(window.juegosDisponibles || []).map(j => 
-                            `<option value="${j.id}" data-precio="${j.precio}" ${j.id == juegoId ? 'selected' : ''}>${j.nombre} - ${formatearPrecioChileno(j.precio)}</option>`
-                        ).join('')}
                     </select>
                 </div>
                 <div>
@@ -104,21 +272,150 @@
             
             container.appendChild(row);
             
-            // Event listeners para esta fila
+            // Obtener el select y llenarlo con opciones organizadas
             const select = row.querySelector('.juego-select');
+            
+            // Obtener IDs de juegos ya seleccionados en otras filas del mismo contenedor
+            const juegosYaSeleccionados = new Set();
+            container.querySelectorAll('.juego-row').forEach(otherRow => {
+                if (otherRow !== row) { // No incluir la fila actual
+                    const otherSelect = otherRow.querySelector('.juego-select');
+                    if (otherSelect && otherSelect.value) {
+                        juegosYaSeleccionados.add(parseInt(otherSelect.value));
+                    }
+                }
+            });
+            
+            // Si hay un juego seleccionado en esta fila, agregarlo primero con indicador especial
+            const juegoIdNum = juegoId ? parseInt(juegoId) : null;
+            
+            // CATEGORÍA 1: Juego seleccionado
+            if (juegoIdNum) {
+                let juegoSeleccionado = window.juegosDisponibles.find(j => parseInt(j.id) === juegoIdNum);
+                
+                // Si no está en disponibles pero tenemos la información del objeto juego, usar esa
+                if (!juegoSeleccionado && juego && nombreJuego) {
+                    juegoSeleccionado = {
+                        id: juegoIdNum,
+                        nombre: nombreJuego,
+                        precio: precioBase
+                    };
+                }
+                
+                if (juegoSeleccionado) {
+                    // Encabezado de categoría
+                    const headerSeleccionado = document.createElement('option');
+                    headerSeleccionado.disabled = true;
+                    headerSeleccionado.textContent = '━━━ JUEGO SELECCIONADO ━━━';
+                    headerSeleccionado.style.fontWeight = 'bold';
+                    headerSeleccionado.style.color = '#1976d2';
+                    headerSeleccionado.style.backgroundColor = '#e3f2fd';
+                    headerSeleccionado.style.fontSize = '0.875rem';
+                    select.appendChild(headerSeleccionado);
+                    
+                    const option = document.createElement('option');
+                    option.value = juegoSeleccionado.id;
+                    option.textContent = `✓ ${juegoSeleccionado.nombre} - ${formatearPrecioChileno(juegoSeleccionado.precio)}`;
+                    option.dataset.precio = juegoSeleccionado.precio;
+                    option.classList.add('juego-seleccionado');
+                    option.selected = true;
+                    option.style.fontWeight = '600';
+                    option.style.color = '#1976d2';
+                    select.appendChild(option);
+                    
+                    // Separador
+                    const separator1 = document.createElement('option');
+                    separator1.disabled = true;
+                    separator1.textContent = '';
+                    select.appendChild(separator1);
+                }
+            }
+            
+            // CATEGORÍA 2: Juegos disponibles (excluyendo el seleccionado y los ya seleccionados en otras filas)
+            const otrosDisponibles = (window.juegosDisponibles || []).filter(j => {
+                const juegoIdActual = parseInt(j.id);
+                // Si hay un juego seleccionado en esta fila, excluirlo también
+                if (juegoIdNum && juegoIdActual === juegoIdNum) {
+                    return false;
+                }
+                // Excluir juegos ya seleccionados en otras filas
+                return !juegosYaSeleccionados.has(juegoIdActual);
+            });
+            
+            if (otrosDisponibles.length > 0) {
+                // Encabezado de categoría
+                const headerDisponibles = document.createElement('option');
+                headerDisponibles.disabled = true;
+                headerDisponibles.textContent = '━━━ JUEGOS DISPONIBLES ━━━';
+                headerDisponibles.style.fontWeight = 'bold';
+                headerDisponibles.style.color = '#2e7d32';
+                headerDisponibles.style.backgroundColor = '#e8f5e9';
+                headerDisponibles.style.fontSize = '0.875rem';
+                select.appendChild(headerDisponibles);
+                
+                otrosDisponibles.forEach(j => {
+                    const option = document.createElement('option');
+                    option.value = j.id;
+                    option.textContent = `${j.nombre} - ${formatearPrecioChileno(j.precio)}`;
+                    option.dataset.precio = j.precio;
+                    option.classList.add('juego-disponible');
+                    select.appendChild(option);
+                });
+            }
+            
+            // CATEGORÍA 3: Juegos no disponibles (ocupados)
+            if ((window.juegosOcupados || []).length > 0) {
+                // Separador antes de ocupados
+                const separator2 = document.createElement('option');
+                separator2.disabled = true;
+                separator2.textContent = '';
+                select.appendChild(separator2);
+                
+                // Encabezado de categoría
+                const headerOcupados = document.createElement('option');
+                headerOcupados.disabled = true;
+                headerOcupados.textContent = '━━━ JUEGOS NO DISPONIBLES ━━━';
+                headerOcupados.style.fontWeight = 'bold';
+                headerOcupados.style.color = '#d32f2f';
+                headerOcupados.style.backgroundColor = '#ffebee';
+                headerOcupados.style.fontSize = '0.875rem';
+                select.appendChild(headerOcupados);
+                
+                window.juegosOcupados.forEach(j => {
+                    const option = document.createElement('option');
+                    option.value = j.id;
+                    option.disabled = true; // Deshabilitar para que no se pueda seleccionar
+                    option.textContent = `${j.nombre} - ${formatearPrecioChileno(j.precio)}`;
+                    option.dataset.precio = j.precio;
+                    option.classList.add('juego-ocupado');
+                    option.style.color = '#d32f2f';
+                    option.style.backgroundColor = '#fff5f5';
+                    option.style.fontStyle = 'italic';
+                    select.appendChild(option);
+                });
+            }
+            
+            // Event listeners para esta fila
             const subtotalInput = row.querySelector('.juego-subtotal');
             const removeBtn = row.querySelector('.btn-remove-juego');
             
             select.addEventListener('change', function() {
+                const nuevoJuegoId = this.value;
                 actualizarSubtotal(rowId);
                 actualizarTotal(containerId);
                 actualizarJuegosJson(containerId === 'juegosContainerCreate' ? 'create' : 'edit');
+                
+                // Actualizar todos los otros selects para excluir el juego recién seleccionado
+                actualizarOtrosSelects(containerId, rowId, nuevoJuegoId);
             });
             
             removeBtn.addEventListener('click', function() {
                 row.remove();
                 actualizarTotal(containerId);
                 actualizarJuegosJson(containerId === 'juegosContainerCreate' ? 'create' : 'edit');
+                
+                // Actualizar todos los otros selects para que el juego eliminado vuelva a estar disponible
+                actualizarOtrosSelects(containerId, '', '');
             });
             
             // Actualizar subtotal inicial
@@ -277,8 +574,7 @@
         
         // Botón abrir modal crear
         if (btnOpenCreate) {
-            console.log('Botón encontrado, agregando listener');
-            btnOpenCreate.addEventListener('click', function(e) {
+            const btnOpenCreateHandler = function(e) {
                 console.log('Click en botón detectado');
                 e.preventDefault();
                 e.stopPropagation();
@@ -307,9 +603,6 @@
                     juegosContainer.innerHTML = '';
                 }
                 
-                // Resetear juegos disponibles (se cargarán cuando se seleccione fecha)
-                window.juegosDisponibles = [];
-                
                 // Resetear contador
                 juegoCounter = 0;
                 
@@ -332,18 +625,31 @@
                     fechaInput.value = today;
                     // Cargar juegos para hoy y luego agregar SOLO UNA fila
                     cargarJuegosDisponibles(today).then(() => {
-                        // Asegurar que el contenedor esté vacío antes de agregar
-                        if (juegosContainer) {
-                            juegosContainer.innerHTML = '';
+                        // Verificar que los juegos se cargaron correctamente
+                        if (window.juegosDisponibles && Array.isArray(window.juegosDisponibles) && window.juegosDisponibles.length > 0) {
+                            // Asegurar que el contenedor esté vacío antes de agregar
+                            if (juegosContainer) {
+                                juegosContainer.innerHTML = '';
+                            }
+                            juegoCounter = 0;
+                            agregarFilaJuego('juegosContainerCreate');
+                            actualizarTotal('juegosContainerCreate');
+                        } else {
+                            console.warn('No se cargaron juegos disponibles para la fecha seleccionada');
+                            mostrarErroresValidacion(['No hay juegos disponibles para la fecha seleccionada'], 'Advertencia');
                         }
-                        juegoCounter = 0;
-                        agregarFilaJuego('juegosContainerCreate');
-                        actualizarTotal('juegosContainerCreate');
+                    }).catch(error => {
+                        console.error('Error al cargar juegos:', error);
+                        mostrarErroresValidacion(['Error al cargar los juegos disponibles'], 'Error');
                     });
                 } else {
-                    // Si no hay fechaInput, agregar SOLO UNA fila
-                    agregarFilaJuego('juegosContainerCreate');
-                    actualizarTotal('juegosContainerCreate');
+                    // Si no hay fechaInput, intentar agregar una fila (aunque no haya juegos)
+                    if (window.juegosDisponibles && Array.isArray(window.juegosDisponibles) && window.juegosDisponibles.length > 0) {
+                        agregarFilaJuego('juegosContainerCreate');
+                        actualizarTotal('juegosContainerCreate');
+                    } else {
+                        console.warn('No hay juegos disponibles para agregar');
+                    }
                 }
                 
                 console.log('Abriendo modal...');
@@ -372,12 +678,21 @@
                         console.warn('initMapCreate no está disponible aún');
                     }
                 }, 400);
-            });
+            };
+            
+            // Remover listener anterior si existe
+            if (btnOpenCreate.dataset.listenerAttached && btnOpenCreate._handler) {
+                btnOpenCreate.removeEventListener('click', btnOpenCreate._handler);
+            }
+            
+            btnOpenCreate.addEventListener('click', btnOpenCreateHandler);
+            btnOpenCreate._handler = btnOpenCreateHandler;
+            btnOpenCreate.dataset.listenerAttached = 'true';
         } else {
             console.error('Botón btnOpenCreateArriendo no encontrado');
         }
         
-        // Cargar juegos disponibles según fecha
+        // Cargar juegos disponibles según fecha (igual que en calendario)
         async function cargarJuegosDisponibles(fecha, arriendoId = null) {
             if (!fecha) {
                 console.warn('No se proporcionó fecha para cargar juegos');
@@ -385,10 +700,8 @@
             }
             
             try {
-                let url = `${arriendosBase}juegos-disponibles/?fecha=${fecha}`;
-                if (arriendoId) {
-                    url += `&arriendo_id=${arriendoId}`;
-                }
+                // Usar el mismo endpoint que calendario para obtener disponibles y ocupados
+                let url = `/api/disponibilidad/?fecha=${fecha}`;
                 
                 const response = await fetch(url);
                 if (!response.ok) {
@@ -396,37 +709,231 @@
                 }
                 
                 const data = await response.json();
-                if (data.juegos) {
-                    window.juegosDisponibles = data.juegos;
-                    console.log(`Cargados ${data.juegos.length} juegos disponibles para ${fecha}`);
-                    
-                    // Actualizar todos los selects existentes
-                    document.querySelectorAll('.juego-select').forEach(select => {
+                
+                // Guardar juegos disponibles y ocupados (igual que calendario)
+                window.juegosDisponibles = data.juegos_disponibles || [];
+                window.juegosOcupados = data.juegos_ocupados_list || [];
+                
+                // Si se está editando, obtener los juegos del arriendo actual y agregarlos a disponibles
+                if (arriendoId) {
+                    try {
+                        const arriendoResponse = await fetch(`${arriendosBase}${arriendoId}/json/`);
+                        if (arriendoResponse.ok) {
+                            const arriendoData = await arriendoResponse.json();
+                            if (arriendoData.detalles && arriendoData.detalles.length > 0) {
+                                // Obtener IDs de juegos del arriendo actual
+                                const juegosArriendoIds = new Set(arriendoData.detalles.map(d => d.juego_id).filter(Boolean));
+                                
+                                // Agregar los juegos del arriendo actual a disponibles usando la información de los detalles
+                                arriendoData.detalles.forEach(detalle => {
+                                    if (detalle.juego_id) {
+                                        const juegoId = parseInt(detalle.juego_id); // Asegurar que sea número
+                                        
+                                        // Verificar si ya existe en disponibles (comparación robusta)
+                                        const yaExiste = window.juegosDisponibles.find(j => parseInt(j.id) === juegoId);
+                                        
+                                        if (!yaExiste) {
+                                            // Construir objeto de juego desde los detalles del arriendo
+                                            const juegoArriendo = {
+                                                id: juegoId,
+                                                nombre: detalle.juego_nombre || `Juego ${juegoId}`,
+                                                precio: detalle.precio_unitario || 0,
+                                                categoria: '' // No viene en los detalles
+                                            };
+                                            
+                                            // Agregar a disponibles
+                                            window.juegosDisponibles.push(juegoArriendo);
+                                            console.log(`✅ Agregado juego del arriendo actual a disponibles: ${juegoArriendo.nombre} (ID: ${juegoId})`);
+                                        }
+                                        
+                                        // Remover de ocupados si está ahí (comparación robusta)
+                                        window.juegosOcupados = window.juegosOcupados.filter(j => parseInt(j.id) !== juegoId);
+                                    }
+                                });
+                                
+                                // También intentar obtener información adicional desde el endpoint de juegos disponibles
+                                // (por si acaso hay información adicional que necesitemos)
+                                try {
+                                    const juegosArriendoResponse = await fetch(`${arriendosBase}juegos-disponibles/?fecha=${fecha}&arriendo_id=${arriendoId}`);
+                                    if (juegosArriendoResponse.ok) {
+                                        const juegosArriendoData = await juegosArriendoResponse.json();
+                                        if (juegosArriendoData.juegos) {
+                                            // Actualizar información de juegos que ya agregamos
+                                            juegosArriendoData.juegos.forEach(juego => {
+                                                if (juegosArriendoIds.has(juego.id)) {
+                                                    const juegoExistente = window.juegosDisponibles.find(j => j.id == juego.id);
+                                                    if (juegoExistente) {
+                                                        // Actualizar con información más completa si está disponible
+                                                        if (juego.categoria) juegoExistente.categoria = juego.categoria;
+                                                    }
+                                                }
+                                            });
+                                        }
+                                    }
+                                } catch (error2) {
+                                    console.warn('Error al obtener información adicional de juegos:', error2);
+                                    // No es crítico, continuamos con la información de los detalles
+                                }
+                            }
+                        }
+                    } catch (error) {
+                        console.error('Error al cargar juegos del arriendo actual:', error);
+                        // Continuar sin agregar los juegos del arriendo actual
+                    }
+                }
+                
+                console.log(`Cargados ${window.juegosDisponibles.length} juegos disponibles y ${window.juegosOcupados.length} juegos ocupados para ${fecha}`);
+                console.log('Juegos disponibles:', window.juegosDisponibles);
+                console.log('Juegos ocupados:', window.juegosOcupados);
+                
+                // Actualizar todos los selects existentes con la misma lógica que agregarFilaJuego
+                // Primero, obtener todos los contenedores de juegos
+                const containers = [
+                    document.getElementById('juegosContainerCreate'),
+                    document.getElementById('juegosContainerEdit')
+                ].filter(c => c !== null);
+                
+                containers.forEach(container => {
+                    container.querySelectorAll('.juego-select').forEach(select => {
                         const selectedValue = select.value;
-                        select.innerHTML = `
-                            <option value="">Selecciona un juego disponible</option>
-                            ${window.juegosDisponibles.map(j => 
-                                `<option value="${j.id}" data-precio="${j.precio}" ${j.id == selectedValue ? 'selected' : ''}>${j.nombre} - ${formatearPrecioChileno(j.precio)}</option>`
-                            ).join('')}
-                        `;
+                        const rowId = select.dataset.rowId;
+                        const row = select.closest('.juego-row');
+                        
+                        // Obtener IDs de juegos ya seleccionados en otras filas del mismo contenedor
+                        const juegosYaSeleccionados = new Set();
+                        container.querySelectorAll('.juego-row').forEach(otherRow => {
+                            if (otherRow !== row) { // No incluir la fila actual
+                                const otherSelect = otherRow.querySelector('.juego-select');
+                                if (otherSelect && otherSelect.value) {
+                                    juegosYaSeleccionados.add(parseInt(otherSelect.value));
+                                }
+                            }
+                        });
+                        
+                        // Limpiar select
+                        select.innerHTML = '<option value="">Selecciona un juego disponible</option>';
+                        
+                        // Si hay un juego seleccionado, agregarlo primero con indicador especial
+                        const selectedId = selectedValue ? parseInt(selectedValue) : null;
+                        
+                        // CATEGORÍA 1: Juego seleccionado
+                        if (selectedId) {
+                            const juegoSeleccionado = window.juegosDisponibles.find(j => parseInt(j.id) === selectedId);
+                            if (juegoSeleccionado) {
+                                // Encabezado de categoría
+                                const headerSeleccionado = document.createElement('option');
+                                headerSeleccionado.disabled = true;
+                                headerSeleccionado.textContent = '━━━ JUEGO SELECCIONADO ━━━';
+                                headerSeleccionado.style.fontWeight = 'bold';
+                                headerSeleccionado.style.color = '#1976d2';
+                                headerSeleccionado.style.backgroundColor = '#e3f2fd';
+                                headerSeleccionado.style.fontSize = '0.875rem';
+                                select.appendChild(headerSeleccionado);
+                                
+                                const option = document.createElement('option');
+                                option.value = juegoSeleccionado.id;
+                                option.textContent = `✓ ${juegoSeleccionado.nombre} - ${formatearPrecioChileno(juegoSeleccionado.precio)}`;
+                                option.dataset.precio = juegoSeleccionado.precio;
+                                option.classList.add('juego-seleccionado');
+                                option.selected = true;
+                                option.style.fontWeight = '600';
+                                option.style.color = '#1976d2';
+                                select.appendChild(option);
+                                
+                                // Separador
+                                const separator1 = document.createElement('option');
+                                separator1.disabled = true;
+                                separator1.textContent = '';
+                                select.appendChild(separator1);
+                            }
+                        }
+                        
+                        // CATEGORÍA 2: Juegos disponibles (excluyendo el seleccionado y los ya seleccionados en otras filas)
+                        const otrosDisponibles = window.juegosDisponibles.filter(j => {
+                            const juegoIdActual = parseInt(j.id);
+                            // Si hay un juego seleccionado en esta fila, excluirlo también
+                            if (selectedId && juegoIdActual === selectedId) {
+                                return false;
+                            }
+                            // Excluir juegos ya seleccionados en otras filas
+                            return !juegosYaSeleccionados.has(juegoIdActual);
+                        });
+                        
+                        if (otrosDisponibles.length > 0) {
+                            // Encabezado de categoría
+                            const headerDisponibles = document.createElement('option');
+                            headerDisponibles.disabled = true;
+                            headerDisponibles.textContent = '━━━ JUEGOS DISPONIBLES ━━━';
+                            headerDisponibles.style.fontWeight = 'bold';
+                            headerDisponibles.style.color = '#2e7d32';
+                            headerDisponibles.style.backgroundColor = '#e8f5e9';
+                            headerDisponibles.style.fontSize = '0.875rem';
+                            select.appendChild(headerDisponibles);
+                            
+                            otrosDisponibles.forEach(juego => {
+                                const option = document.createElement('option');
+                                option.value = juego.id;
+                                option.textContent = `${juego.nombre} - ${formatearPrecioChileno(juego.precio)}`;
+                                option.dataset.precio = juego.precio;
+                                option.classList.add('juego-disponible');
+                                select.appendChild(option);
+                            });
+                        }
+                        
+                        // CATEGORÍA 3: Juegos no disponibles (ocupados)
+                        if (window.juegosOcupados.length > 0) {
+                            // Separador antes de ocupados
+                            const separator2 = document.createElement('option');
+                            separator2.disabled = true;
+                            separator2.textContent = '';
+                            select.appendChild(separator2);
+                            
+                            // Encabezado de categoría
+                            const headerOcupados = document.createElement('option');
+                            headerOcupados.disabled = true;
+                            headerOcupados.textContent = '━━━ JUEGOS NO DISPONIBLES ━━━';
+                            headerOcupados.style.fontWeight = 'bold';
+                            headerOcupados.style.color = '#d32f2f';
+                            headerOcupados.style.backgroundColor = '#ffebee';
+                            headerOcupados.style.fontSize = '0.875rem';
+                            select.appendChild(headerOcupados);
+                            
+                            window.juegosOcupados.forEach(juego => {
+                                const option = document.createElement('option');
+                                option.value = juego.id;
+                                option.disabled = true; // Deshabilitar para que no se pueda seleccionar
+                                option.textContent = `${juego.nombre} - ${formatearPrecioChileno(juego.precio)}`;
+                                option.dataset.precio = juego.precio;
+                                option.classList.add('juego-ocupado');
+                                option.style.color = '#d32f2f';
+                                option.style.backgroundColor = '#fff5f5';
+                                option.style.fontStyle = 'italic';
+                                select.appendChild(option);
+                            });
+                        }
                         
                         // Si el juego seleccionado ya no está disponible, limpiar
-                        if (selectedValue && !window.juegosDisponibles.find(j => j.id == selectedValue)) {
-                            select.value = '';
-                            const rowId = select.dataset.rowId;
-                            if (rowId) {
-                                actualizarSubtotal(rowId);
+                        if (selectedValue) {
+                            const selectedIdCheck = parseInt(selectedValue);
+                            const juegoDisponible = window.juegosDisponibles.find(j => parseInt(j.id) === selectedIdCheck);
+                            if (!juegoDisponible) {
+                                select.value = '';
+                                if (rowId) {
+                                    actualizarSubtotal(rowId);
+                                }
                             }
                         }
                     });
-                    
-                    // Actualizar totales
-                    actualizarTotal('juegosContainerCreate');
-                    actualizarTotal('juegosContainerEdit');
-                }
+                });
+                
+                // Actualizar totales
+                actualizarTotal('juegosContainerCreate');
+                actualizarTotal('juegosContainerEdit');
             } catch (error) {
                 console.error('Error al cargar juegos disponibles:', error);
                 mostrarErroresValidacion(['Error al cargar juegos disponibles para esta fecha'], 'Error');
+                window.juegosDisponibles = [];
+                window.juegosOcupados = [];
             }
         }
         
@@ -469,58 +976,160 @@
         }
         
         // Botón agregar juego
-        if (btnAddJuegoCreate) {
-            btnAddJuegoCreate.addEventListener('click', () => {
+        if (btnAddJuegoCreate && !btnAddJuegoCreate.dataset.listenerAttached) {
+            btnAddJuegoCreate.dataset.listenerAttached = 'true';
+            btnAddJuegoCreate.addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
                 agregarFilaJuego('juegosContainerCreate');
             });
         }
         
-        if (btnAddJuegoEdit) {
-            btnAddJuegoEdit.addEventListener('click', () => {
+        if (btnAddJuegoEdit && !btnAddJuegoEdit.dataset.listenerAttached) {
+            btnAddJuegoEdit.dataset.listenerAttached = 'true';
+            btnAddJuegoEdit.addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
                 agregarFilaJuego('juegosContainerEdit');
             });
         }
         
-        // Formulario crear
-        if (formCreate) {
-            formCreate.addEventListener('submit', async function(e) {
-                e.preventDefault();
-                
-                if (isSubmittingCreate) return;
-                
-                // Validar que haya al menos un juego
-                const juegosContainer = document.getElementById('juegosContainerCreate');
-                const juegosRows = juegosContainer.querySelectorAll('.juego-row');
-                if (juegosRows.length === 0) {
-                    mostrarErroresValidacion(['Debe agregar al menos un juego'], 'Error de Validación');
-                    return;
-                }
-                
+        // Función para validar formulario de arriendo
+        function validarFormularioArriendo(form, esEdicion = false) {
+            const todosLosErrores = [];
+            
+            // Obtener valores de los campos
+            const nombre = form.querySelector(esEdicion ? '#editClienteNombre' : '#createClienteNombre')?.value?.trim() || '';
+            const apellido = form.querySelector(esEdicion ? '#editClienteApellido' : '#createClienteApellido')?.value?.trim() || '';
+            const rut = form.querySelector(esEdicion ? '#editClienteRut' : '#createClienteRut')?.value?.trim() || '';
+            const email = form.querySelector(esEdicion ? '#editClienteEmail' : '#createClienteEmail')?.value?.trim() || '';
+            const telefono = form.querySelector(esEdicion ? '#editClienteTelefono' : '#createClienteTelefono')?.value?.trim() || '';
+            const tipoCliente = form.querySelector(esEdicion ? '#editClienteTipo' : '#createClienteTipo')?.value || '';
+            const fechaEvento = form.querySelector(esEdicion ? '#editFechaEvento' : '#createFechaEvento')?.value || '';
+            const horaInstalacion = form.querySelector(esEdicion ? '#editHoraInstalacion' : '#createHoraInstalacion')?.value || '';
+            const horaRetiro = form.querySelector(esEdicion ? '#editHoraRetiro' : '#createHoraRetiro')?.value || '';
+            const direccion = form.querySelector(esEdicion ? '#editDireccion' : '#createDireccion')?.value?.trim() || '';
+            const estado = form.querySelector(esEdicion ? '#editEstado' : '#createEstado')?.value || '';
+            
+            // Validar datos del cliente (tanto en creación como en edición)
+            const erroresNombre = validarNombre(nombre, 'nombre del cliente', 3, 30, true, false);
+            todosLosErrores.push(...erroresNombre);
+            
+            const erroresApellido = validarNombre(apellido, 'apellido del cliente', 3, 30, true, false);
+            todosLosErrores.push(...erroresApellido);
+            
+            // Validar RUT
+            if (!rut) {
+                todosLosErrores.push('El RUT es obligatorio');
+            } else {
+                const erroresRut = validarRUT(rut, 'RUT', true, false);
+                todosLosErrores.push(...erroresRut);
+            }
+            
+            // Validar email del cliente
+            const erroresEmail = validarEmail(email, 'email del cliente', 100, true, false);
+            todosLosErrores.push(...erroresEmail);
+            
+            // Validar teléfono (opcional, pero si se ingresa debe ser válido)
+            if (telefono) {
+                const erroresTelefono = validarTelefonoChileno(telefono, 'teléfono del cliente', false, false);
+                todosLosErrores.push(...erroresTelefono);
+            }
+            
+            // Validar tipo de cliente
+            if (!tipoCliente || (tipoCliente !== 'particular' && tipoCliente !== 'empresa')) {
+                todosLosErrores.push('Debe seleccionar un tipo de cliente válido');
+            }
+            
+            // Validar fecha del evento
+            const erroresFecha = validarFecha(fechaEvento, 'fecha del evento', true, false);
+            todosLosErrores.push(...erroresFecha);
+            
+            // Validar hora de instalación
+            const erroresHoraInstalacion = validarHorario(horaInstalacion, 'hora de instalación', 0, 23, true, false);
+            todosLosErrores.push(...erroresHoraInstalacion);
+            
+            // Validar hora de retiro
+            const erroresHoraRetiro = validarHorario(horaRetiro, 'hora de retiro', 0, 23, true, false);
+            todosLosErrores.push(...erroresHoraRetiro);
+            
+            // Validar que la hora de retiro sea posterior a la hora de instalación
+            if (horaInstalacion && horaRetiro) {
+                const erroresHorarioPosterior = validarHorarioRetiroPosterior(horaInstalacion, horaRetiro, false);
+                todosLosErrores.push(...erroresHorarioPosterior);
+            }
+            
+            // Validar dirección
+            const erroresDireccion = validarDireccionChilena(direccion, 'dirección del evento', 5, 200, false);
+            todosLosErrores.push(...erroresDireccion);
+            
+            // Validar estado
+            if (!estado) {
+                todosLosErrores.push('Debe seleccionar un estado');
+            }
+            
+            // Validar que haya al menos un juego
+            const juegosContainer = document.getElementById(esEdicion ? 'juegosContainerEdit' : 'juegosContainerCreate');
+            const juegosRows = juegosContainer ? juegosContainer.querySelectorAll('.juego-row') : [];
+            if (juegosRows.length === 0) {
+                todosLosErrores.push('Debe agregar al menos un juego');
+            } else {
                 // Validar que todos los juegos estén completos
-                let hayErrores = false;
-                juegosRows.forEach(row => {
+                juegosRows.forEach((row, index) => {
                     const select = row.querySelector('.juego-select');
                     if (!select.value) {
-                        hayErrores = true;
+                        todosLosErrores.push(`El juego ${index + 1} debe estar seleccionado`);
                     }
                 });
+            }
+            
+            // Mostrar errores si los hay
+            if (todosLosErrores.length > 0) {
+                mostrarErroresValidacion(todosLosErrores, 'Errores en el Formulario de Arriendo');
+                return false;
+            }
+            
+            return true;
+        }
+        
+        // Formulario crear
+        if (formCreate) {
+            // Remover listener anterior si existe
+            const formCreateHandler = async function(e) {
+                e.preventDefault();
+                e.stopPropagation();
                 
-                if (hayErrores) {
-                    mostrarErroresValidacion(['Todos los juegos deben estar seleccionados'], 'Error de Validación');
-                    return;
+                // Verificar y establecer flag INMEDIATAMENTE para prevenir doble envío
+                if (isSubmittingCreate) {
+                    console.warn('Submit ya en proceso, ignorando...');
+                    return false;
                 }
                 
-                actualizarJuegosJson('create');
-                
+                // Establecer flag ANTES de cualquier otra operación
                 isSubmittingCreate = true;
-                const submitBtn = this.querySelector('button[type="submit"]');
+                
+                // Deshabilitar botón INMEDIATAMENTE
+                const submitBtn = formCreate.querySelector('button[type="submit"]');
                 const originalText = submitBtn?.textContent;
                 if (submitBtn) {
                     submitBtn.disabled = true;
                     submitBtn.textContent = 'Creando...';
                 }
                 
-                const formData = new FormData(this);
+                // Validar formulario completo
+                if (!validarFormularioArriendo(formCreate, false)) {
+                    // Si hay errores, resetear flag y botón
+                    isSubmittingCreate = false;
+                    if (submitBtn) {
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = originalText;
+                    }
+                    return false; // Si hay errores, no enviar
+                }
+                
+                actualizarJuegosJson('create');
+                
+                const formData = new FormData(formCreate);
                 
                 try {
                     const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value;
@@ -545,9 +1154,12 @@
                     const data = await response.json();
                     
                     if (data.success) {
+                        // NO resetear isSubmittingCreate aquí porque la página se va a recargar
+                        // Mantener el botón deshabilitado para evitar clics adicionales
                         mostrarExitoValidacion(data.message, '¡Arriendo Creado!');
                         closeModal(modalCreate);
-                        setTimeout(() => window.location.reload(), 1500);
+                        // Recargar inmediatamente para evitar duplicados
+                        window.location.reload();
                     } else {
                         mostrarErroresValidacion(data.errors || ['Error al crear el arriendo'], 'Error al Crear Arriendo');
                         isSubmittingCreate = false;
@@ -570,7 +1182,16 @@
                         submitBtn.textContent = originalText;
                     }
                 }
-            });
+            };
+            
+            // Remover listener anterior si existe
+            if (formCreate.dataset.listenerAttached && formCreate._submitHandler) {
+                formCreate.removeEventListener('submit', formCreate._submitHandler);
+            }
+            
+            formCreate.addEventListener('submit', formCreateHandler);
+            formCreate._submitHandler = formCreateHandler;
+            formCreate.dataset.listenerAttached = 'true';
         }
         
         // Función para poblar formulario de edición
@@ -578,7 +1199,7 @@
             document.getElementById('editArriendoId').value = arriendo.id;
             document.getElementById('editClienteId').value = arriendo.cliente_id;
             
-            // Mostrar datos del cliente (solo lectura)
+            // Mostrar datos del cliente (editables)
             const nombres = arriendo.cliente_nombre ? arriendo.cliente_nombre.split(' ') : [];
             document.getElementById('editClienteNombre').value = nombres[0] || '';
             const apellidos = nombres.slice(1).join(' ') || '';
@@ -586,7 +1207,11 @@
             document.getElementById('editClienteEmail').value = arriendo.cliente_email || '';
             document.getElementById('editClienteTelefono').value = arriendo.cliente_telefono || '';
             document.getElementById('editClienteRut').value = arriendo.cliente_rut || '';
-            document.getElementById('editClienteTipo').value = arriendo.cliente_tipo || '';
+            // Convertir el tipo de cliente del formato display al valor
+            const tipoClienteValue = arriendo.cliente_tipo === 'Particular' ? 'particular' : 
+                                   (arriendo.cliente_tipo === 'Empresa' ? 'empresa' : 
+                                   (arriendo.cliente_tipo || ''));
+            document.getElementById('editClienteTipo').value = tipoClienteValue;
             
             document.getElementById('editFechaEvento').value = arriendo.fecha_evento;
             document.getElementById('editHoraInstalacion').value = arriendo.hora_instalacion;
@@ -621,25 +1246,19 @@
             container.innerHTML = '';
             juegoCounter = 0;
             
+            // Los juegos ya se cargaron en cargarJuegosDisponibles (línea 817), así que podemos agregar las filas directamente
             if (arriendo.detalles && arriendo.detalles.length > 0) {
-                // Esperar a que los juegos se carguen antes de agregar las filas
                 console.log('📋 Detalles del arriendo:', arriendo.detalles);
                 console.log('🎮 Juegos disponibles:', window.juegosDisponibles);
                 
-                // Esperar más tiempo para asegurar que los juegos se hayan cargado
-                setTimeout(() => {
-                    if (!window.juegosDisponibles || window.juegosDisponibles.length === 0) {
-                        console.error('❌ No hay juegos disponibles cargados');
-                        agregarFilaJuego('juegosContainerEdit');
-                    } else {
-                        arriendo.detalles.forEach(detalle => {
-                            console.log('➕ Agregando fila para detalle:', detalle);
-                            agregarFilaJuego('juegosContainerEdit', detalle);
-                        });
-                    }
-                    actualizarTotal('juegosContainerEdit');
-                    actualizarJuegosJson('edit');
-                }, 500);
+                // Agregar filas para cada detalle del arriendo
+                arriendo.detalles.forEach(detalle => {
+                    console.log('➕ Agregando fila para detalle:', detalle);
+                    agregarFilaJuego('juegosContainerEdit', detalle);
+                });
+                
+                actualizarTotal('juegosContainerEdit');
+                actualizarJuegosJson('edit');
             } else {
                 agregarFilaJuego('juegosContainerEdit');
                 actualizarTotal('juegosContainerEdit');
@@ -649,23 +1268,25 @@
         
         // Formulario editar
         if (formEdit) {
-            formEdit.addEventListener('submit', async function(e) {
+            // Handler nombrado para poder removerlo
+            const formEditHandler = async function(e) {
                 e.preventDefault();
+                e.stopPropagation();
                 
-                if (isSubmittingEdit) return;
-                
-                // Validar que haya al menos un juego
-                const juegosContainer = document.getElementById('juegosContainerEdit');
-                const juegosRows = juegosContainer.querySelectorAll('.juego-row');
-                if (juegosRows.length === 0) {
-                    mostrarErroresValidacion(['Debe agregar al menos un juego'], 'Error de Validación');
+                if (isSubmittingEdit) {
+                    console.warn('Submit ya en proceso, ignorando...');
                     return;
+                }
+                
+                // Validar formulario completo
+                if (!validarFormularioArriendo(formEdit, true)) {
+                    return; // Si hay errores, no enviar
                 }
                 
                 actualizarJuegosJson('edit');
                 
                 isSubmittingEdit = true;
-                const submitBtn = this.querySelector('button[type="submit"]');
+                const submitBtn = formEdit.querySelector('button[type="submit"]');
                 const originalText = submitBtn?.textContent;
                 if (submitBtn) {
                     submitBtn.disabled = true;
@@ -673,7 +1294,7 @@
                 }
                 
                 const arriendoId = document.getElementById('editArriendoId').value;
-                const formData = new FormData(this);
+                const formData = new FormData(formEdit);
                 
                 const endpoint = `${arriendosBase}${arriendoId}/update/`;
                 
@@ -724,7 +1345,15 @@
                         submitBtn.textContent = originalText;
                     }
                 }
-            });
+            };
+            
+            // Remover listener anterior si existe
+            if (formEdit.dataset.listenerAttached) {
+                formEdit.removeEventListener('submit', formEditHandler);
+            }
+            
+            formEdit.addEventListener('submit', formEditHandler);
+            formEdit.dataset.listenerAttached = 'true';
         }
         
         // Botones de editar
@@ -762,7 +1391,13 @@
                 const arriendoRow = e.target.closest('tr');
                 const arriendoIdText = arriendoRow?.querySelector('td:first-child')?.textContent || 'este arriendo';
                 
-                if (confirm(`¿Estás seguro de que quieres eliminar el arriendo ${arriendoIdText}?`)) {
+                // Mostrar confirmación con SweetAlert2
+                const confirmado = await mostrarConfirmacionEliminar(
+                    `¿Estás seguro de que quieres eliminar el arriendo ${arriendoIdText}?`,
+                    'Confirmar Eliminación'
+                );
+                
+                if (confirmado) {
                     isDeleting = true;
                     const deleteBtn = e.target;
                     const originalText = deleteBtn.textContent;

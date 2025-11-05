@@ -311,33 +311,37 @@
         style="overflow-y:auto;overflow-x:hidden;">
         {% csrf_token %}
         <input type="hidden" name="arriendo_id" id="editArriendoId">
-        <!-- Datos del Cliente (solo lectura en edición) -->
+        <!-- Datos del Cliente (editable en edición) -->
         <label style="grid-column: 1 / -1; margin-top: 0.5rem; margin-bottom: 0.25rem;">
           <strong>Datos del Cliente</strong>
         </label>
         <label>
-          Nombre
-          <input type="text" id="editClienteNombre" readonly style="background:#f5f5f5;">
+          Nombre *
+          <input type="text" id="editClienteNombre" name="cliente_nombre" required>
         </label>
         <label>
-          Apellido
-          <input type="text" id="editClienteApellido" readonly style="background:#f5f5f5;">
+          Apellido *
+          <input type="text" id="editClienteApellido" name="cliente_apellido" required>
         </label>
         <label>
-          RUT
-          <input type="text" id="editClienteRut" readonly style="background:#f5f5f5;">
+          RUT *
+          <input type="text" id="editClienteRut" name="cliente_rut" required>
         </label>
         <label>
-          Email
-          <input type="email" id="editClienteEmail" readonly style="background:#f5f5f5;">
+          Email *
+          <input type="email" id="editClienteEmail" name="cliente_email" required>
         </label>
         <label>
           Teléfono
-          <input type="text" id="editClienteTelefono" readonly style="background:#f5f5f5;">
+          <input type="text" id="editClienteTelefono" name="cliente_telefono">
         </label>
         <label>
-          Tipo de Cliente
-          <input type="text" id="editClienteTipo" readonly style="background:#f5f5f5;">
+          Tipo de Cliente *
+          <select id="editClienteTipo" name="cliente_tipo" required>
+            <option value="">Seleccione un tipo</option>
+            <option value="particular">Particular</option>
+            <option value="empresa">Empresa</option>
+          </select>
         </label>
         <input type="hidden" id="editClienteId" name="cliente_id">
 
@@ -456,12 +460,8 @@
     window.mapEdit = null;
     window.markerCreate = null;
     window.markerEdit = null;
-    let mapCreate = null;
-    let mapEdit = null;
-    let markerCreate = null;
-    let markerEdit = null;
-    let osornoMarkerCreate = null;
-    let osornoMarkerEdit = null;
+    window.osornoMarkerCreate = null;
+    window.osornoMarkerEdit = null;
 
     // Coordenadas de Osorno
     const OSORNO_LAT = -40.5739;

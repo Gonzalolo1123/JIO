@@ -37,6 +37,7 @@ urlpatterns = [
 
     # Gestión de Repartos
     path('panel/repartos/', views.repartos_list, name='repartos_list'),
+    path('panel/repartos/agenda/json/', views.agenda_repartos_json, name='agenda_repartos_json'),
     path('panel/repartos/<str:tipo_reparto>/<int:reparto_id>/asignar/', views.asignar_repartidor, name='asignar_repartidor'),
     path('panel/repartos/<str:tipo_reparto>/<int:reparto_id>/cambiar-estado/', views.cambiar_estado_reparto, name='cambiar_estado_reparto'),
     path('panel/repartos/<str:tipo_reparto>/<int:reparto_id>/registrar-incidente/', views.registrar_incidente, name='registrar_incidente'),

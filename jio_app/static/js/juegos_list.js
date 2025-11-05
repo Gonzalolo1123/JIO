@@ -66,50 +66,15 @@
             validaciones.push(() => validarNombre(nombre, 'nombre del juego', 2, 100, true));
             
             // Descripción es opcional, pero si se proporciona debe ser válida
-            if (descripcion) {
-                validaciones.push(() => {
-                    const errores = [];
-                    if (descripcion.length > 1000) {
-                        errores.push('La descripción no puede exceder los 1000 caracteres');
-                    }
-                    if (!/^[A-Za-zÑñÁÉÍÓÚáéíóú0-9\s\-.,()&]+$/.test(descripcion)) {
-                        errores.push('La descripción contiene caracteres no permitidos');
-                    }
-                    return errores;
-                });
-            }
+            validaciones.push(() => validarDescripcion(descripcion, 'descripción', 0, 1000, false, false));
             
             validaciones.push(() => validarSeleccion(categoria, 'categoría'));
             
-            // Validar dimensiones (float)
-            validaciones.push(() => {
-                const errores = [];
-                if (!dimension_largo) {
-                    errores.push('El largo es obligatorio');
-                } else {
-                    const largoNum = parseFloat(dimension_largo);
-                    if (isNaN(largoNum) || largoNum <= 0) {
-                        errores.push('El largo debe ser un número mayor a 0');
-                    }
-                }
-                if (!dimension_ancho) {
-                    errores.push('El ancho es obligatorio');
-                } else {
-                    const anchoNum = parseFloat(dimension_ancho);
-                    if (isNaN(anchoNum) || anchoNum <= 0) {
-                        errores.push('El ancho debe ser un número mayor a 0');
-                    }
-                }
-                if (!dimension_alto) {
-                    errores.push('El alto es obligatorio');
-                } else {
-                    const altoNum = parseFloat(dimension_alto);
-                    if (isNaN(altoNum) || altoNum <= 0) {
-                        errores.push('El alto debe ser un número mayor a 0');
-                    }
-                }
-                return errores;
-            });
+            // Validar dimensiones (decimales, tamaños creíbles para juegos inflables)
+            // Largo, ancho y alto: mínimo 1m, máximo 25m (castillos inflables grandes)
+            validaciones.push(() => validarNumeroDecimal(dimension_largo, 'largo', 1.0, 25.0, true, false));
+            validaciones.push(() => validarNumeroDecimal(dimension_ancho, 'ancho', 1.0, 25.0, true, false));
+            validaciones.push(() => validarNumeroDecimal(dimension_alto, 'alto', 1.0, 25.0, true, false));
             
             validaciones.push(() => validarEnteroPositivo(capacidad, 'capacidad de personas', 1000));
             
@@ -523,7 +488,13 @@
                     return;
                 }
                 
-                if (confirm(`¿Estás seguro de que quieres eliminar el juego "${juegoNombre}"?`)) {
+                // Mostrar confirmación con SweetAlert2
+                const confirmado = await mostrarConfirmacionEliminar(
+                    `¿Estás seguro de que quieres eliminar el juego "${juegoNombre}"?`,
+                    'Confirmar Eliminación'
+                );
+                
+                if (confirmado) {
                     isDeleting = true;
                     const deleteBtn = e.target;
                     deleteBtn.dataset.processing = 'true';
