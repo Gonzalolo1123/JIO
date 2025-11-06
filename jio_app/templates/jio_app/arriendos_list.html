@@ -39,10 +39,10 @@
   <!-- Lista de arriendos -->
   <div class="form-card" style="overflow:auto;">
     <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:.75rem;">
-      <h2 class="panel-title" style="font-size:1.25rem; color:#2E7D32; margin:0;">Lista de Arriendos</h2>
+      <h2 class="panel-title" style="font-size:1.25rem; color:#2E7D32; margin:0;">Lista de arriendos</h2>
       <div class="actions-wrap" style="gap:.5rem;">
         <button type="button" id="btnOpenCreateArriendo" class="btn btn-primary"><i class="fas fa-plus"></i> Nuevo
-          Arriendo</button>
+          arriendo</button>
       </div>
     </div>
     <table class="table">
@@ -78,7 +78,7 @@
             <a href="?{% if query %}q={{ query }}&{% endif %}{% if estado_filter %}estado={{ estado_filter }}&{% endif %}{% if fecha_desde %}fecha_desde={{ fecha_desde }}&{% endif %}{% if fecha_hasta %}fecha_hasta={{ fecha_hasta }}&{% endif %}order_by=fecha_evento&direction={% if order_by == 'fecha_evento' and direction == 'asc' %}desc{% else %}asc{% endif %}"
               class="sortable-header"
               style="text-decoration:none;color:inherit;display:flex;align-items:center;gap:0.5rem;">
-              Fecha Evento
+              Fecha evento
               {% if order_by == 'fecha_evento' %}
               <i class="fas fa-arrow-{% if direction == 'asc' %}up{% else %}down{% endif %}"
                 style="font-size:0.75rem;"></i>
@@ -161,7 +161,7 @@
   <div id="modalCreateArriendo" class="modal" aria-hidden="true">
     <div class="modal-content" style="max-width:800px;">
       <div class="modal-header">
-        <h2>Nuevo Arriendo</h2>
+        <h2>Nuevo arriendo</h2>
         <button class="modal-close" data-modal-close>&times;</button>
       </div>
       <form id="formCreateArriendo" class="form-grid" data-endpoint="{% url 'jio_app:arriendo_create_json' %}"
@@ -205,15 +205,33 @@
         </label>
         <label>
           Fecha del Evento *
-          <input type="date" id="createFechaEvento" name="fecha_evento" required>
+          <input type="date" id="createFechaEvento" name="fecha_evento" required min max>
+          <small style="display:block;color:#666;margin-top:0.25rem;visibility:hidden;">
+            &nbsp;
+          </small>
         </label>
         <label>
           Hora Instalación *
-          <input type="time" id="createHoraInstalacion" name="hora_instalacion" required>
+          <input type="time" id="createHoraInstalacion" name="hora_instalacion" required min="09:00">
+          <small style="display:block;color:#666;margin-top:0.25rem;">
+            <i class="fas fa-info-circle"></i> Las instalaciones están disponibles desde las 9:00 AM
+          </small>
         </label>
         <label>
           Hora Retiro *
-          <input type="time" id="createHoraRetiro" name="hora_retiro" required>
+          <input type="time" id="createHoraRetiro" name="hora_retiro" required max="23:59">
+          <small style="display:block;color:#666;margin-top:0.25rem;">
+            <i class="fas fa-info-circle"></i> Se calcula automáticamente 6 horas después de la instalación. Puedes modificarla si necesitas más tiempo. Máximo hasta las 23:59.
+          </small>
+        </label>
+        <label style="grid-column: 1 / -1;">
+          <span style="font-size:0.875rem;color:#666;">
+            Horas extra: <span id="createHorasExtra">0</span> horas | 
+            Precio horas extra: <span id="createPrecioHorasExtra">$0</span>
+          </span>
+          <small style="display:block;color:#666;margin-top:0.25rem;">
+            <i class="fas fa-info-circle"></i> Las primeras 6 horas están incluidas. Horas adicionales: $10.000 por hora.
+          </small>
         </label>
 
         <!-- Dirección con Mapa -->
@@ -264,6 +282,10 @@
               <span>Precio por Distancia:</span>
               <span id="precioDistanciaCreate">$0</span>
             </div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:0.5rem;">
+              <span>Horas Extra:</span>
+              <span id="precioHorasExtraCreate">$0</span>
+            </div>
             <div style="border-top:1px solid #ccc;padding-top:0.5rem;display:flex;justify-content:space-between;">
               <strong style="font-size:1.25rem;">Total:</strong>
               <strong style="font-size:1.25rem;"><span id="totalCreate">$0</span></strong>
@@ -304,7 +326,7 @@
   <div id="modalEditArriendo" class="modal" aria-hidden="true">
     <div class="modal-content" style="max-width:800px;">
       <div class="modal-header">
-        <h2>Editar Arriendo</h2>
+        <h2>Editar arriendo</h2>
         <button class="modal-close" data-modal-close>&times;</button>
       </div>
       <form id="formEditArriendo" class="form-grid" data-endpoint-base="/panel/arriendos/"
@@ -348,15 +370,33 @@
         <!-- Fechas y Horarios -->
         <label>
           Fecha del Evento *
-          <input type="date" id="editFechaEvento" name="fecha_evento" required>
+          <input type="date" id="editFechaEvento" name="fecha_evento" required min max>
+          <small style="display:block;color:#666;margin-top:0.25rem;visibility:hidden;">
+            &nbsp;
+          </small>
         </label>
         <label>
           Hora Instalación *
-          <input type="time" id="editHoraInstalacion" name="hora_instalacion" required>
+          <input type="time" id="editHoraInstalacion" name="hora_instalacion" required min="09:00">
+          <small style="display:block;color:#666;margin-top:0.25rem;">
+            <i class="fas fa-info-circle"></i> Las instalaciones están disponibles desde las 9:00 AM
+          </small>
         </label>
         <label>
           Hora Retiro *
-          <input type="time" id="editHoraRetiro" name="hora_retiro" required>
+          <input type="time" id="editHoraRetiro" name="hora_retiro" required max="23:59">
+          <small style="display:block;color:#666;margin-top:0.25rem;">
+            <i class="fas fa-info-circle"></i> Se calcula automáticamente 6 horas después de la instalación. Puedes modificarla si necesitas más tiempo. Máximo hasta las 23:59.
+          </small>
+        </label>
+        <label style="grid-column: 1 / -1;">
+          <span style="font-size:0.875rem;color:#666;">
+            Horas extra: <span id="editHorasExtra">0</span> horas | 
+            Precio horas extra: <span id="editPrecioHorasExtra">$0</span>
+          </span>
+          <small style="display:block;color:#666;margin-top:0.25rem;">
+            <i class="fas fa-info-circle"></i> Las primeras 6 horas están incluidas. Horas adicionales: $10.000 por hora.
+          </small>
         </label>
 
         <!-- Dirección con Mapa -->
@@ -407,6 +447,10 @@
             <div style="display:flex;justify-content:space-between;margin-bottom:0.5rem;">
               <span>Precio por Distancia:</span>
               <span id="precioDistanciaEdit">$0</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:0.5rem;">
+              <span>Horas Extra:</span>
+              <span id="precioHorasExtraEdit">$0</span>
             </div>
             <div style="border-top:1px solid #ccc;padding-top:0.5rem;display:flex;justify-content:space-between;">
               <strong style="font-size:1.25rem;">Total:</strong>

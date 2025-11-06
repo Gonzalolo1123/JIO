@@ -345,13 +345,13 @@
           <label class="days-period-label">Mes:</label>
           <select id="selectVentasMes" class="days-period-select" onchange="cambiarPeriodoVentas('monthly')">
             {% for num, nombre in meses_espanol.items %}
-            <option value="{{ num }}" {% if num|stringformat:"s" == ventas_mes %}selected{% endif %}>{{ nombre }}</option>
+            <option value="{{ num }}" {% if num|stringformat:"s" == ventas_mes|default:mes_seleccionado|stringformat:"s" %}selected{% endif %}>{{ nombre }}</option>
             {% endfor %}
           </select>
           <label class="days-period-label">Año:</label>
           <select id="selectVentasAñoMes" class="days-period-select" onchange="cambiarPeriodoVentas('monthly')">
             {% for año in años_disponibles %}
-            <option value="{{ año }}" {% if año|stringformat:"s" == ventas_año %}selected{% endif %}>{{ año }}</option>
+            <option value="{{ año }}" {% if año|stringformat:"s" == ventas_año|default:año_seleccionado|stringformat:"s" %}selected{% endif %}>{{ año }}</option>
             {% endfor %}
           </select>
         </div>
@@ -361,7 +361,7 @@
           <label class="days-period-label">Año:</label>
           <select id="selectVentasAño" class="days-period-select" onchange="cambiarPeriodoVentas('yearly')">
             {% for año in años_disponibles %}
-            <option value="{{ año }}" {% if año|stringformat:"s" == ventas_año %}selected{% endif %}>{{ año }}</option>
+            <option value="{{ año }}" {% if año|stringformat:"s" == ventas_año|default:año_seleccionado|stringformat:"s" %}selected{% endif %}>{{ año }}</option>
             {% endfor %}
           </select>
         </div>

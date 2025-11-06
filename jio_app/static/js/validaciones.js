@@ -136,7 +136,7 @@ function validarDescripcion(descripcion, campo = 'descripción', minLength = 5, 
 }
 
 // Función para validar precio en pesos chilenos (enteros, mínimo 1 peso)
-function validarPrecioChileno(valor, campo = 'precio', min = 1, max = 999999999, obligatorio = true, mostrarAlerta = false) {
+function validarPrecioChileno(valor, campo = 'precio', min = 1, max = 1000000, obligatorio = true, mostrarAlerta = false) {
   const errores = [];
   
   if (!valor && obligatorio) {
@@ -276,15 +276,46 @@ function validarFecha(fecha, campo = 'fecha', obligatorio = true, mostrarAlerta 
   if (!fecha && obligatorio) {
     errores.push(`La ${campo} es obligatoria`);
   } else if (fecha) {
+    // Crear fecha de hoy sin hora (para comparación justa)
     const hoy = new Date();
-    const inicio = new Date(fecha);
-    hoy.setHours(0,0,0,0);
-    inicio.setHours(0,0,0,0);
-    // Calcula 'ayer'
-    const ayer = new Date(hoy);
-    ayer.setDate(hoy.getDate() - 1);
-    if (inicio < ayer) {
-      errores.push(`La ${campo} no puede ser anterior a hoy`);
+    hoy.setHours(0, 0, 0, 0);
+    
+    // Crear fecha máxima (1 año desde hoy)
+    const fechaMaxima = new Date();
+    fechaMaxima.setFullYear(fechaMaxima.getFullYear() + 1);
+    fechaMaxima.setHours(0, 0, 0, 0);
+    
+    // Parsear la fecha del input (formato YYYY-MM-DD)
+    // Usar solo la fecha sin considerar la hora para evitar problemas de zona horaria
+    const partesFecha = fecha.split('-');
+    if (partesFecha.length === 3) {
+      const año = parseInt(partesFecha[0], 10);
+      const mes = parseInt(partesFecha[1], 10) - 1; // Mes en JS es 0-11
+      const dia = parseInt(partesFecha[2], 10);
+      const inicio = new Date(año, mes, dia);
+      
+      // Validar que la fecha no sea anterior a hoy (permitir el día actual)
+      if (inicio < hoy) {
+        errores.push(`La ${campo} no puede ser anterior al día actual`);
+      }
+      // Validar que la fecha no sea más de 1 año en el futuro
+      else if (inicio > fechaMaxima) {
+        errores.push(`La ${campo} no puede ser más de 1 año desde la fecha actual`);
+      }
+      // Permitir el día actual (inicio >= hoy) y días futuros hasta 1 año
+    } else {
+      // Si el formato no es correcto, intentar parsear normalmente
+      const inicio = new Date(fecha);
+      if (isNaN(inicio.getTime())) {
+        errores.push(`La ${campo} tiene un formato inválido`);
+      } else {
+        inicio.setHours(0, 0, 0, 0);
+        if (inicio < hoy) {
+          errores.push(`La ${campo} no puede ser anterior al día actual`);
+        } else if (inicio > fechaMaxima) {
+          errores.push(`La ${campo} no puede ser más de 1 año desde la fecha actual`);
+        }
+      }
     }
   }
   if (mostrarAlerta && errores.length > 0) {

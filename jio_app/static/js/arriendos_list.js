@@ -454,7 +454,6 @@
             const isCreate = tipo === 'create';
             const distanciaInput = document.getElementById(isCreate ? 'createDistanciaKm' : 'editDistanciaKm');
             const precioSpan = document.getElementById(isCreate ? 'createPrecioDistancia' : 'editPrecioDistancia');
-            const precioDistanciaSpan = document.getElementById(isCreate ? 'precioDistanciaCreate' : 'precioDistanciaEdit');
             
             if (!distanciaInput) return;
             
@@ -464,11 +463,101 @@
             if (precioSpan) {
                 precioSpan.textContent = formatearPrecioChileno(precioDistancia);
             }
-            if (precioDistanciaSpan) {
-                precioDistanciaSpan.textContent = formatearPrecioChileno(precioDistancia);
+            
+            // Actualizar total también (esto actualizará todos los campos del desglose)
+            actualizarTotal(isCreate ? 'juegosContainerCreate' : 'juegosContainerEdit');
+        }
+        
+        // Función para calcular hora de retiro automáticamente (6 horas después de instalación)
+        function calcularHoraRetiroAutomatica(tipo) {
+            const isCreate = tipo === 'create';
+            const horaInstalacionInput = document.getElementById(isCreate ? 'createHoraInstalacion' : 'editHoraInstalacion');
+            const horaRetiroInput = document.getElementById(isCreate ? 'createHoraRetiro' : 'editHoraRetiro');
+            
+            if (!horaInstalacionInput || !horaRetiroInput || !horaInstalacionInput.value) {
+                return;
             }
             
-            // Actualizar total también
+            // Obtener hora de instalación
+            const [horas, minutos] = horaInstalacionInput.value.split(':').map(Number);
+            
+            // Calcular hora de retiro (6 horas después)
+            let horasRetiro = horas + 6;
+            let minutosRetiro = minutos;
+            
+            // Si pasa de medianoche, ajustar
+            if (horasRetiro >= 24) {
+                horasRetiro = horasRetiro - 24;
+            }
+            
+            // Formatear con 2 dígitos
+            const horaRetiroFormateada = `${String(horasRetiro).padStart(2, '0')}:${String(minutosRetiro).padStart(2, '0')}`;
+            
+            // Solo actualizar si el usuario no ha modificado manualmente la hora de retiro
+            // Usamos un flag para saber si fue modificado manualmente
+            if (!horaRetiroInput.dataset.manualEdit || horaRetiroInput.dataset.manualEdit === 'false') {
+                horaRetiroInput.value = horaRetiroFormateada;
+                horaRetiroInput.dataset.autoCalculated = 'true';
+                // Recalcular horas extra después de actualizar la hora
+                calcularHorasExtra(tipo);
+            }
+        }
+        
+        // Función para calcular horas extra y su precio
+        function calcularHorasExtra(tipo) {
+            const isCreate = tipo === 'create';
+            const horaInstalacionInput = document.getElementById(isCreate ? 'createHoraInstalacion' : 'editHoraInstalacion');
+            const horaRetiroInput = document.getElementById(isCreate ? 'createHoraRetiro' : 'editHoraRetiro');
+            const horasExtraSpan = document.getElementById(isCreate ? 'createHorasExtra' : 'editHorasExtra');
+            const precioHorasExtraSpan = document.getElementById(isCreate ? 'createPrecioHorasExtra' : 'editPrecioHorasExtra');
+            
+            if (!horaInstalacionInput || !horaRetiroInput || !horaInstalacionInput.value || !horaRetiroInput.value) {
+                if (horasExtraSpan) horasExtraSpan.textContent = '0';
+                if (precioHorasExtraSpan) precioHorasExtraSpan.textContent = '$0';
+                return;
+            }
+            
+            // Obtener horas de instalación y retiro
+            const [horasInst, minutosInst] = horaInstalacionInput.value.split(':').map(Number);
+            const [horasRet, minutosRet] = horaRetiroInput.value.split(':').map(Number);
+            
+            // Convertir a minutos para facilitar el cálculo
+            const minutosInstalacion = horasInst * 60 + minutosInst;
+            let minutosRetiro = horasRet * 60 + minutosRet;
+            
+            // Si la hora de retiro es menor que la de instalación, asumir que es al día siguiente
+            if (minutosRetiro < minutosInstalacion) {
+                minutosRetiro += 24 * 60; // Agregar 24 horas en minutos
+            }
+            
+            // Calcular diferencia en minutos
+            const diferenciaMinutos = minutosRetiro - minutosInstalacion;
+            
+            // Calcular horas base (6 horas = 360 minutos)
+            const horasBase = 6;
+            const minutosBase = horasBase * 60;
+            
+            // Calcular horas extra (solo si excede las 6 horas base)
+            let horasExtra = 0;
+            if (diferenciaMinutos > minutosBase) {
+                const minutosExtra = diferenciaMinutos - minutosBase;
+                // Redondear hacia arriba (si hay al menos 1 minuto extra, cuenta como 1 hora)
+                horasExtra = Math.ceil(minutosExtra / 60);
+            }
+            
+            // Calcular precio (10.000 pesos por hora extra)
+            const PRECIO_POR_HORA_EXTRA = 10000;
+            const precioHorasExtra = horasExtra * PRECIO_POR_HORA_EXTRA;
+            
+            // Actualizar la UI
+            if (horasExtraSpan) {
+                horasExtraSpan.textContent = horasExtra;
+            }
+            if (precioHorasExtraSpan) {
+                precioHorasExtraSpan.textContent = formatearPrecioChileno(precioHorasExtra);
+            }
+            
+            // Actualizar el total también
             actualizarTotal(isCreate ? 'juegosContainerCreate' : 'juegosContainerEdit');
         }
         
@@ -479,6 +568,8 @@
             const isCreate = containerId === 'juegosContainerCreate';
             const totalSpan = document.getElementById(isCreate ? 'totalCreate' : 'totalEdit');
             const subtotalJuegosSpan = document.getElementById(isCreate ? 'subtotalJuegosCreate' : 'subtotalJuegosEdit');
+            const precioDistanciaSpan = document.getElementById(isCreate ? 'precioDistanciaCreate' : 'precioDistanciaEdit');
+            const precioHorasExtraSpan = document.getElementById(isCreate ? 'precioHorasExtraCreate' : 'precioHorasExtraEdit');
             const distanciaInput = document.getElementById(isCreate ? 'createDistanciaKm' : 'editDistanciaKm');
             
             // Calcular subtotal de juegos
@@ -500,11 +591,25 @@
             const distanciaKm = distanciaInput ? (parseInt(distanciaInput.value) || 0) : 0;
             const precioDistancia = calcularPrecioDistancia(distanciaKm);
             
-            // Total = subtotal juegos + precio distancia
-            const total = subtotalJuegos + precioDistancia;
+            // Calcular precio de horas extra
+            const horasExtraSpan = document.getElementById(isCreate ? 'createHorasExtra' : 'editHorasExtra');
+            const horasExtra = horasExtraSpan ? (parseInt(horasExtraSpan.textContent) || 0) : 0;
+            const PRECIO_POR_HORA_EXTRA = 10000;
+            const precioHorasExtra = horasExtra * PRECIO_POR_HORA_EXTRA;
+            
+            // Total = subtotal juegos + precio distancia + precio horas extra
+            const total = subtotalJuegos + precioDistancia + precioHorasExtra;
             
             if (subtotalJuegosSpan) {
                 subtotalJuegosSpan.textContent = formatearPrecioChileno(subtotalJuegos);
+            }
+            
+            if (precioDistanciaSpan) {
+                precioDistanciaSpan.textContent = formatearPrecioChileno(precioDistancia);
+            }
+            
+            if (precioHorasExtraSpan) {
+                precioHorasExtraSpan.textContent = formatearPrecioChileno(precioHorasExtra);
             }
             
             if (totalSpan) {
@@ -618,10 +723,17 @@
                     resetMapCreate();
                 }
                 
-                // Establecer fecha de hoy por defecto
+                // Establecer fecha de hoy por defecto y bloquear fechas anteriores y más de 1 año
                 const fechaInput = document.getElementById('createFechaEvento');
                 if (fechaInput) {
                     const today = new Date().toISOString().split('T')[0];
+                    // Calcular fecha máxima (1 año desde hoy)
+                    const fechaMaxima = new Date();
+                    fechaMaxima.setFullYear(fechaMaxima.getFullYear() + 1);
+                    const fechaMaximaStr = fechaMaxima.toISOString().split('T')[0];
+                    // Establecer min y max para limitar el rango
+                    fechaInput.min = today; // Bloquear fechas anteriores a hoy (permitir hoy y futuras)
+                    fechaInput.max = fechaMaximaStr; // Bloquear fechas más de 1 año en el futuro
                     fechaInput.value = today;
                     // Cargar juegos para hoy y luego agregar SOLO UNA fila
                     cargarJuegosDisponibles(today).then(() => {
@@ -653,6 +765,12 @@
                 }
                 
                 console.log('Abriendo modal...');
+                // Establecer hora de instalación por defecto (09:00) y calcular hora de retiro automáticamente
+                const horaInstCreate = document.getElementById('createHoraInstalacion');
+                if (horaInstCreate && !horaInstCreate.value) {
+                    horaInstCreate.value = '09:00';
+                    try { calcularHoraRetiroAutomatica('create'); } catch (e) { console.warn('No se pudo calcular hora de retiro automáticamente:', e); }
+                }
                 openModal(modalCreate);
                 console.log('Modal debería estar abierto ahora');
                 
@@ -940,8 +1058,15 @@
         // Listener para cambio de fecha en crear
         const fechaInputCreate = document.getElementById('createFechaEvento');
         if (fechaInputCreate) {
+            // Establecer fecha mínima al inicializar
+            const today = new Date().toISOString().split('T')[0];
+            fechaInputCreate.min = today;
+            
             fechaInputCreate.addEventListener('change', function() {
                 const fecha = this.value;
+                // Asegurar que el mínimo siempre sea hoy
+                const today = new Date().toISOString().split('T')[0];
+                this.min = today;
                 if (fecha) {
                     cargarJuegosDisponibles(fecha);
                 }
@@ -951,12 +1076,117 @@
         // Listener para cambio de fecha en editar
         const fechaInputEdit = document.getElementById('editFechaEvento');
         if (fechaInputEdit) {
+            // Establecer fecha mínima al inicializar
+            const today = new Date().toISOString().split('T')[0];
+            fechaInputEdit.min = today;
+            
             fechaInputEdit.addEventListener('change', function() {
                 const fecha = this.value;
+                // Asegurar que el mínimo siempre sea hoy
+                const today = new Date().toISOString().split('T')[0];
+                this.min = today;
                 const arriendoId = document.getElementById('editArriendoId')?.value;
                 if (fecha) {
                     cargarJuegosDisponibles(fecha, arriendoId);
                 }
+            });
+        }
+        
+        // Listeners para cambio de hora de instalación (calcular automáticamente hora de retiro)
+        const horaInstalacionCreate = document.getElementById('createHoraInstalacion');
+        if (horaInstalacionCreate) {
+            // Validar que la hora no sea antes de las 9:00 AM
+            horaInstalacionCreate.addEventListener('input', function() {
+                if (this.value) {
+                    const [horas, minutos] = this.value.split(':').map(Number);
+                    if (horas < 9) {
+                        // Si la hora es menor a 9, ajustarla a 9:00
+                        this.value = '09:00';
+                        if (typeof Swal !== 'undefined' && Swal.fire) {
+                            Swal.fire({
+                                title: 'Hora inválida',
+                                text: 'Las instalaciones solo están disponibles desde las 9:00 AM',
+                                icon: 'warning',
+                                confirmButtonText: 'Entendido',
+                                timer: 3000
+                            });
+                        }
+                    }
+                }
+            });
+            
+            horaInstalacionCreate.addEventListener('change', function() {
+                // Validar nuevamente al cambiar
+                if (this.value) {
+                    const [horas, minutos] = this.value.split(':').map(Number);
+                    if (horas < 9) {
+                        this.value = '09:00';
+                    }
+                }
+                // Marcar que la hora de retiro fue calculada automáticamente
+                const horaRetiroInput = document.getElementById('createHoraRetiro');
+                if (horaRetiroInput) {
+                    horaRetiroInput.dataset.manualEdit = 'false';
+                }
+                calcularHoraRetiroAutomatica('create');
+            });
+        }
+        
+        const horaInstalacionEdit = document.getElementById('editHoraInstalacion');
+        if (horaInstalacionEdit) {
+            // Validar que la hora no sea antes de las 9:00 AM
+            horaInstalacionEdit.addEventListener('input', function() {
+                if (this.value) {
+                    const [horas, minutos] = this.value.split(':').map(Number);
+                    if (horas < 9) {
+                        // Si la hora es menor a 9, ajustarla a 9:00
+                        this.value = '09:00';
+                        if (typeof Swal !== 'undefined' && Swal.fire) {
+                            Swal.fire({
+                                title: 'Hora inválida',
+                                text: 'Las instalaciones solo están disponibles desde las 9:00 AM',
+                                icon: 'warning',
+                                confirmButtonText: 'Entendido',
+                                timer: 3000
+                            });
+                        }
+                    }
+                }
+            });
+            
+            horaInstalacionEdit.addEventListener('change', function() {
+                // Validar nuevamente al cambiar
+                if (this.value) {
+                    const [horas, minutos] = this.value.split(':').map(Number);
+                    if (horas < 9) {
+                        this.value = '09:00';
+                    }
+                }
+                // Marcar que la hora de retiro fue calculada automáticamente
+                const horaRetiroInput = document.getElementById('editHoraRetiro');
+                if (horaRetiroInput) {
+                    horaRetiroInput.dataset.manualEdit = 'false';
+                }
+                calcularHoraRetiroAutomatica('edit');
+            });
+        }
+        
+        // Listeners para cambio de hora de retiro (calcular horas extra)
+        const horaRetiroCreate = document.getElementById('createHoraRetiro');
+        if (horaRetiroCreate) {
+            horaRetiroCreate.addEventListener('change', function() {
+                // Marcar que fue editado manualmente
+                this.dataset.manualEdit = 'true';
+                calcularHorasExtra('create');
+            });
+        }
+        
+        const horaRetiroEdit = document.getElementById('editHoraRetiro');
+        if (horaRetiroEdit) {
+            horaRetiroEdit.addEventListener('change', function() {
+                // Marcar que fue editado manualmente
+                this.dataset.manualEdit = 'true';
+                calcularHorasExtra('edit');
             });
         }
         
@@ -1045,13 +1275,25 @@
             const erroresFecha = validarFecha(fechaEvento, 'fecha del evento', true, false);
             todosLosErrores.push(...erroresFecha);
             
-            // Validar hora de instalación
-            const erroresHoraInstalacion = validarHorario(horaInstalacion, 'hora de instalación', 0, 23, true, false);
-            todosLosErrores.push(...erroresHoraInstalacion);
+            // Validar hora de instalación (desde las 9:00 AM)
+            if (!horaInstalacion) {
+                todosLosErrores.push('La hora de instalación es obligatoria');
+            } else {
+                const [horas, minutos] = horaInstalacion.split(':').map(Number);
+                if (horas < 9 || (horas === 9 && minutos < 0)) {
+                    todosLosErrores.push('Las instalaciones solo están disponibles desde las 9:00 AM');
+                }
+            }
             
-            // Validar hora de retiro
-            const erroresHoraRetiro = validarHorario(horaRetiro, 'hora de retiro', 0, 23, true, false);
-            todosLosErrores.push(...erroresHoraRetiro);
+            // Validar hora de retiro (antes de las 00:00, máximo 23:59)
+            if (!horaRetiro) {
+                todosLosErrores.push('La hora de retiro es obligatoria');
+            } else {
+                const [horas, minutos] = horaRetiro.split(':').map(Number);
+                if (horas >= 24 || (horas === 23 && minutos > 59)) {
+                    todosLosErrores.push('La hora de retiro debe ser antes de las 00:00');
+                }
+            }
             
             // Validar que la hora de retiro sea posterior a la hora de instalación
             if (horaInstalacion && horaRetiro) {
@@ -1213,7 +1455,15 @@
                                    (arriendo.cliente_tipo || ''));
             document.getElementById('editClienteTipo').value = tipoClienteValue;
             
-            document.getElementById('editFechaEvento').value = arriendo.fecha_evento;
+            const editFechaInput = document.getElementById('editFechaEvento');
+            const today = new Date().toISOString().split('T')[0];
+            // Calcular fecha máxima (1 año desde hoy)
+            const fechaMaxima = new Date();
+            fechaMaxima.setFullYear(fechaMaxima.getFullYear() + 1);
+            const fechaMaximaStr = fechaMaxima.toISOString().split('T')[0];
+            editFechaInput.value = arriendo.fecha_evento;
+            editFechaInput.min = today; // Bloquear fechas anteriores a hoy
+            editFechaInput.max = fechaMaximaStr; // Bloquear fechas más de 1 año en el futuro
             document.getElementById('editHoraInstalacion').value = arriendo.hora_instalacion;
             document.getElementById('editHoraRetiro').value = arriendo.hora_retiro;
             document.getElementById('editDireccion').value = arriendo.direccion_evento;

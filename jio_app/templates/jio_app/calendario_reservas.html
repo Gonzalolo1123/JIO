@@ -616,12 +616,31 @@
             
             <div class="form-group">
               <label for="hora_instalacion">Hora Instalación *</label>
-              <input type="time" id="hora_instalacion" name="hora_instalacion" required>
+              <input type="time" id="hora_instalacion" name="hora_instalacion" required min="09:00">
+              <small style="display:block;color:#666;margin-top:0.25rem;">
+                <i class="fas fa-info-circle"></i> Las instalaciones están disponibles desde las 9:00 AM
+              </small>
             </div>
             
             <div class="form-group">
-              <label for="hora_retiro">Hora Retiro *</label>
-              <input type="time" id="hora_retiro" name="hora_retiro" required>
+              <label>Hora Retiro Estimada</label>
+              <div style="padding:0.75rem;background:#f5f5f5;border-radius:4px;border:1px solid #ddd;">
+                <span id="hora_retiro_texto" style="font-weight:bold;color:#2c5530;">--:--</span>
+              </div>
+              <input type="hidden" id="hora_retiro" name="hora_retiro">
+              <small style="display:block;color:#666;margin-top:0.25rem;">
+                <i class="fas fa-info-circle"></i> Se calcula automáticamente 6 horas después de la instalación. Si necesitas un retiro diferente, indícalo en las observaciones.
+              </small>
+            </div>
+            
+            <div class="form-group" style="grid-column: 1 / -1;">
+              <span style="font-size:0.875rem;color:#666;">
+                Horas extra: <span id="horas-extra">0</span> horas | 
+                Precio horas extra: <span id="precio-horas-extra">$0</span>
+              </span>
+              <small style="display:block;color:#666;margin-top:0.25rem;">
+                <i class="fas fa-info-circle"></i> Las primeras 6 horas están incluidas. Horas adicionales: $10.000 por hora.
+              </small>
             </div>
             
             <div class="form-group">
@@ -655,6 +674,10 @@
                 <div style="display:flex;justify-content:space-between;margin-bottom:0.5rem;">
                   <span>Precio por Distancia:</span>
                   <span id="precio-distancia-total">$0</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:0.5rem;">
+                  <span>Horas Extra:</span>
+                  <span id="precio-horas-extra-total">$0</span>
                 </div>
                 <div style="border-top:1px solid #ccc;padding-top:0.5rem;display:flex;justify-content:space-between;">
                   <strong style="font-size:1.25rem;">Total:</strong>
@@ -724,7 +747,10 @@
             
             <div class="form-group" style="grid-column: 1 / -1;">
               <label for="observaciones">Observaciones</label>
-              <textarea id="observaciones" name="observaciones" rows="3"></textarea>
+              <textarea id="observaciones" name="observaciones" rows="3" placeholder="Si necesitas un horario de retiro diferente al calculado automáticamente, indícalo aquí..."></textarea>
+              <small style="display:block;color:#666;margin-top:0.25rem;">
+                <i class="fas fa-info-circle"></i> Si necesitas un horario de retiro diferente al estimado, indícalo aquí y el administrador lo revisará.
+              </small>
             </div>
             
             <div id="form-errors" class="form-errors" style="display: none;"></div>

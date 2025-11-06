@@ -101,6 +101,8 @@ class Juego(models.Model):
     nombre = models.CharField(max_length=100)
     descripcion = models.TextField(blank=True, null=True)
     categoria = models.CharField(max_length=20, choices=CATEGORIA_CHOICES)
+    edad_minima = models.PositiveIntegerField(help_text="Edad mínima en años", default=3)
+    edad_maxima = models.PositiveIntegerField(help_text="Edad máxima en años", default=12)
     dimension_largo = models.FloatField(help_text="Largo en metros", default=0.0)
     dimension_ancho = models.FloatField(help_text="Ancho en metros", default=0.0)
     dimension_alto = models.FloatField(help_text="Alto en metros", default=0.0)
@@ -114,6 +116,17 @@ class Juego(models.Model):
         default='Habilitado',
         help_text="Estado actual del juego inflable"
     )
+    # Campos para registrar peso excedido
+    peso_excedido = models.BooleanField(default=False, help_text="Indica si el peso excede el máximo de la categoría")
+    peso_excedido_por = models.ForeignKey(
+        Usuario, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        related_name='juegos_peso_excedido',
+        help_text="Usuario que ingresó el peso excedido"
+    )
+    peso_excedido_fecha = models.DateTimeField(null=True, blank=True, help_text="Fecha y hora en que se ingresó el peso excedido")
     
     class Meta:
         verbose_name = 'Juego Inflable'
@@ -182,6 +195,8 @@ class Reserva(models.Model):
     observaciones = models.TextField(blank=True, null=True)
     distancia_km = models.PositiveIntegerField(default=0, help_text="Kilómetros fuera de Osorno")
     precio_distancia = models.DecimalField(max_digits=10, decimal_places=2, default=0, help_text="Precio por distancia (km * precio por km)")
+    horas_extra = models.PositiveIntegerField(default=0, help_text="Horas adicionales después de las 6 horas base")
+    precio_horas_extra = models.DecimalField(max_digits=10, decimal_places=2, default=0, help_text="Precio por horas extra ($10.000 por hora)")
     total_reserva = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     fecha_creacion = models.DateTimeField(auto_now_add=True)
     fecha_modificacion = models.DateTimeField(auto_now=True)

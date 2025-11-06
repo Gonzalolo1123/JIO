@@ -58,6 +58,22 @@ function initMoneyChart() {
             data = getDataFromElement('ventas-semanales-data');
     }
 
+    // Validar que hay datos
+    if (!Array.isArray(labels) || !Array.isArray(data) || labels.length === 0 || data.length === 0) {
+        console.warn('No hay datos de ventas para el período:', periodo, 'Labels:', labels, 'Data:', data);
+        // Asegurar que siempre haya al menos un elemento para que el gráfico se renderice
+        labels = labels && labels.length > 0 ? labels : ['Sin datos'];
+        data = data && data.length > 0 ? data : [0];
+    }
+
+    // Asegurar que labels y data tengan la misma longitud
+    if (labels.length !== data.length) {
+        console.warn('Labels y data tienen diferentes longitudes:', labels.length, 'vs', data.length);
+        const minLength = Math.min(labels.length, data.length);
+        labels = labels.slice(0, minLength);
+        data = data.slice(0, minLength);
+    }
+
     moneyChart = new Chart(ctx, {
         type: 'line',
         data: {
@@ -138,8 +154,23 @@ function updateMoneyChart(period, buttonElement) {
 
     // Validar que hay datos
     if (!Array.isArray(labels) || !Array.isArray(data)) {
-        console.warn('Datos inválidos para período:', period);
+        console.warn('Datos inválidos para período:', period, 'Labels:', labels, 'Data:', data);
         return;
+    }
+
+    // Asegurar que labels y data tengan la misma longitud
+    if (labels.length !== data.length) {
+        console.warn('Labels y data tienen diferentes longitudes:', labels.length, 'vs', data.length);
+        const minLength = Math.min(labels.length, data.length);
+        labels = labels.slice(0, minLength);
+        data = data.slice(0, minLength);
+    }
+
+    // Si no hay datos, asegurar que haya al menos un elemento
+    if (labels.length === 0 || data.length === 0) {
+        console.warn('No hay datos para el período:', period);
+        labels = ['Sin datos'];
+        data = [0];
     }
 
     // Actualizar datos del gráfico

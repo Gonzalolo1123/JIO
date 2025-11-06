@@ -7,7 +7,7 @@
 {% block content %}
 <div class="panel-container">
   <div class="panel-header">
-    <h1 class="panel-title">Juegos Inflables</h1>
+    <h1 class="panel-title">Juegos inflables</h1>
   </div>
 
   <!-- Modal de edición -->
@@ -35,8 +35,16 @@
           </select>
         </label>
         <label>
+          Edad mínima (años)
+          <input type="number" name="edad_minima" id="editJuegoEdadMinima" required min="1" max="18">
+        </label>
+        <label>
+          Edad máxima (años)
+          <input type="number" name="edad_maxima" id="editJuegoEdadMaxima" required min="1" max="18">
+        </label>
+        <label>
           Capacidad (personas)
-          <input type="number" name="capacidad_personas" id="editJuegoCapacidad" required min="1">
+          <input type="number" name="capacidad_personas" id="editJuegoCapacidad" required min="1" max="100">
         </label>
         <!-- Fila 2: Largo, Ancho, Alto -->
         <label style="grid-column: 1 / -1; margin-bottom: 0.25rem; margin-top: 0.5rem;">
@@ -58,10 +66,11 @@
         <label>
           Peso máximo (kg)
           <input type="number" name="peso_maximo" id="editJuegoPeso" required min="1">
+          <input type="hidden" name="peso_excedido_confirmado" id="editJuegoPesoExcedidoConfirmado" value="false">
         </label>
         <label>
           Precio base ($)
-          <input type="number" name="precio_base" id="editJuegoPrecio" required min="1" step="1">
+          <input type="number" name="precio_base" id="editJuegoPrecio" required min="1" max="1000000" step="1">
         </label>
         <label>
           Descripción
@@ -262,7 +271,7 @@
         </label>
         <label>
           Categoría
-          <select name="categoria" required>
+          <select name="categoria" id="createJuegoCategoria" required>
             <option value="">Seleccionar categoría</option>
             {% for value, label in categoria_choices %}
             <option value="{{ value }}">{{ label }}</option>
@@ -270,8 +279,16 @@
           </select>
         </label>
         <label>
+          Edad mínima (años)
+          <input type="number" name="edad_minima" id="createJuegoEdadMinima" required min="1" max="18">
+        </label>
+        <label>
+          Edad máxima (años)
+          <input type="number" name="edad_maxima" id="createJuegoEdadMaxima" required min="1" max="18">
+        </label>
+        <label>
           Capacidad (personas)
-          <input type="number" name="capacidad_personas" required min="1">
+          <input type="number" name="capacidad_personas" id="createJuegoCapacidad" required min="1" max="100">
         </label>
         <!-- Fila 2: Largo, Ancho, Alto -->
         <label style="grid-column: 1 / -1; margin-bottom: 0.25rem; margin-top: 0.5rem;">
@@ -292,11 +309,12 @@
         <!-- Fila 3: Peso máximo, Precio base, Descripción -->
         <label>
           Peso máximo (kg)
-          <input type="number" name="peso_maximo" required min="1">
+          <input type="number" name="peso_maximo" id="createJuegoPesoMaximo" required min="1">
+          <input type="hidden" name="peso_excedido_confirmado" id="createJuegoPesoExcedidoConfirmado" value="false">
         </label>
         <label>
           Precio base ($)
-          <input type="number" name="precio_base" required min="1" step="1">
+          <input type="number" name="precio_base" required min="1" max="1000000" step="1">
         </label>
         <label>
           Descripción

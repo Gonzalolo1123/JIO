@@ -353,11 +353,15 @@ def crear_reserva_publica(request):
         errors.append('La fecha es obligatoria')
     else:
         try:
-            from datetime import datetime
+            from datetime import datetime, timedelta
             fecha_obj = datetime.strptime(fecha_evento, '%Y-%m-%d').date()
             hoy = timezone.now().date()
             if fecha_obj < hoy:
                 errors.append('No se pueden hacer reservas para fechas pasadas')
+            # Validar que la fecha no sea más de 1 año en el futuro
+            fecha_maxima = hoy + timedelta(days=365)
+            if fecha_obj > fecha_maxima:
+                errors.append('La fecha del evento no puede ser más de 1 año desde la fecha actual')
         except ValueError:
             errors.append('Formato de fecha inválido')
     
@@ -370,6 +374,10 @@ def crear_reserva_publica(request):
         try:
             from datetime import datetime
             hora_inst_obj = datetime.strptime(hora_instalacion, '%H:%M').time()
+            # Validar que la hora de instalación sea desde las 9:00 AM
+            hora_minima = datetime.strptime('09:00', '%H:%M').time()
+            if hora_inst_obj < hora_minima:
+                errors.append('Las instalaciones solo están disponibles desde las 9:00 AM')
         except ValueError:
             errors.append('Formato de hora de instalación inválido (debe ser HH:MM)')
     
@@ -379,6 +387,10 @@ def crear_reserva_publica(request):
         try:
             from datetime import datetime
             hora_ret_obj = datetime.strptime(hora_retiro, '%H:%M').time()
+            # Validar que la hora de retiro sea antes de las 00:00 (23:59 máximo)
+            hora_maxima = datetime.strptime('23:59', '%H:%M').time()
+            if hora_ret_obj > hora_maxima:
+                errors.append('La hora de retiro debe ser antes de las 00:00')
         except ValueError:
             errors.append('Formato de hora de retiro inválido (debe ser HH:MM)')
     
@@ -535,8 +547,39 @@ def crear_reserva_publica(request):
     PRECIO_POR_KM = 1000
     precio_distancia = distancia_km_int * PRECIO_POR_KM
     
-    # Calcular total (suma de todos los juegos + precio por distancia)
-    total_final = total_juegos + precio_distancia
+    # Calcular horas extra y su precio
+    horas_extra = 0
+    precio_horas_extra = 0
+    if hora_inst_obj and hora_ret_obj:
+        from datetime import timedelta
+        # Convertir horas a datetime para calcular diferencia
+        fecha_base = datetime(2000, 1, 1).date()
+        datetime_inst = datetime.combine(fecha_base, hora_inst_obj)
+        datetime_ret = datetime.combine(fecha_base, hora_ret_obj)
+        
+        # Si la hora de retiro es menor que la de instalación, asumir que es al día siguiente
+        if datetime_ret < datetime_inst:
+            datetime_ret += timedelta(days=1)
+        
+        # Calcular diferencia en minutos
+        diferencia = datetime_ret - datetime_inst
+        diferencia_minutos = diferencia.total_seconds() / 60
+        
+        # Calcular horas base (6 horas = 360 minutos)
+        minutos_base = 6 * 60
+        
+        # Calcular horas extra (solo si excede las 6 horas base)
+        if diferencia_minutos > minutos_base:
+            minutos_extra = diferencia_minutos - minutos_base
+            # Redondear hacia arriba (si hay al menos 1 minuto extra, cuenta como 1 hora)
+            horas_extra = int((minutos_extra + 59) // 60)  # Redondear hacia arriba
+        
+        # Calcular precio (10.000 pesos por hora extra)
+        PRECIO_POR_HORA_EXTRA = 10000
+        precio_horas_extra = horas_extra * PRECIO_POR_HORA_EXTRA
+    
+    # Calcular total (suma de todos los juegos + precio por distancia + horas extra)
+    total_final = total_juegos + precio_distancia + precio_horas_extra
     
     try:
         # Crear reserva
@@ -548,6 +591,8 @@ def crear_reserva_publica(request):
             direccion_evento=direccion,
             distancia_km=distancia_km_int,
             precio_distancia=precio_distancia,
+            horas_extra=horas_extra,
+            precio_horas_extra=precio_horas_extra,
             estado='pendiente',
             observaciones=observaciones or None,
             total_reserva=total_final,
@@ -1398,6 +1443,9 @@ def repartos_list(request):
     
     instalaciones_qs = instalaciones_qs.order_by(order_field_inst)
     
+    # Filtrar solo instalaciones posteriores o iguales a la fecha actual
+    instalaciones_qs = instalaciones_qs.filter(fecha_instalacion__gte=fecha_hoy)
+    
     if query:
         instalaciones_qs = instalaciones_qs.filter(
             Q(reserva__cliente__usuario__first_name__icontains=query) |
@@ -1436,6 +1484,9 @@ def repartos_list(request):
         order_field_ret = '-' + order_field_ret
     
     retiros_qs = retiros_qs.order_by(order_field_ret)
+    
+    # Filtrar solo retiros posteriores o iguales a la fecha actual
+    retiros_qs = retiros_qs.filter(fecha_retiro__gte=fecha_hoy)
     
     if query:
         retiros_qs = retiros_qs.filter(
@@ -1866,6 +1917,8 @@ def juego_detail_json(request, juego_id: int):
             'nombre': juego.nombre,
             'descripcion': juego.descripcion or '',
             'categoria': juego.categoria,
+            'edad_minima': juego.edad_minima,
+            'edad_maxima': juego.edad_maxima,
             'dimension_largo': float(juego.dimension_largo),
             'dimension_ancho': float(juego.dimension_ancho),
             'dimension_alto': float(juego.dimension_alto),
@@ -1883,6 +1936,33 @@ def juego_detail_json(request, juego_id: int):
 
 
 
+# Función auxiliar para obtener límites según categoría
+def obtener_limites_categoria(categoria):
+    """
+    Retorna los límites esperados para cada categoría de juego
+    """
+    limites = {
+        'Pequeño': {
+            'edad_minima': 3,
+            'edad_maxima': 8,
+            'capacidad_maxima': 10,
+            'peso_maximo': 300
+        },
+        'Mediano': {
+            'edad_minima': 4,
+            'edad_maxima': 12,
+            'capacidad_maxima': 20,
+            'peso_maximo': 400
+        },
+        'Grande': {
+            'edad_minima': 4,
+            'edad_maxima': 12,
+            'capacidad_maxima': 30,
+            'peso_maximo': 600
+        }
+    }
+    return limites.get(categoria, {})
+
 @login_required
 @require_http_methods(["POST"])
 def juego_create_json(request):
@@ -1895,6 +1975,8 @@ def juego_create_json(request):
     nombre = request.POST.get('nombre', '').strip()
     descripcion = request.POST.get('descripcion', '').strip()
     categoria = request.POST.get('categoria', '').strip()
+    edad_minima = request.POST.get('edad_minima', '').strip()
+    edad_maxima = request.POST.get('edad_maxima', '').strip()
     dimension_largo = request.POST.get('dimension_largo', '').strip()
     dimension_ancho = request.POST.get('dimension_ancho', '').strip()
     dimension_alto = request.POST.get('dimension_alto', '').strip()
@@ -1903,6 +1985,7 @@ def juego_create_json(request):
     precio_base = request.POST.get('precio_base', '').strip()
     foto = request.FILES.get('foto')  # Cambio: Ahora recibimos un archivo
     estado = request.POST.get('estado', 'habilitado').strip()
+    peso_excedido_confirmado = request.POST.get('peso_excedido_confirmado', 'false').strip().lower() == 'true'
 
     errors = []
     capacidad = None
@@ -1923,6 +2006,44 @@ def juego_create_json(request):
     
     if not categoria or categoria not in [choice[0] for choice in Juego.CATEGORIA_CHOICES]:
         errors.append('Categoría inválida o no seleccionada')
+    
+    # Obtener límites según categoría
+    limites = obtener_limites_categoria(categoria) if categoria else {}
+    
+    # Validar edades
+    edad_min = None
+    edad_max = None
+    if not edad_minima:
+        if limites:
+            edad_min = limites.get('edad_minima', 3)
+        else:
+            errors.append('La edad mínima es obligatoria')
+    else:
+        try:
+            edad_min = int(edad_minima)
+            if edad_min < 1:
+                errors.append('La edad mínima debe ser mayor a 0')
+            elif limites and edad_min != limites.get('edad_minima'):
+                errors.append(f'Para la categoría {categoria}, la edad mínima debe ser {limites.get("edad_minima")} años')
+        except (ValueError, TypeError):
+            errors.append('La edad mínima debe ser un número válido')
+    
+    if not edad_maxima:
+        if limites:
+            edad_max = limites.get('edad_maxima', 12)
+        else:
+            errors.append('La edad máxima es obligatoria')
+    else:
+        try:
+            edad_max = int(edad_maxima)
+            if edad_max < 1:
+                errors.append('La edad máxima debe ser mayor a 0')
+            elif edad_min and edad_max < edad_min:
+                errors.append('La edad máxima debe ser mayor o igual a la edad mínima')
+            elif limites and edad_max != limites.get('edad_maxima'):
+                errors.append(f'Para la categoría {categoria}, la edad máxima debe ser {limites.get("edad_maxima")} años')
+        except (ValueError, TypeError):
+            errors.append('La edad máxima debe ser un número válido')
     
     # Validar dimensiones
     if not dimension_largo:
@@ -1962,9 +2083,14 @@ def juego_create_json(request):
             capacidad = int(capacidad_personas)
             if capacidad <= 0:
                 errors.append('La capacidad debe ser mayor a 0')
+            elif capacidad > 100:
+                errors.append('La capacidad de personas no puede exceder 100')
+            elif limites and capacidad != limites.get('capacidad_maxima'):
+                errors.append(f'Para la categoría {categoria}, la capacidad máxima debe ser {limites.get("capacidad_maxima")} personas')
         except (ValueError, TypeError):
             errors.append('La capacidad debe ser un número válido')
     
+    peso_excedido = False
     if not peso_maximo:
         errors.append('El peso máximo es obligatorio')
     else:
@@ -1972,6 +2098,12 @@ def juego_create_json(request):
             peso = int(peso_maximo)
             if peso <= 0:
                 errors.append('El peso máximo debe ser mayor a 0')
+            elif limites:
+                peso_max_categoria = limites.get('peso_maximo', 0)
+                if peso > peso_max_categoria:
+                    peso_excedido = True
+                    if not peso_excedido_confirmado:
+                        errors.append(f'El peso máximo ({peso} kg) excede el límite de la categoría {categoria} ({peso_max_categoria} kg). Debe confirmar que está seguro de este valor.')
         except (ValueError, TypeError):
             errors.append('El peso máximo debe ser un número válido')
     
@@ -1982,6 +2114,8 @@ def juego_create_json(request):
             precio = int(precio_base)
             if precio < 1:
                 errors.append('El precio base debe ser un número entero mayor a 0')
+            elif precio > 1000000:
+                errors.append('El precio base no puede exceder 1.000.000 pesos')
         except (ValueError, TypeError):
             errors.append('El precio base debe ser un número entero válido')
     
@@ -2006,10 +2140,13 @@ def juego_create_json(request):
         return JsonResponse({'success': False, 'errors': errors}, status=400)
 
     try:
+        from django.utils import timezone
         juego = Juego.objects.create(
             nombre=nombre,
             descripcion=descripcion or None,
             categoria=categoria,
+            edad_minima=edad_min,
+            edad_maxima=edad_max,
             dimension_largo=largo,
             dimension_ancho=ancho,
             dimension_alto=alto,
@@ -2018,6 +2155,9 @@ def juego_create_json(request):
             precio_base=precio,
             foto=foto if foto else None,
             estado=estado,
+            peso_excedido=peso_excedido,
+            peso_excedido_por=request.user if peso_excedido else None,
+            peso_excedido_fecha=timezone.now() if peso_excedido else None,
         )
         return JsonResponse({
             'success': True, 
@@ -2052,6 +2192,16 @@ def cambiar_estado_reparto(request, tipo_reparto: str, reparto_id: int):
             if nuevo_estado not in estados_validos:
                 return JsonResponse({'success': False, 'errors': ['Estado inválido']}, status=400)
             
+            # Validar que solo se puede marcar como "realizado" el día que está agendada
+            if nuevo_estado == 'realizada':
+                from datetime import date
+                fecha_hoy = date.today()
+                if instalacion.fecha_instalacion != fecha_hoy:
+                    return JsonResponse({
+                        'success': False, 
+                        'errors': [f'Solo se puede marcar como realizado el día agendado ({instalacion.fecha_instalacion.strftime("%d/%m/%Y")}). Hoy es {fecha_hoy.strftime("%d/%m/%Y")}']
+                    }, status=400)
+            
             instalacion.estado_instalacion = nuevo_estado
             if observaciones:
                 obs_actual = instalacion.observaciones_instalacion or ''
@@ -2065,6 +2215,16 @@ def cambiar_estado_reparto(request, tipo_reparto: str, reparto_id: int):
             estados_validos = [choice[0] for choice in retiro._meta.get_field('estado_retiro').choices]
             if nuevo_estado not in estados_validos:
                 return JsonResponse({'success': False, 'errors': ['Estado inválido']}, status=400)
+            
+            # Validar que solo se puede marcar como "realizado" el día que está agendado
+            if nuevo_estado == 'realizado':
+                from datetime import date
+                fecha_hoy = date.today()
+                if retiro.fecha_retiro != fecha_hoy:
+                    return JsonResponse({
+                        'success': False, 
+                        'errors': [f'Solo se puede marcar como realizado el día agendado ({retiro.fecha_retiro.strftime("%d/%m/%Y")}). Hoy es {fecha_hoy.strftime("%d/%m/%Y")}']
+                    }, status=400)
             
             retiro.estado_retiro = nuevo_estado
             if observaciones:
@@ -2308,6 +2468,15 @@ def marcar_reparto_realizado(request, tipo_reparto: str, reparto_id: int):
             if instalacion.repartidor != request.user.repartidor:
                 return JsonResponse({'success': False, 'errors': ['No autorizado para actualizar esta instalación']}, status=403)
             
+            # Validar que solo se puede marcar como realizado el día que está agendada
+            from datetime import date
+            fecha_hoy = date.today()
+            if instalacion.fecha_instalacion != fecha_hoy:
+                return JsonResponse({
+                    'success': False, 
+                    'errors': [f'Solo se puede marcar como realizado el día agendado ({instalacion.fecha_instalacion.strftime("%d/%m/%Y")}). Hoy es {fecha_hoy.strftime("%d/%m/%Y")}']
+                }, status=400)
+            
             # Validar campos de pago (requeridos para instalación)
             metodo_pago = request.POST.get('metodo_pago')
             comprobante_pago = request.FILES.get('comprobante_pago')
@@ -2362,6 +2531,15 @@ def marcar_reparto_realizado(request, tipo_reparto: str, reparto_id: int):
             # Verificar que el repartidor sea el asignado
             if retiro.repartidor != request.user.repartidor:
                 return JsonResponse({'success': False, 'errors': ['No autorizado para actualizar este retiro']}, status=403)
+            
+            # Validar que solo se puede marcar como realizado el día que está agendado
+            from datetime import date
+            fecha_hoy = date.today()
+            if retiro.fecha_retiro != fecha_hoy:
+                return JsonResponse({
+                    'success': False, 
+                    'errors': [f'Solo se puede marcar como realizado el día agendado ({retiro.fecha_retiro.strftime("%d/%m/%Y")}). Hoy es {fecha_hoy.strftime("%d/%m/%Y")}']
+                }, status=400)
             
             # Actualizar retiro
             retiro.estado_retiro = 'realizado'
@@ -2651,6 +2829,8 @@ def juego_update_json(request, juego_id: int):
     nombre = request.POST.get('nombre', '').strip()
     descripcion = request.POST.get('descripcion', '').strip()
     categoria = request.POST.get('categoria', '').strip()
+    edad_minima = request.POST.get('edad_minima', '').strip()
+    edad_maxima = request.POST.get('edad_maxima', '').strip()
     dimension_largo = request.POST.get('dimension_largo', '').strip()
     dimension_ancho = request.POST.get('dimension_ancho', '').strip()
     dimension_alto = request.POST.get('dimension_alto', '').strip()
@@ -2660,6 +2840,7 @@ def juego_update_json(request, juego_id: int):
     foto = request.FILES.get('foto')  # Cambio: Ahora recibimos un archivo
     eliminar_foto = request.POST.get('eliminar_foto') == 'true'  # Para eliminar foto existente
     estado = request.POST.get('estado', '').strip()
+    peso_excedido_confirmado = request.POST.get('peso_excedido_confirmado', 'false').strip().lower() == 'true'
 
     errors = []
     largo = None
@@ -2679,6 +2860,44 @@ def juego_update_json(request, juego_id: int):
         errors.append('La categoría es obligatoria')
     elif categoria not in [choice[0] for choice in Juego.CATEGORIA_CHOICES]:
         errors.append('Categoría inválida')
+    
+    # Obtener límites según categoría
+    limites = obtener_limites_categoria(categoria) if categoria else {}
+    
+    # Validar edades
+    edad_min = None
+    edad_max = None
+    if not edad_minima:
+        if limites:
+            edad_min = limites.get('edad_minima', 3)
+        else:
+            errors.append('La edad mínima es obligatoria')
+    else:
+        try:
+            edad_min = int(edad_minima)
+            if edad_min < 1:
+                errors.append('La edad mínima debe ser mayor a 0')
+            elif limites and edad_min != limites.get('edad_minima'):
+                errors.append(f'Para la categoría {categoria}, la edad mínima debe ser {limites.get("edad_minima")} años')
+        except (ValueError, TypeError):
+            errors.append('La edad mínima debe ser un número válido')
+    
+    if not edad_maxima:
+        if limites:
+            edad_max = limites.get('edad_maxima', 12)
+        else:
+            errors.append('La edad máxima es obligatoria')
+    else:
+        try:
+            edad_max = int(edad_maxima)
+            if edad_max < 1:
+                errors.append('La edad máxima debe ser mayor a 0')
+            elif edad_min and edad_max < edad_min:
+                errors.append('La edad máxima debe ser mayor o igual a la edad mínima')
+            elif limites and edad_max != limites.get('edad_maxima'):
+                errors.append(f'Para la categoría {categoria}, la edad máxima debe ser {limites.get("edad_maxima")} años')
+        except (ValueError, TypeError):
+            errors.append('La edad máxima debe ser un número válido')
     
     # Validar dimensiones
     if not dimension_largo:
@@ -2715,13 +2934,24 @@ def juego_update_json(request, juego_id: int):
         capacidad = int(capacidad_personas)
         if capacidad <= 0:
             errors.append('La capacidad debe ser mayor a 0')
+        elif capacidad > 100:
+            errors.append('La capacidad de personas no puede exceder 100')
+        elif limites and capacidad != limites.get('capacidad_maxima'):
+            errors.append(f'Para la categoría {categoria}, la capacidad máxima debe ser {limites.get("capacidad_maxima")} personas')
     except (ValueError, TypeError):
         errors.append('La capacidad debe ser un número válido')
     
+    peso_excedido = False
     try:
         peso = int(peso_maximo)
         if peso <= 0:
             errors.append('El peso máximo debe ser mayor a 0')
+        elif limites:
+            peso_max_categoria = limites.get('peso_maximo', 0)
+            if peso > peso_max_categoria:
+                peso_excedido = True
+                if not peso_excedido_confirmado:
+                    errors.append(f'El peso máximo ({peso} kg) excede el límite de la categoría {categoria} ({peso_max_categoria} kg). Debe confirmar que está seguro de este valor.')
     except (ValueError, TypeError):
         errors.append('El peso máximo debe ser un número válido')
     
@@ -2729,6 +2959,8 @@ def juego_update_json(request, juego_id: int):
         precio = int(precio_base)
         if precio < 1:
             errors.append('El precio base debe ser un número entero mayor a 0')
+        elif precio > 1000000:
+            errors.append('El precio base no puede exceder 1.000.000 pesos')
     except (ValueError, TypeError):
         errors.append('El precio base debe ser un número entero válido')
     
@@ -2755,15 +2987,27 @@ def juego_update_json(request, juego_id: int):
         return JsonResponse({'success': False, 'errors': errors}, status=400)
 
     try:
+        from django.utils import timezone
         juego.nombre = nombre
         juego.descripcion = descripcion or None
         juego.categoria = categoria
+        juego.edad_minima = edad_min
+        juego.edad_maxima = edad_max
         juego.dimension_largo = largo
         juego.dimension_ancho = ancho
         juego.dimension_alto = alto
         juego.capacidad_personas = capacidad
         juego.peso_maximo = peso
         juego.precio_base = precio
+        juego.peso_excedido = peso_excedido
+        if peso_excedido:
+            juego.peso_excedido_por = request.user
+            juego.peso_excedido_fecha = timezone.now()
+        elif not peso_excedido and juego.peso_excedido:
+            # Si ya no excede, limpiar los campos
+            juego.peso_excedido = False
+            juego.peso_excedido_por = None
+            juego.peso_excedido_fecha = None
         
         # Manejar la foto
         if foto:
@@ -2859,8 +3103,9 @@ def estadisticas(request):
     }
     
     # Obtener reservas confirmadas y completadas (no canceladas)
+    # Usar __iexact para hacer búsqueda case-insensitive
     reservas = Reserva.objects.filter(
-        Q(estado='Confirmada') | Q(estado='confirmada') | Q(estado='completada')
+        Q(estado__iexact='Confirmada') | Q(estado__iexact='completada')
     ).select_related('cliente__usuario').prefetch_related('detalles__juego')
     
     # ========== VENTAS ==========
@@ -2869,6 +3114,16 @@ def estadisticas(request):
     ventas_semana = request.GET.get('ventas_semana', '').strip()
     ventas_mes = request.GET.get('ventas_mes', '').strip()
     ventas_año = request.GET.get('ventas_año', '').strip()
+    
+    # Si el período es mensual o anual pero no hay parámetros específicos, usar valores del dashboard
+    if ventas_periodo == 'monthly' and not ventas_mes:
+        ventas_mes = str(mes_seleccionado)
+    if ventas_periodo == 'yearly' and not ventas_año:
+        ventas_año = str(año_seleccionado)
+        # Para el período yearly, limpiar ventas_mes para que no interfiera
+        ventas_mes = ''
+    elif ventas_periodo == 'monthly' and not ventas_año:
+        ventas_año = str(año_seleccionado)
     
     # Ventas semanales - Últimas 8 semanas o semana específica
     ventas_semanales = defaultdict(float)
@@ -2929,44 +3184,64 @@ def estadisticas(request):
     ventas_mensuales = defaultdict(float)
     ventas_mensuales_labels = []
     
+    # Determinar mes y año a analizar
+    mes_a_analizar = None
+    año_a_analizar = None
+    
     if ventas_mes and ventas_año:
         try:
-            mes_num = int(ventas_mes)
-            año_num = int(ventas_año)
-            if 1 <= mes_num <= 12:
-                fecha_inicio = date(año_num, mes_num, 1)
-                ultimo_dia_num = monthrange(año_num, mes_num)[1]
-                fecha_fin = date(año_num, mes_num, ultimo_dia_num)
-                fecha_inicio_str = fecha_inicio.strftime('%d/%m/%Y')
-                fecha_fin_str = fecha_fin.strftime('%d/%m/%Y')
-                meses_a_mostrar = [fecha_inicio]
-            else:
+            mes_a_analizar = int(ventas_mes)
+            año_a_analizar = int(ventas_año)
+            if not (1 <= mes_a_analizar <= 12):
                 raise ValueError
         except:
-            fecha_inicio = hoy - timedelta(days=330)
-            fecha_fin = hoy
-            fecha_inicio_str = fecha_inicio.strftime('%d/%m/%Y')
-            fecha_fin_str = fecha_fin.strftime('%d/%m/%Y')
-            meses_a_mostrar = [(hoy - timedelta(days=i * 30)) for i in range(11, -1, -1)]
+            mes_a_analizar = None
+            año_a_analizar = None
+    elif ventas_periodo == 'monthly':
+        # Si el período es mensual pero no hay parámetros específicos, usar mes y año del dashboard
+        mes_a_analizar = mes_seleccionado
+        año_a_analizar = año_seleccionado
+    
+    if mes_a_analizar and año_a_analizar:
+        # Mostrar días del mes seleccionado
+        fecha_inicio = date(año_a_analizar, mes_a_analizar, 1)
+        ultimo_dia_num = monthrange(año_a_analizar, mes_a_analizar)[1]
+        fecha_fin = date(año_a_analizar, mes_a_analizar, ultimo_dia_num)
+        fecha_inicio_str = fecha_inicio.strftime('%d/%m/%Y')
+        fecha_fin_str = fecha_fin.strftime('%d/%m/%Y')
+        
+        # Generar lista de todos los días del mes
+        dias_del_mes = []
+        for dia in range(1, ultimo_dia_num + 1):
+            dias_del_mes.append(date(año_a_analizar, mes_a_analizar, dia))
+        
+        # Calcular ventas por día
+        for fecha_dia in dias_del_mes:
+            dia_key = str(fecha_dia.day)
+            total_dia = reservas.filter(
+                fecha_evento=fecha_dia
+            ).aggregate(total=Sum('total_reserva'))['total'] or 0
+            ventas_mensuales[dia_key] = float(total_dia)
+            ventas_mensuales_labels.append(dia_key)
     else:
-        # Últimos 12 meses
+        # Últimos 12 meses (cuando no hay mes específico)
         fecha_inicio = hoy - timedelta(days=330)
         fecha_fin = hoy
         fecha_inicio_str = fecha_inicio.strftime('%d/%m/%Y')
         fecha_fin_str = fecha_fin.strftime('%d/%m/%Y')
         meses_a_mostrar = [(hoy - timedelta(days=i * 30)) for i in range(11, -1, -1)]
-    
-    for fecha in meses_a_mostrar:
-        mes_nombre = meses_espanol_short[fecha.month]
-        mes_key = f'{mes_nombre} {fecha.year}'
         
-        total_mes = reservas.filter(
-            fecha_evento__year=fecha.year,
-            fecha_evento__month=fecha.month
-        ).aggregate(total=Sum('total_reserva'))['total'] or 0
-        
-        ventas_mensuales[mes_key] = float(total_mes)
-        ventas_mensuales_labels.append(mes_key)
+        for fecha in meses_a_mostrar:
+            mes_nombre = meses_espanol_short[fecha.month]
+            mes_key = f'{mes_nombre} {fecha.year}'
+            
+            total_mes = reservas.filter(
+                fecha_evento__year=fecha.year,
+                fecha_evento__month=fecha.month
+            ).aggregate(total=Sum('total_reserva'))['total'] or 0
+            
+            ventas_mensuales[mes_key] = float(total_mes)
+            ventas_mensuales_labels.append(mes_key)
     
     ventas_mensuales_data = [ventas_mensuales[label] for label in ventas_mensuales_labels]
     ventas_mensuales_rango = f"{fecha_inicio_str} - {fecha_fin_str}"
@@ -2975,39 +3250,55 @@ def estadisticas(request):
     ventas_anuales = defaultdict(float)
     ventas_anuales_labels = []
     
+    # Determinar año a analizar
+    año_a_analizar = None
+    
     if ventas_año and not ventas_mes:
         try:
-            año_num = int(ventas_año)
-            año_inicio = date(año_num, 1, 1)
-            año_fin = date(año_num, 12, 31)
-            año_inicio_str = año_inicio.strftime('%d/%m/%Y')
-            año_fin_str = año_fin.strftime('%d/%m/%Y')
-            años_a_mostrar = [año_num]
+            año_a_analizar = int(ventas_año)
         except:
-            año_actual = hoy.year
-            años_a_mostrar = [(año_actual - i) for i in range(4, -1, -1)]
-            año_inicio = date(años_a_mostrar[0], 1, 1)
-            año_fin = date(años_a_mostrar[-1], 12, 31)
-            año_inicio_str = año_inicio.strftime('%d/%m/%Y')
-            año_fin_str = año_fin.strftime('%d/%m/%Y')
+            año_a_analizar = None
+    elif ventas_periodo == 'yearly':
+        # Si el período es anual pero no hay parámetro específico, usar año del dashboard
+        año_a_analizar = año_seleccionado
+    
+    if año_a_analizar:
+        # Mostrar meses del año seleccionado
+        año_inicio = date(año_a_analizar, 1, 1)
+        año_fin = date(año_a_analizar, 12, 31)
+        año_inicio_str = año_inicio.strftime('%d/%m/%Y')
+        año_fin_str = año_fin.strftime('%d/%m/%Y')
+        
+        # Calcular ventas por mes del año
+        for mes_num in range(1, 13):
+            mes_nombre = meses_espanol_short[mes_num]
+            mes_key = mes_nombre
+            
+            total_mes = reservas.filter(
+                fecha_evento__year=año_a_analizar,
+                fecha_evento__month=mes_num
+            ).aggregate(total=Sum('total_reserva'))['total'] or 0
+            
+            ventas_anuales[mes_key] = float(total_mes)
+            ventas_anuales_labels.append(mes_key)
     else:
-        # Últimos 5 años
+        # Últimos 5 años (cuando no hay año específico)
         año_actual = hoy.year
         años_a_mostrar = [(año_actual - i) for i in range(4, -1, -1)]
         año_inicio = date(años_a_mostrar[0], 1, 1)
         año_fin = date(años_a_mostrar[-1], 12, 31)
         año_inicio_str = año_inicio.strftime('%d/%m/%Y')
         año_fin_str = año_fin.strftime('%d/%m/%Y')
-    
-    for año in años_a_mostrar:
-        año_key = str(año)
         
-        total_año = reservas.filter(
-            fecha_evento__year=año
-        ).aggregate(total=Sum('total_reserva'))['total'] or 0
-        
-        ventas_anuales[año_key] = float(total_año)
-        ventas_anuales_labels.append(año_key)
+        for año in años_a_mostrar:
+            año_key = str(año)
+            
+            total_año = reservas.filter(
+                fecha_evento__year=año
+            ).aggregate(total=Sum('total_reserva'))['total'] or 0
+            
+            ventas_anuales[año_key] = float(total_año)
+            ventas_anuales_labels.append(año_key)
     
     ventas_anuales_data = [ventas_anuales[label] for label in ventas_anuales_labels]
     ventas_anuales_rango = f"{año_inicio_str} - {año_fin_str}"
@@ -4020,8 +4311,16 @@ def arriendo_create_json(request):
         errors.append('La fecha del evento es obligatoria')
     else:
         try:
-            from datetime import datetime
+            from datetime import datetime, date, timedelta
             fecha_obj = datetime.strptime(fecha_evento, '%Y-%m-%d').date()
+            hoy = date.today()
+            # Permitir el día actual y días futuros, solo rechazar días pasados
+            if fecha_obj < hoy:
+                errors.append('La fecha del evento no puede ser anterior al día actual')
+            # Validar que la fecha no sea más de 1 año en el futuro
+            fecha_maxima = hoy + timedelta(days=365)
+            if fecha_obj > fecha_maxima:
+                errors.append('La fecha del evento no puede ser más de 1 año desde la fecha actual')
         except ValueError:
             errors.append('Formato de fecha inválido (use YYYY-MM-DD)')
     
@@ -4030,6 +4329,10 @@ def arriendo_create_json(request):
     else:
         try:
             hora_inst_obj = datetime.strptime(hora_instalacion, '%H:%M').time()
+            # Validar que la hora de instalación sea desde las 9:00 AM
+            hora_minima = datetime.strptime('09:00', '%H:%M').time()
+            if hora_inst_obj < hora_minima:
+                errors.append('Las instalaciones solo están disponibles desde las 9:00 AM')
         except ValueError:
             errors.append('Formato de hora inválido (use HH:MM)')
     
@@ -4038,6 +4341,10 @@ def arriendo_create_json(request):
     else:
         try:
             hora_ret_obj = datetime.strptime(hora_retiro, '%H:%M').time()
+            # Validar que la hora de retiro sea antes de las 00:00 (23:59 máximo)
+            hora_maxima = datetime.strptime('23:59', '%H:%M').time()
+            if hora_ret_obj > hora_maxima:
+                errors.append('La hora de retiro debe ser antes de las 00:00')
         except ValueError:
             errors.append('Formato de hora inválido (use HH:MM)')
     
@@ -4059,6 +4366,37 @@ def arriendo_create_json(request):
     # Calcular precio por distancia ($1.000 por km)
     PRECIO_POR_KM = 1000
     precio_distancia = distancia_km_int * PRECIO_POR_KM
+    
+    # Calcular horas extra y su precio
+    horas_extra = 0
+    precio_horas_extra = 0
+    if hora_inst_obj and hora_ret_obj:
+        from datetime import timedelta
+        # Convertir horas a datetime para calcular diferencia
+        fecha_base = datetime(2000, 1, 1).date()
+        datetime_inst = datetime.combine(fecha_base, hora_inst_obj)
+        datetime_ret = datetime.combine(fecha_base, hora_ret_obj)
+        
+        # Si la hora de retiro es menor que la de instalación, asumir que es al día siguiente
+        if datetime_ret < datetime_inst:
+            datetime_ret += timedelta(days=1)
+        
+        # Calcular diferencia en minutos
+        diferencia = datetime_ret - datetime_inst
+        diferencia_minutos = diferencia.total_seconds() / 60
+        
+        # Calcular horas base (6 horas = 360 minutos)
+        minutos_base = 6 * 60
+        
+        # Calcular horas extra (solo si excede las 6 horas base)
+        if diferencia_minutos > minutos_base:
+            minutos_extra = diferencia_minutos - minutos_base
+            # Redondear hacia arriba (si hay al menos 1 minuto extra, cuenta como 1 hora)
+            horas_extra = int((minutos_extra + 59) // 60)  # Redondear hacia arriba
+        
+        # Calcular precio (10.000 pesos por hora extra)
+        PRECIO_POR_HORA_EXTRA = 10000
+        precio_horas_extra = horas_extra * PRECIO_POR_HORA_EXTRA
     
     if estado not in [choice[0] for choice in Reserva.ESTADO_CHOICES]:
         errors.append('Estado inválido')
@@ -4110,8 +4448,8 @@ def arriendo_create_json(request):
     if errors:
         return JsonResponse({'success': False, 'errors': errors}, status=400)
     
-    # Total incluye juegos + distancia
-    total_final = total + precio_distancia
+    # Total incluye juegos + distancia + horas extra
+    total_final = total + precio_distancia + precio_horas_extra
     
     try:
         reserva = Reserva.objects.create(
@@ -4122,6 +4460,8 @@ def arriendo_create_json(request):
             direccion_evento=direccion_evento,
             distancia_km=distancia_km_int,
             precio_distancia=precio_distancia,
+            horas_extra=horas_extra,
+            precio_horas_extra=precio_horas_extra,
             estado=estado,
             observaciones=observaciones or None,
             total_reserva=total_final,
@@ -4253,24 +4593,80 @@ def arriendo_update_json(request, arriendo_id: int):
     
     if fecha_evento:
         try:
-            from datetime import datetime
-            reserva.fecha_evento = datetime.strptime(fecha_evento, '%Y-%m-%d').date()
+            from datetime import datetime, date, timedelta
+            fecha_obj = datetime.strptime(fecha_evento, '%Y-%m-%d').date()
+            hoy = date.today()
+            # Permitir el día actual y días futuros, solo rechazar días pasados
+            if fecha_obj < hoy:
+                errors.append('La fecha del evento no puede ser anterior al día actual')
+            # Validar que la fecha no sea más de 1 año en el futuro
+            fecha_maxima = hoy + timedelta(days=365)
+            if fecha_obj > fecha_maxima:
+                errors.append('La fecha del evento no puede ser más de 1 año desde la fecha actual')
+            else:
+                reserva.fecha_evento = fecha_obj
         except ValueError:
             errors.append('Formato de fecha inválido (use YYYY-MM-DD)')
     
     if hora_instalacion:
         try:
             from datetime import datetime
-            reserva.hora_instalacion = datetime.strptime(hora_instalacion, '%H:%M').time()
+            hora_inst_obj = datetime.strptime(hora_instalacion, '%H:%M').time()
+            # Validar que la hora de instalación sea desde las 9:00 AM
+            hora_minima = datetime.strptime('09:00', '%H:%M').time()
+            if hora_inst_obj < hora_minima:
+                errors.append('Las instalaciones solo están disponibles desde las 9:00 AM')
+            else:
+                reserva.hora_instalacion = hora_inst_obj
         except ValueError:
             errors.append('Formato de hora inválido (use HH:MM)')
     
     if hora_retiro:
         try:
             from datetime import datetime
-            reserva.hora_retiro = datetime.strptime(hora_retiro, '%H:%M').time()
+            hora_ret_obj = datetime.strptime(hora_retiro, '%H:%M').time()
+            # Validar que la hora de retiro sea antes de las 00:00 (23:59 máximo)
+            hora_maxima = datetime.strptime('23:59', '%H:%M').time()
+            if hora_ret_obj > hora_maxima:
+                errors.append('La hora de retiro debe ser antes de las 00:00')
+            else:
+                reserva.hora_retiro = hora_ret_obj
         except ValueError:
             errors.append('Formato de hora inválido (use HH:MM)')
+    
+    # Calcular horas extra y su precio después de actualizar las horas
+    horas_extra = 0
+    precio_horas_extra = 0
+    if reserva.hora_instalacion and reserva.hora_retiro:
+        from datetime import timedelta
+        # Convertir horas a datetime para calcular diferencia
+        fecha_base = datetime(2000, 1, 1).date()
+        datetime_inst = datetime.combine(fecha_base, reserva.hora_instalacion)
+        datetime_ret = datetime.combine(fecha_base, reserva.hora_retiro)
+        
+        # Si la hora de retiro es menor que la de instalación, asumir que es al día siguiente
+        if datetime_ret < datetime_inst:
+            datetime_ret += timedelta(days=1)
+        
+        # Calcular diferencia en minutos
+        diferencia = datetime_ret - datetime_inst
+        diferencia_minutos = diferencia.total_seconds() / 60
+        
+        # Calcular horas base (6 horas = 360 minutos)
+        minutos_base = 6 * 60
+        
+        # Calcular horas extra (solo si excede las 6 horas base)
+        if diferencia_minutos > minutos_base:
+            minutos_extra = diferencia_minutos - minutos_base
+            # Redondear hacia arriba (si hay al menos 1 minuto extra, cuenta como 1 hora)
+            horas_extra = int((minutos_extra + 59) // 60)  # Redondear hacia arriba
+        
+        # Calcular precio (10.000 pesos por hora extra)
+        PRECIO_POR_HORA_EXTRA = 10000
+        precio_horas_extra = horas_extra * PRECIO_POR_HORA_EXTRA
+    
+    reserva.horas_extra = horas_extra
+    reserva.precio_horas_extra = precio_horas_extra
     
     if direccion_evento:
         if len(direccion_evento) > 300:
@@ -4344,8 +4740,8 @@ def arriendo_update_json(request, arriendo_id: int):
             if not errors:
                 # Eliminar detalles antiguos y crear nuevos
                 reserva.detalles.all().delete()
-                # Total incluye juegos + distancia
-                total_final = total + reserva.precio_distancia
+                # Total incluye juegos + distancia + horas extra
+                total_final = total + reserva.precio_distancia + reserva.precio_horas_extra
                 reserva.total_reserva = total_final
                 
                 for juego_item in juegos_validos:

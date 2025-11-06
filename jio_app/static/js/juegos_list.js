@@ -76,11 +76,11 @@
             validaciones.push(() => validarNumeroDecimal(dimension_ancho, 'ancho', 1.0, 25.0, true, false));
             validaciones.push(() => validarNumeroDecimal(dimension_alto, 'alto', 1.0, 25.0, true, false));
             
-            validaciones.push(() => validarEnteroPositivo(capacidad, 'capacidad de personas', 1000));
+            validaciones.push(() => validarEnteroPositivo(capacidad, 'capacidad de personas', 100));
             
             validaciones.push(() => validarEnteroPositivo(peso, 'peso máximo', 10000));
             
-            validaciones.push(() => validarPrecioChileno(precio, 'precio base', 1, 999999999));
+            validaciones.push(() => validarPrecioChileno(precio, 'precio base', 1, 1000000));
             
             // La validación de foto (archivo) se hace en el servidor
             // No se valida aquí porque es un archivo, no una URL
@@ -116,12 +116,17 @@
             document.getElementById('editJuegoNombre').value = juego.nombre;
             document.getElementById('editJuegoDescripcion').value = juego.descripcion || '';
             document.getElementById('editJuegoCategoria').value = juego.categoria;
+            document.getElementById('editJuegoEdadMinima').value = juego.edad_minima || '';
+            document.getElementById('editJuegoEdadMaxima').value = juego.edad_maxima || '';
             document.getElementById('editJuegoDimensionLargo').value = juego.dimension_largo || '';
             document.getElementById('editJuegoDimensionAncho').value = juego.dimension_ancho || '';
             document.getElementById('editJuegoDimensionAlto').value = juego.dimension_alto || '';
             document.getElementById('editJuegoCapacidad').value = juego.capacidad_personas;
             document.getElementById('editJuegoPeso').value = juego.peso_maximo;
             document.getElementById('editJuegoPrecio').value = juego.precio_base;
+            // Resetear el flag de confirmación de peso excedido
+            const pesoExcedidoConfirmadoInput = document.getElementById('editJuegoPesoExcedidoConfirmado');
+            if (pesoExcedidoConfirmadoInput) pesoExcedidoConfirmadoInput.value = 'false';
             
             // Manejar preview de foto existente
             const previewDiv = document.getElementById('editJuegoFotoPreview');
@@ -252,6 +257,103 @@
             });
         }
         
+        // Función para obtener límites según categoría
+        function obtenerLimitesCategoria(categoria) {
+            const limites = {
+                'Pequeño': { edad_minima: 3, edad_maxima: 8, capacidad_maxima: 10, peso_maximo: 300 },
+                'Mediano': { edad_minima: 4, edad_maxima: 12, capacidad_maxima: 20, peso_maximo: 400 },
+                'Grande': { edad_minima: 4, edad_maxima: 12, capacidad_maxima: 30, peso_maximo: 600 }
+            };
+            return limites[categoria] || {};
+        }
+        
+        // Función para establecer valores por defecto según categoría
+        function establecerValoresPorCategoria(categoria, tipo) {
+            const limites = obtenerLimitesCategoria(categoria);
+            if (!limites || Object.keys(limites).length === 0) return;
+            
+            const prefix = tipo === 'create' ? 'createJuego' : 'editJuego';
+            const edadMinInput = document.getElementById(`${prefix}EdadMinima`);
+            const edadMaxInput = document.getElementById(`${prefix}EdadMaxima`);
+            const capacidadInput = document.getElementById(`${prefix}Capacidad`);
+            
+            if (edadMinInput) edadMinInput.value = limites.edad_minima;
+            if (edadMaxInput) edadMaxInput.value = limites.edad_maxima;
+            if (capacidadInput) capacidadInput.value = limites.capacidad_maxima;
+        }
+        
+        // Event listeners para cambio de categoría
+        const createCategoriaSelect = document.getElementById('createJuegoCategoria');
+        if (createCategoriaSelect) {
+            createCategoriaSelect.addEventListener('change', function() {
+                if (this.value) {
+                    establecerValoresPorCategoria(this.value, 'create');
+                }
+            });
+        }
+        
+        const editCategoriaSelect = document.getElementById('editJuegoCategoria');
+        if (editCategoriaSelect) {
+            editCategoriaSelect.addEventListener('change', function() {
+                if (this.value) {
+                    establecerValoresPorCategoria(this.value, 'edit');
+                }
+            });
+        }
+        
+        // Función para validar y confirmar peso excedido
+        async function validarPesoExcedido(form, tipo) {
+            const categoria = form.querySelector('select[name="categoria"]')?.value;
+            const pesoInput = form.querySelector('input[name="peso_maximo"]');
+            const pesoExcedidoConfirmadoInput = form.querySelector('input[name="peso_excedido_confirmado"]');
+            
+            if (!categoria || !pesoInput || !pesoExcedidoConfirmadoInput) return true;
+            
+            const limites = obtenerLimitesCategoria(categoria);
+            if (!limites || Object.keys(limites).length === 0) return true;
+            
+            const peso = parseInt(pesoInput.value) || 0;
+            const pesoMaxCategoria = limites.peso_maximo || 0;
+            
+            if (peso > pesoMaxCategoria) {
+                // Mostrar diálogo de confirmación
+                if (typeof Swal !== 'undefined' && Swal.fire) {
+                    const result = await Swal.fire({
+                        title: '⚠️ Peso excedido',
+                        html: `
+                            <p>El peso máximo ingresado (<strong>${peso} kg</strong>) excede el límite de la categoría <strong>${categoria}</strong> (<strong>${pesoMaxCategoria} kg</strong>).</p>
+                            <p style="color: #d33; margin-top: 1rem;">¿Está seguro de que este es el peso correcto?</p>
+                            <p style="font-size: 0.9rem; color: #666; margin-top: 0.5rem;">Esta acción quedará registrada con su usuario.</p>
+                        `,
+                        icon: 'warning',
+                        showCancelButton: true,
+                        confirmButtonText: 'Sí, estoy seguro',
+                        cancelButtonText: 'Cancelar',
+                        confirmButtonColor: '#d33',
+                        cancelButtonColor: '#3085d6'
+                    });
+                    
+                    if (result.isConfirmed) {
+                        pesoExcedidoConfirmadoInput.value = 'true';
+                        return true;
+                    } else {
+                        return false;
+                    }
+                } else {
+                    // Fallback si no hay SweetAlert2
+                    const confirmado = confirm(`El peso máximo (${peso} kg) excede el límite de la categoría ${categoria} (${pesoMaxCategoria} kg). ¿Está seguro de que este es el peso correcto?`);
+                    if (confirmado) {
+                        pesoExcedidoConfirmadoInput.value = 'true';
+                        return true;
+                    }
+                    return false;
+                }
+            } else {
+                pesoExcedidoConfirmadoInput.value = 'false';
+                return true;
+            }
+        }
+        
         // Envío del formulario de creación
         if (formCreate && !formCreate.dataset.listenerAttached) {
             formCreate.dataset.listenerAttached = 'true';
@@ -275,6 +377,12 @@
                 // Validar formulario antes de enviar
                 if (!validarFormularioJuego(this, false)) {
                     return; // Si hay errores, no enviar
+                }
+                
+                // Validar y confirmar peso excedido
+                const pesoValido = await validarPesoExcedido(this, 'create');
+                if (!pesoValido) {
+                    return; // Si no se confirma el peso excedido, no enviar
                 }
                 
                 isSubmittingCreate = true;
@@ -365,6 +473,12 @@
                 // Validar formulario antes de enviar
                 if (!validarFormularioJuego(this, true)) {
                     return; // Si hay errores, no enviar
+                }
+                
+                // Validar y confirmar peso excedido
+                const pesoValido = await validarPesoExcedido(this, 'edit');
+                if (!pesoValido) {
+                    return; // Si no se confirma el peso excedido, no enviar
                 }
                 
                 isSubmittingEdit = true;
