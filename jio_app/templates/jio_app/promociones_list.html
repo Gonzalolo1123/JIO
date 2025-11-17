@@ -1,0 +1,268 @@
+{% extends 'jio_app/base_admin.html' %}
+{% load static %}
+{% load jio_filters %}
+{% load humanize %}
+
+{% block title %}Promociones - JIO{% endblock %}
+
+{% block content %}
+<div class="panel-container">
+  <div class="panel-header">
+    <h1 class="panel-title">Promociones y Descuentos</h1>
+  </div>
+
+  <!-- Modal de edición -->
+  <div id="modalEditPromocion" class="modal" aria-hidden="true">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Editar promoción</h2>
+        <button class="modal-close" data-modal-close>&times;</button>
+      </div>
+      <form id="formEditPromocion" class="form-grid" data-endpoint-base="/panel/promociones/">
+        {% csrf_token %}
+        <input type="hidden" name="promocion_id" id="editPromocionId">
+        <label>
+          Código *
+          <input type="text" name="codigo" id="editPromocionCodigo" required maxlength="50" style="text-transform:uppercase;">
+        </label>
+        <label>
+          Nombre *
+          <input type="text" name="nombre" id="editPromocionNombre" required maxlength="100">
+        </label>
+        <label>
+          Tipo de descuento *
+          <select name="tipo_descuento" id="editPromocionTipoDescuento" required>
+            <option value="">Seleccionar tipo</option>
+            {% for value, label in tipo_descuento_choices %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Valor descuento *
+          <input type="number" name="valor_descuento" id="editPromocionValorDescuento" required min="0" step="0.01">
+          <small id="editPromocionValorHelp" style="color:#666;">Porcentaje o monto según tipo</small>
+        </label>
+        <label>
+          Fecha inicio *
+          <input type="date" name="fecha_inicio" id="editPromocionFechaInicio" required>
+        </label>
+        <label>
+          Fecha fin *
+          <input type="date" name="fecha_fin" id="editPromocionFechaFin" required>
+        </label>
+        <label>
+          Monto mínimo
+          <input type="number" name="monto_minimo" id="editPromocionMontoMinimo" min="0" step="0.01" value="0">
+        </label>
+        <label>
+          Límite de usos
+          <input type="number" name="limite_usos" id="editPromocionLimiteUsos" min="0" value="0">
+          <small style="color:#666;">0 = ilimitado</small>
+        </label>
+        <label>
+          Estado *
+          <select name="estado" id="editPromocionEstado" required>
+            {% for value, label in estado_choices %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label style="grid-column: 1 / -1;">
+          Descripción
+          <textarea name="descripcion" id="editPromocionDescripcion" rows="3"></textarea>
+        </label>
+        <label style="grid-column: 1 / -1;">
+          <strong>Juegos aplicables</strong>
+          <small style="display:block;color:#666;margin-bottom:0.5rem;">Si no selecciona ninguno, aplica a todos los juegos</small>
+          <div id="editPromocionJuegosContainer" style="max-height:200px;overflow-y:auto;border:1px solid #ddd;padding:0.5rem;border-radius:4px;">
+            {% for juego in juegos %}
+            <label style="display:block;margin-bottom:0.5rem;">
+              <input type="checkbox" name="juegos_ids" value="{{ juego.id }}" class="juego-checkbox">
+              {{ juego.nombre }}
+            </label>
+            {% endfor %}
+          </div>
+        </label>
+        <div class="form-actions" style="grid-column: 1 / -1;">
+          <button type="button" class="btn btn-secondary" data-modal-close>Cancelar</button>
+          <button type="submit" class="btn btn-primary">Guardar</button>
+        </div>
+      </form>
+    </div>
+    <div class="modal-backdrop" data-modal-close></div>
+  </div>
+
+  <!-- Filtros de búsqueda -->
+  <div class="form-card" id="promocionesPage" data-promociones-base="/panel/promociones/">
+    <form method="get" class="form-grid" style="grid-template-columns: 1fr 1fr auto;align-items: end;gap:1rem;">
+      <input type="hidden" name="order_by" value="{{ order_by }}">
+      <input type="hidden" name="direction" value="{{ direction }}">
+      <label>Buscar
+        <input type="text" name="q" value="{{ query }}" placeholder="Código, nombre o descripción">
+      </label>
+      <label>Estado
+        <select name="estado">
+          <option value="">Todos los estados</option>
+          {% for value, label in estado_choices %}
+          <option value="{{ value }}" {% if estado_filter == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button class="btn btn-secondary" type="submit">Filtrar</button>
+    </form>
+  </div>
+
+  <!-- Lista de promociones -->
+  <div class="form-card" style="overflow:auto;">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:.75rem;">
+      <h2 class="panel-title" style="font-size:1.25rem; color:#2E7D32; margin:0;">Promociones Activas</h2>
+      <div class="actions-wrap" style="gap:.5rem;">
+        <button type="button" id="btnOpenCreatePromocion" class="btn btn-primary"><i class="fas fa-plus"></i> Agregar Promoción</button>
+      </div>
+    </div>
+    <table class="table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Código</th>
+          <th>Nombre</th>
+          <th>Tipo</th>
+          <th>Valor</th>
+          <th>Vigencia</th>
+          <th>Usos</th>
+          <th>Estado</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for promocion in promociones %}
+        <tr>
+          <td>{{ promocion.id }}</td>
+          <td><strong>{{ promocion.codigo }}</strong></td>
+          <td>{{ promocion.nombre }}</td>
+          <td>{{ promocion.get_tipo_descuento_display }}</td>
+          <td>
+            {% if promocion.tipo_descuento == 'porcentaje' %}
+              {{ promocion.valor_descuento }}%
+            {% else %}
+              ${{ promocion.valor_descuento|floatformat:0|intcomma }}
+            {% endif %}
+          </td>
+          <td>
+            {{ promocion.fecha_inicio|date:"d/m/Y" }} - {{ promocion.fecha_fin|date:"d/m/Y" }}
+          </td>
+          <td>
+            {% if promocion.limite_usos > 0 %}
+              {{ promocion.usos_actuales }} / {{ promocion.limite_usos }}
+            {% else %}
+              {{ promocion.usos_actuales }} / ∞
+            {% endif %}
+          </td>
+          <td>
+            <span class="status-badge status-{{ promocion.estado }}">
+              {{ promocion.get_estado_display }}
+            </span>
+          </td>
+          <td style="white-space:nowrap;">
+            <button class="btn btn-secondary" data-edit-promocion="{{ promocion.id }}">Editar</button>
+            <button class="btn btn-danger" data-delete-promocion="{{ promocion.id }}">Eliminar</button>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="9">No hay promociones que coincidan con los filtros.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  
+  <!-- Modal de creación -->
+  <div id="modalCreatePromocion" class="modal" aria-hidden="true">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Nueva promoción</h2>
+        <button class="modal-close" data-modal-close>&times;</button>
+      </div>
+      <form id="formCreatePromocion" class="form-grid" data-endpoint="{% url 'jio_app:promocion_create_json' %}">
+        {% csrf_token %}
+        <label>
+          Código *
+          <input type="text" name="codigo" required maxlength="50" style="text-transform:uppercase;">
+        </label>
+        <label>
+          Nombre *
+          <input type="text" name="nombre" required maxlength="100">
+        </label>
+        <label>
+          Tipo de descuento *
+          <select name="tipo_descuento" id="createPromocionTipoDescuento" required>
+            <option value="">Seleccionar tipo</option>
+            {% for value, label in tipo_descuento_choices %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Valor descuento *
+          <input type="number" name="valor_descuento" id="createPromocionValorDescuento" required min="0" step="0.01">
+          <small id="createPromocionValorHelp" style="color:#666;">Porcentaje o monto según tipo</small>
+        </label>
+        <label>
+          Fecha inicio *
+          <input type="date" name="fecha_inicio" required>
+        </label>
+        <label>
+          Fecha fin *
+          <input type="date" name="fecha_fin" required>
+        </label>
+        <label>
+          Monto mínimo
+          <input type="number" name="monto_minimo" min="0" step="0.01" value="0">
+        </label>
+        <label>
+          Límite de usos
+          <input type="number" name="limite_usos" min="0" value="0">
+          <small style="color:#666;">0 = ilimitado</small>
+        </label>
+        <label>
+          Estado *
+          <select name="estado" required>
+            {% for value, label in estado_choices %}
+            <option value="{{ value }}" {% if value == 'activa' %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label style="grid-column: 1 / -1;">
+          Descripción
+          <textarea name="descripcion" rows="3"></textarea>
+        </label>
+        <label style="grid-column: 1 / -1;">
+          <strong>Juegos aplicables</strong>
+          <small style="display:block;color:#666;margin-bottom:0.5rem;">Si no selecciona ninguno, aplica a todos los juegos</small>
+          <div style="max-height:200px;overflow-y:auto;border:1px solid #ddd;padding:0.5rem;border-radius:4px;">
+            {% for juego in juegos %}
+            <label style="display:block;margin-bottom:0.5rem;">
+              <input type="checkbox" name="juegos_ids" value="{{ juego.id }}">
+              {{ juego.nombre }}
+            </label>
+            {% endfor %}
+          </div>
+        </label>
+        <div class="form-actions" style="grid-column: 1 / -1;">
+          <button type="button" class="btn btn-secondary" data-modal-close>Cancelar</button>
+          <button type="submit" class="btn btn-primary">Crear</button>
+        </div>
+      </form>
+    </div>
+    <div class="modal-backdrop" data-modal-close></div>
+  </div>
+  
+  {% block extra_scripts %}
+  <script src="{% static 'js/validaciones.js' %}"></script>
+  <script src="{% static 'js/promociones_list.js' %}"></script>
+  {% endblock %}
+</div>
+{% endblock %}
+

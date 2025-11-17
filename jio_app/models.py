@@ -343,3 +343,336 @@ class Pago(models.Model):
     
     def __str__(self):
         return f"Pago #{self.id} - {self.reserva} - ${self.monto}"
+
+
+class Vehiculo(models.Model):
+    """
+    Modelo para gestionar la flota de vehículos de reparto
+    """
+    TIPO_CHOICES = [
+        ('camioneta', 'Camioneta'),
+        ('furgon', 'Furgón'),
+        ('camion', 'Camión'),
+        ('otro', 'Otro'),
+    ]
+    
+    ESTADO_CHOICES = [
+        ('disponible', 'Disponible'),
+        ('en_uso', 'En Uso'),
+        ('en_mantenimiento', 'En Mantenimiento'),
+        ('fuera_servicio', 'Fuera de Servicio'),
+    ]
+    
+    patente = models.CharField(max_length=10, unique=True, help_text="Patente del vehículo")
+    tipo = models.CharField(max_length=20, choices=TIPO_CHOICES, default='camioneta')
+    marca = models.CharField(max_length=50)
+    modelo = models.CharField(max_length=50)
+    año = models.PositiveIntegerField(help_text="Año del vehículo")
+    color = models.CharField(max_length=30, blank=True, null=True)
+    kilometraje_actual = models.PositiveIntegerField(default=0, help_text="Kilometraje actual en km")
+    estado = models.CharField(
+        max_length=20,
+        choices=ESTADO_CHOICES,
+        default='disponible'
+    )
+    fecha_ultimo_mantenimiento = models.DateField(blank=True, null=True)
+    proximo_mantenimiento_km = models.PositiveIntegerField(blank=True, null=True, help_text="Próximo mantenimiento en km")
+    seguro_vencimiento = models.DateField(blank=True, null=True)
+    observaciones = models.TextField(blank=True, null=True)
+    fecha_creacion = models.DateTimeField(auto_now_add=True)
+    fecha_modificacion = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        verbose_name = 'Vehículo'
+        verbose_name_plural = 'Vehículos'
+        ordering = ['patente']
+    
+    def __str__(self):
+        return f"{self.patente} - {self.marca} {self.modelo} ({self.año})"
+
+
+class GastoOperativo(models.Model):
+    """
+    Modelo para registrar gastos operativos del negocio
+    """
+    CATEGORIA_CHOICES = [
+        ('combustible', 'Combustible'),
+        ('mantenimiento', 'Mantenimiento'),
+        ('publicidad', 'Publicidad'),
+        ('servicios', 'Servicios'),
+        ('materiales', 'Materiales'),
+        ('salarios', 'Salarios'),
+        ('alquiler', 'Alquiler'),
+        ('seguros', 'Seguros'),
+        ('impuestos', 'Impuestos'),
+        ('otros', 'Otros'),
+    ]
+    
+    METODO_PAGO_CHOICES = [
+        ('efectivo', 'Efectivo'),
+        ('transferencia', 'Transferencia'),
+        ('tarjeta', 'Tarjeta'),
+        ('cheque', 'Cheque'),
+    ]
+    
+    categoria = models.CharField(max_length=20, choices=CATEGORIA_CHOICES)
+    descripcion = models.CharField(max_length=200)
+    monto = models.DecimalField(max_digits=10, decimal_places=2)
+    fecha_gasto = models.DateField()
+    metodo_pago = models.CharField(max_length=20, choices=METODO_PAGO_CHOICES)
+    comprobante = models.ImageField(upload_to='comprobantes_gastos/', blank=True, null=True)
+    vehiculo = models.ForeignKey(Vehiculo, on_delete=models.SET_NULL, null=True, blank=True, related_name='gastos')
+    reserva = models.ForeignKey(Reserva, on_delete=models.SET_NULL, null=True, blank=True, related_name='gastos')
+    observaciones = models.TextField(blank=True, null=True)
+    registrado_por = models.ForeignKey(Usuario, on_delete=models.SET_NULL, null=True, related_name='gastos_registrados')
+    fecha_creacion = models.DateTimeField(auto_now_add=True)
+    fecha_modificacion = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        verbose_name = 'Gasto Operativo'
+        verbose_name_plural = 'Gastos Operativos'
+        ordering = ['-fecha_gasto', '-fecha_creacion']
+    
+    def __str__(self):
+        return f"Gasto #{self.id} - {self.get_categoria_display()} - ${self.monto}"
+
+
+class Promocion(models.Model):
+    """
+    Modelo para gestionar promociones y descuentos
+    """
+    TIPO_DESCUENTO_CHOICES = [
+        ('porcentaje', 'Porcentaje (%)'),
+        ('monto_fijo', 'Monto Fijo ($)'),
+        ('2x1', '2x1'),
+        ('envio_gratis', 'Envío Gratis'),
+    ]
+    
+    ESTADO_CHOICES = [
+        ('activa', 'Activa'),
+        ('inactiva', 'Inactiva'),
+        ('expirada', 'Expirada'),
+    ]
+    
+    codigo = models.CharField(max_length=50, unique=True, help_text="Código de cupón")
+    nombre = models.CharField(max_length=100, help_text="Nombre de la promoción")
+    descripcion = models.TextField(blank=True, null=True)
+    tipo_descuento = models.CharField(max_length=20, choices=TIPO_DESCUENTO_CHOICES, default='porcentaje')
+    valor_descuento = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        help_text="Valor del descuento (porcentaje o monto según tipo)"
+    )
+    fecha_inicio = models.DateField()
+    fecha_fin = models.DateField()
+    juegos = models.ManyToManyField(Juego, blank=True, related_name='promociones', help_text="Juegos aplicables (vacío = todos)")
+    monto_minimo = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        help_text="Monto mínimo de compra para aplicar el descuento"
+    )
+    limite_usos = models.PositiveIntegerField(
+        default=0,
+        help_text="Límite de usos (0 = ilimitado)"
+    )
+    usos_actuales = models.PositiveIntegerField(default=0, help_text="Usos actuales")
+    estado = models.CharField(
+        max_length=20,
+        choices=ESTADO_CHOICES,
+        default='activa'
+    )
+    fecha_creacion = models.DateTimeField(auto_now_add=True)
+    fecha_modificacion = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        verbose_name = 'Promoción'
+        verbose_name_plural = 'Promociones'
+        ordering = ['-fecha_creacion']
+    
+    def __str__(self):
+        return f"{self.codigo} - {self.nombre}"
+    
+    @property
+    def esta_vigente(self):
+        """Verifica si la promoción está vigente"""
+        from django.utils import timezone
+        hoy = timezone.now().date()
+        return self.estado == 'activa' and self.fecha_inicio <= hoy <= self.fecha_fin
+    
+    @property
+    def puede_usarse(self):
+        """Verifica si la promoción puede usarse"""
+        if not self.esta_vigente:
+            return False
+        if self.limite_usos > 0 and self.usos_actuales >= self.limite_usos:
+            return False
+        return True
+
+
+class Evaluacion(models.Model):
+    """
+    Modelo para evaluaciones y reseñas de clientes
+    """
+    CALIFICACION_CHOICES = [
+        (1, '1 Estrella'),
+        (2, '2 Estrellas'),
+        (3, '3 Estrellas'),
+        (4, '4 Estrellas'),
+        (5, '5 Estrellas'),
+    ]
+    
+    ESTADO_CHOICES = [
+        ('publicada', 'Publicada'),
+        ('pendiente', 'Pendiente'),
+        ('oculta', 'Oculta'),
+    ]
+    
+    reserva = models.ForeignKey(Reserva, on_delete=models.CASCADE, related_name='evaluaciones')
+    cliente = models.ForeignKey(Cliente, on_delete=models.CASCADE, related_name='evaluaciones')
+    calificacion = models.PositiveIntegerField(choices=CALIFICACION_CHOICES)
+    comentario = models.TextField(blank=True, null=True)
+    estado = models.CharField(
+        max_length=20,
+        choices=ESTADO_CHOICES,
+        default='pendiente'
+    )
+    respuesta_admin = models.TextField(blank=True, null=True, help_text="Respuesta del administrador")
+    fecha_evaluacion = models.DateTimeField(auto_now_add=True)
+    fecha_modificacion = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        verbose_name = 'Evaluación'
+        verbose_name_plural = 'Evaluaciones'
+        ordering = ['-fecha_evaluacion']
+        unique_together = ['reserva', 'cliente']
+    
+    def __str__(self):
+        return f"Evaluación #{self.id} - {self.cliente.usuario.get_full_name()} - {self.calificacion} estrellas"
+
+
+class Proveedor(models.Model):
+    """
+    Modelo para gestionar proveedores de servicios y productos
+    """
+    TIPO_PROVEEDOR_CHOICES = [
+        ('mantenimiento', 'Mantenimiento Vehículos'),
+        ('combustible', 'Combustible'),
+        ('seguros', 'Seguros'),
+        ('materiales', 'Materiales/Repuestos'),
+        ('servicios', 'Servicios Generales'),
+        ('otros', 'Otros'),
+    ]
+    
+    nombre = models.CharField(max_length=100, help_text="Nombre del proveedor")
+    tipo_proveedor = models.CharField(max_length=20, choices=TIPO_PROVEEDOR_CHOICES)
+    rut = models.CharField(max_length=12, blank=True, null=True, help_text="RUT del proveedor")
+    contacto_nombre = models.CharField(max_length=100, blank=True, null=True, help_text="Nombre de contacto")
+    telefono = models.CharField(max_length=15, blank=True, null=True)
+    email = models.EmailField(blank=True, null=True)
+    direccion = models.CharField(max_length=200, blank=True, null=True)
+    servicios_ofrecidos = models.TextField(blank=True, null=True, help_text="Descripción de servicios ofrecidos")
+    activo = models.BooleanField(default=True)
+    observaciones = models.TextField(blank=True, null=True)
+    fecha_creacion = models.DateTimeField(auto_now_add=True)
+    fecha_modificacion = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        verbose_name = 'Proveedor'
+        verbose_name_plural = 'Proveedores'
+        ordering = ['nombre']
+    
+    def __str__(self):
+        return f"{self.nombre} - {self.get_tipo_proveedor_display()}"
+
+
+class MantenimientoVehiculo(models.Model):
+    """
+    Modelo para registrar mantenimientos de vehículos
+    """
+    TIPO_MANTENIMIENTO_CHOICES = [
+        ('preventivo', 'Preventivo'),
+        ('correctivo', 'Correctivo'),
+        ('revision', 'Revisión'),
+        ('reparacion', 'Reparación'),
+    ]
+    
+    ESTADO_CHOICES = [
+        ('programado', 'Programado'),
+        ('en_proceso', 'En Proceso'),
+        ('completado', 'Completado'),
+        ('cancelado', 'Cancelado'),
+    ]
+    
+    vehiculo = models.ForeignKey(Vehiculo, on_delete=models.CASCADE, related_name='mantenimientos')
+    tipo_mantenimiento = models.CharField(max_length=20, choices=TIPO_MANTENIMIENTO_CHOICES)
+    fecha_programada = models.DateField()
+    fecha_realizada = models.DateField(blank=True, null=True)
+    kilometraje = models.PositiveIntegerField(help_text="Kilometraje al momento del mantenimiento")
+    descripcion = models.TextField(help_text="Descripción del trabajo realizado")
+    costo = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    proveedor = models.ForeignKey(Proveedor, on_delete=models.SET_NULL, null=True, blank=True, related_name='mantenimientos')
+    observaciones = models.TextField(blank=True, null=True)
+    estado = models.CharField(max_length=20, choices=ESTADO_CHOICES, default='programado')
+    realizado_por = models.ForeignKey(Usuario, on_delete=models.SET_NULL, null=True, blank=True, related_name='mantenimientos_realizados')
+    fecha_creacion = models.DateTimeField(auto_now_add=True)
+    fecha_modificacion = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        verbose_name = 'Mantenimiento de Vehículo'
+        verbose_name_plural = 'Mantenimientos de Vehículos'
+        ordering = ['-fecha_programada', '-fecha_creacion']
+    
+    def __str__(self):
+        return f"Mantenimiento #{self.id} - {self.vehiculo.patente} - {self.get_tipo_mantenimiento_display()}"
+
+
+class Material(models.Model):
+    """
+    Modelo para gestionar inventario de materiales y equipos
+    """
+    CATEGORIA_CHOICES = [
+        ('bomba', 'Bomba de Aire'),
+        ('extension', 'Extensiones Eléctricas'),
+        ('accesorio', 'Accesorios'),
+        ('repuesto', 'Repuestos'),
+        ('herramienta', 'Herramientas'),
+        ('limpieza', 'Productos de Limpieza'),
+        ('otro', 'Otro'),
+    ]
+    
+    ESTADO_CHOICES = [
+        ('disponible', 'Disponible'),
+        ('en_uso', 'En Uso'),
+        ('mantenimiento', 'En Mantenimiento'),
+        ('dañado', 'Dañado'),
+        ('baja', 'Dado de Baja'),
+    ]
+    
+    nombre = models.CharField(max_length=100, help_text="Nombre del material/equipo")
+    categoria = models.CharField(max_length=20, choices=CATEGORIA_CHOICES)
+    descripcion = models.TextField(blank=True, null=True)
+    stock_actual = models.PositiveIntegerField(default=0, help_text="Cantidad disponible")
+    stock_minimo = models.PositiveIntegerField(default=0, help_text="Stock mínimo antes de alertar")
+    unidad_medida = models.CharField(max_length=20, default='unidad', help_text="Ej: unidad, metro, litro, kg")
+    precio_unitario = models.DecimalField(max_digits=10, decimal_places=2, default=0, help_text="Precio de compra unitario")
+    estado = models.CharField(max_length=20, choices=ESTADO_CHOICES, default='disponible')
+    ubicacion = models.CharField(max_length=100, blank=True, null=True, help_text="Ubicación física del material")
+    proveedor = models.ForeignKey(Proveedor, on_delete=models.SET_NULL, null=True, blank=True, related_name='materiales')
+    fecha_ultima_compra = models.DateField(blank=True, null=True)
+    observaciones = models.TextField(blank=True, null=True)
+    fecha_creacion = models.DateTimeField(auto_now_add=True)
+    fecha_modificacion = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        verbose_name = 'Material'
+        verbose_name_plural = 'Materiales'
+        ordering = ['nombre']
+    
+    def __str__(self):
+        return f"{self.nombre} - Stock: {self.stock_actual} {self.unidad_medida}"
+    
+    @property
+    def stock_bajo(self):
+        """Indica si el stock está por debajo del mínimo"""
+        return self.stock_actual <= self.stock_minimo and self.stock_minimo > 0

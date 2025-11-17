@@ -1,0 +1,217 @@
+{% extends 'jio_app/base_admin.html' %}
+{% load static %}
+{% load jio_filters %}
+
+{% block title %}Evaluaciones - JIO{% endblock %}
+
+{% block content %}
+<div class="panel-container">
+  <div class="panel-header">
+    <h1 class="panel-title">Evaluaciones y Reseñas</h1>
+    {% if promedio %}
+    <p class="panel-subtitle">Calificación promedio: {{ promedio }} ⭐</p>
+    {% endif %}
+  </div>
+
+  <!-- Modal de edición -->
+  <div id="modalEditEvaluacion" class="modal" aria-hidden="true">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Editar evaluación</h2>
+        <button class="modal-close" data-modal-close>&times;</button>
+      </div>
+      <form id="formEditEvaluacion" class="form-grid" data-endpoint-base="/panel/evaluaciones/">
+        {% csrf_token %}
+        <input type="hidden" name="evaluacion_id" id="editEvaluacionId">
+        <label style="grid-column: 1 / -1;">
+          <strong>Cliente:</strong> <span id="editEvaluacionClienteNombre"></span>
+        </label>
+        <label style="grid-column: 1 / -1;">
+          <strong>Reserva:</strong> #<span id="editEvaluacionReservaId"></span>
+        </label>
+        <label>
+          Calificación *
+          <select name="calificacion" id="editEvaluacionCalificacion" required>
+            <option value="">Seleccionar</option>
+            {% for value, label in calificacion_choices %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Estado *
+          <select name="estado" id="editEvaluacionEstado" required>
+            {% for value, label in estado_choices %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label style="grid-column: 1 / -1;">
+          Comentario
+          <textarea name="comentario" id="editEvaluacionComentario" rows="4"></textarea>
+        </label>
+        <label style="grid-column: 1 / -1;">
+          Respuesta del administrador
+          <textarea name="respuesta_admin" id="editEvaluacionRespuestaAdmin" rows="3" placeholder="Escribe una respuesta pública a esta evaluación..."></textarea>
+        </label>
+        <div class="form-actions" style="grid-column: 1 / -1;">
+          <button type="button" class="btn btn-secondary" data-modal-close>Cancelar</button>
+          <button type="submit" class="btn btn-primary">Guardar</button>
+        </div>
+      </form>
+    </div>
+    <div class="modal-backdrop" data-modal-close></div>
+  </div>
+
+  <!-- Filtros de búsqueda -->
+  <div class="form-card" id="evaluacionesPage" data-evaluaciones-base="/panel/evaluaciones/">
+    <form method="get" class="form-grid" style="grid-template-columns: 1fr 1fr 1fr auto;align-items: end;gap:1rem;">
+      <input type="hidden" name="order_by" value="{{ order_by }}">
+      <input type="hidden" name="direction" value="{{ direction }}">
+      <label>Buscar
+        <input type="text" name="q" value="{{ query }}" placeholder="Cliente o comentario">
+      </label>
+      <label>Calificación
+        <select name="calificacion">
+          <option value="">Todas</option>
+          {% for value, label in calificacion_choices %}
+          <option value="{{ value }}" {% if calificacion_filter == value|stringformat:"s" %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Estado
+        <select name="estado">
+          <option value="">Todos los estados</option>
+          {% for value, label in estado_choices %}
+          <option value="{{ value }}" {% if estado_filter == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button class="btn btn-secondary" type="submit">Filtrar</button>
+    </form>
+  </div>
+
+  <!-- Lista de evaluaciones -->
+  <div class="form-card" style="overflow:auto;">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:.75rem;">
+      <h2 class="panel-title" style="font-size:1.25rem; color:#2E7D32; margin:0;">Evaluaciones de Clientes</h2>
+      <div class="actions-wrap" style="gap:.5rem;">
+        <button type="button" id="btnOpenCreateEvaluacion" class="btn btn-primary"><i class="fas fa-plus"></i> Agregar Evaluación</button>
+      </div>
+    </div>
+    <table class="table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Cliente</th>
+          <th>Reserva</th>
+          <th>Calificación</th>
+          <th>Comentario</th>
+          <th>Estado</th>
+          <th>Fecha</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for evaluacion in evaluaciones %}
+        <tr>
+          <td>{{ evaluacion.id }}</td>
+          <td>{{ evaluacion.cliente.usuario.get_full_name }}</td>
+          <td>#{{ evaluacion.reserva.id }}</td>
+          <td>
+            <div style="display:flex;align-items:center;gap:0.25rem;">
+              {% with calificacion=evaluacion.calificacion %}
+                {% if calificacion >= 1 %}<span style="color:#FFD700;">⭐</span>{% else %}<span style="color:#ddd;">☆</span>{% endif %}
+                {% if calificacion >= 2 %}<span style="color:#FFD700;">⭐</span>{% else %}<span style="color:#ddd;">☆</span>{% endif %}
+                {% if calificacion >= 3 %}<span style="color:#FFD700;">⭐</span>{% else %}<span style="color:#ddd;">☆</span>{% endif %}
+                {% if calificacion >= 4 %}<span style="color:#FFD700;">⭐</span>{% else %}<span style="color:#ddd;">☆</span>{% endif %}
+                {% if calificacion >= 5 %}<span style="color:#FFD700;">⭐</span>{% else %}<span style="color:#ddd;">☆</span>{% endif %}
+              {% endwith %}
+              <span style="margin-left:0.5rem;">({{ evaluacion.calificacion }})</span>
+            </div>
+          </td>
+          <td>{{ evaluacion.comentario|truncatechars:50|default:"Sin comentario" }}</td>
+          <td>
+            <span class="status-badge status-{{ evaluacion.estado }}">
+              {{ evaluacion.get_estado_display }}
+            </span>
+          </td>
+          <td>{{ evaluacion.fecha_evaluacion|date:"d/m/Y" }}</td>
+          <td style="white-space:nowrap;">
+            <button class="btn btn-secondary" data-edit-evaluacion="{{ evaluacion.id }}">Editar</button>
+            <button class="btn btn-danger" data-delete-evaluacion="{{ evaluacion.id }}">Eliminar</button>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="8">No hay evaluaciones que coincidan con los filtros.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  
+  <!-- Modal de creación -->
+  <div id="modalCreateEvaluacion" class="modal" aria-hidden="true">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Nueva evaluación</h2>
+        <button class="modal-close" data-modal-close>&times;</button>
+      </div>
+      <form id="formCreateEvaluacion" class="form-grid" data-endpoint="{% url 'jio_app:evaluacion_create_json' %}">
+        {% csrf_token %}
+        <label>
+          Reserva *
+          <select name="reserva_id" id="createEvaluacionReserva" required>
+            <option value="">Seleccionar reserva</option>
+            {% for reserva in reservas %}
+            <option value="{{ reserva.id }}" data-cliente-id="{{ reserva.cliente.id }}" data-cliente-nombre="{{ reserva.cliente.usuario.get_full_name }}">
+              Reserva #{{ reserva.id }} - {{ reserva.cliente.usuario.get_full_name }} ({{ reserva.fecha_evento|date:"d/m/Y" }})
+            </option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Cliente *
+          <select name="cliente_id" id="createEvaluacionCliente" required>
+            <option value="">Seleccionar cliente</option>
+          </select>
+          <small style="color:#666;">Se actualiza automáticamente al seleccionar la reserva</small>
+        </label>
+        <label>
+          Calificación *
+          <select name="calificacion" required>
+            <option value="">Seleccionar</option>
+            {% for value, label in calificacion_choices %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Estado *
+          <select name="estado" required>
+            {% for value, label in estado_choices %}
+            <option value="{{ value }}" {% if value == 'pendiente' %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label style="grid-column: 1 / -1;">
+          Comentario
+          <textarea name="comentario" rows="4"></textarea>
+        </label>
+        <div class="form-actions" style="grid-column: 1 / -1;">
+          <button type="button" class="btn btn-secondary" data-modal-close>Cancelar</button>
+          <button type="submit" class="btn btn-primary">Crear</button>
+        </div>
+      </form>
+    </div>
+    <div class="modal-backdrop" data-modal-close></div>
+  </div>
+  
+  {% block extra_scripts %}
+  <script src="{% static 'js/validaciones.js' %}"></script>
+  <script src="{% static 'js/evaluaciones_list.js' %}"></script>
+  {% endblock %}
+</div>
+{% endblock %}
+

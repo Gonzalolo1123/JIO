@@ -1,0 +1,248 @@
+{% extends 'jio_app/base_admin.html' %}
+{% load static %}
+{% load jio_filters %}
+{% load humanize %}
+
+{% block title %}Gastos Operativos - JIO{% endblock %}
+
+{% block content %}
+<div class="panel-container">
+  <div class="panel-header">
+    <h1 class="panel-title">Gastos Operativos</h1>
+    {% if total_gastos %}
+    <p class="panel-subtitle">Total filtrado: ${{ total_gastos|floatformat:0|intcomma }}</p>
+    {% endif %}
+  </div>
+
+  <!-- Modal de edición -->
+  <div id="modalEditGasto" class="modal" aria-hidden="true">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Editar gasto operativo</h2>
+        <button class="modal-close" data-modal-close>&times;</button>
+      </div>
+      <form id="formEditGasto" class="form-grid" data-endpoint-base="/panel/gastos/" enctype="multipart/form-data">
+        {% csrf_token %}
+        <input type="hidden" name="gasto_id" id="editGastoId">
+        <label>
+          Categoría *
+          <select name="categoria" id="editGastoCategoria" required>
+            <option value="">Seleccionar categoría</option>
+            {% for value, label in categoria_choices %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Descripción *
+          <input type="text" name="descripcion" id="editGastoDescripcion" required maxlength="200">
+        </label>
+        <label>
+          Monto *
+          <input type="number" name="monto" id="editGastoMonto" required min="1" step="0.01">
+        </label>
+        <label>
+          Fecha del gasto *
+          <input type="date" name="fecha_gasto" id="editGastoFecha" required>
+        </label>
+        <label>
+          Método de pago *
+          <select name="metodo_pago" id="editGastoMetodoPago" required>
+            <option value="">Seleccionar método</option>
+            {% for value, label in metodo_pago_choices %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Vehículo (opcional)
+          <select name="vehiculo_id" id="editGastoVehiculo">
+            <option value="">Ninguno</option>
+            {% for vehiculo in vehiculos %}
+            <option value="{{ vehiculo.id }}">{{ vehiculo.patente }} - {{ vehiculo.marca }} {{ vehiculo.modelo }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Reserva (opcional)
+          <select name="reserva_id" id="editGastoReserva">
+            <option value="">Ninguna</option>
+            {% for reserva in reservas %}
+            <option value="{{ reserva.id }}">Reserva #{{ reserva.id }} - {{ reserva.cliente.usuario.get_full_name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label style="grid-column: 1 / -1;">
+          Comprobante
+          <input type="file" name="comprobante" id="editGastoComprobante" accept="image/*">
+          <small style="color:#7f8c8d;">Máximo 5MB. Formatos: JPG, PNG, GIF, WEBP</small>
+        </label>
+        <div id="editGastoComprobantePreview" style="grid-column: 1 / -1; text-align: center; margin-top: 0.5rem;"></div>
+        <label style="grid-column: 1 / -1;" id="editGastoEliminarComprobanteContainer" style="display:none;">
+          <input type="checkbox" name="eliminar_comprobante" id="editGastoEliminarComprobante" style="width:auto; margin-right:0.5rem;">
+          <span>Eliminar comprobante actual</span>
+        </label>
+        <label style="grid-column: 1 / -1;">
+          Observaciones
+          <textarea name="observaciones" id="editGastoObservaciones" rows="3"></textarea>
+        </label>
+        <div class="form-actions" style="grid-column: 1 / -1;">
+          <button type="button" class="btn btn-secondary" data-modal-close>Cancelar</button>
+          <button type="submit" class="btn btn-primary">Guardar</button>
+        </div>
+      </form>
+    </div>
+    <div class="modal-backdrop" data-modal-close></div>
+  </div>
+
+  <!-- Filtros de búsqueda -->
+  <div class="form-card" id="gastosPage" data-gastos-base="/panel/gastos/">
+    <form method="get" class="form-grid" style="grid-template-columns: 1fr 1fr 1fr 1fr auto;align-items: end;gap:1rem;">
+      <input type="hidden" name="order_by" value="{{ order_by }}">
+      <input type="hidden" name="direction" value="{{ direction }}">
+      <label>Buscar
+        <input type="text" name="q" value="{{ query }}" placeholder="Descripción u observaciones">
+      </label>
+      <label>Categoría
+        <select name="categoria">
+          <option value="">Todas las categorías</option>
+          {% for value, label in categoria_choices %}
+          <option value="{{ value }}" {% if categoria_filter == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Fecha desde
+        <input type="date" name="fecha_desde" value="{{ fecha_desde }}">
+      </label>
+      <label>Fecha hasta
+        <input type="date" name="fecha_hasta" value="{{ fecha_hasta }}">
+      </label>
+      <button class="btn btn-secondary" type="submit">Filtrar</button>
+    </form>
+  </div>
+
+  <!-- Lista de gastos -->
+  <div class="form-card" style="overflow:auto;">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:.75rem;">
+      <h2 class="panel-title" style="font-size:1.25rem; color:#2E7D32; margin:0;">Registro de Gastos</h2>
+      <div class="actions-wrap" style="gap:.5rem;">
+        <button type="button" id="btnOpenCreateGasto" class="btn btn-primary"><i class="fas fa-plus"></i> Agregar Gasto</button>
+      </div>
+    </div>
+    <table class="table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Fecha</th>
+          <th>Categoría</th>
+          <th>Descripción</th>
+          <th>Monto</th>
+          <th>Método de pago</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for gasto in gastos %}
+        <tr>
+          <td>{{ gasto.id }}</td>
+          <td>{{ gasto.fecha_gasto|date:"d/m/Y" }}</td>
+          <td>{{ gasto.get_categoria_display }}</td>
+          <td>{{ gasto.descripcion|truncatechars:50 }}</td>
+          <td>${{ gasto.monto|floatformat:0|intcomma }}</td>
+          <td>{{ gasto.get_metodo_pago_display }}</td>
+          <td style="white-space:nowrap;">
+            <button class="btn btn-secondary" data-edit-gasto="{{ gasto.id }}">Editar</button>
+            <button class="btn btn-danger" data-delete-gasto="{{ gasto.id }}">Eliminar</button>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="7">No hay gastos que coincidan con los filtros.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  
+  <!-- Modal de creación -->
+  <div id="modalCreateGasto" class="modal" aria-hidden="true">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Nuevo gasto operativo</h2>
+        <button class="modal-close" data-modal-close>&times;</button>
+      </div>
+      <form id="formCreateGasto" class="form-grid" data-endpoint="{% url 'jio_app:gasto_create_json' %}" enctype="multipart/form-data">
+        {% csrf_token %}
+        <label>
+          Categoría *
+          <select name="categoria" required>
+            <option value="">Seleccionar categoría</option>
+            {% for value, label in categoria_choices %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Descripción *
+          <input type="text" name="descripcion" required maxlength="200">
+        </label>
+        <label>
+          Monto *
+          <input type="number" name="monto" required min="1" step="0.01">
+        </label>
+        <label>
+          Fecha del gasto *
+          <input type="date" name="fecha_gasto" required>
+        </label>
+        <label>
+          Método de pago *
+          <select name="metodo_pago" required>
+            <option value="">Seleccionar método</option>
+            {% for value, label in metodo_pago_choices %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Vehículo (opcional)
+          <select name="vehiculo_id">
+            <option value="">Ninguno</option>
+            {% for vehiculo in vehiculos %}
+            <option value="{{ vehiculo.id }}">{{ vehiculo.patente }} - {{ vehiculo.marca }} {{ vehiculo.modelo }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Reserva (opcional)
+          <select name="reserva_id">
+            <option value="">Ninguna</option>
+            {% for reserva in reservas %}
+            <option value="{{ reserva.id }}">Reserva #{{ reserva.id }} - {{ reserva.cliente.usuario.get_full_name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label style="grid-column: 1 / -1;">
+          Comprobante
+          <input type="file" name="comprobante" accept="image/*">
+          <small style="color:#7f8c8d;">Máximo 5MB. Formatos: JPG, PNG, GIF, WEBP</small>
+        </label>
+        <label style="grid-column: 1 / -1;">
+          Observaciones
+          <textarea name="observaciones" rows="3"></textarea>
+        </label>
+        <div class="form-actions" style="grid-column: 1 / -1;">
+          <button type="button" class="btn btn-secondary" data-modal-close>Cancelar</button>
+          <button type="submit" class="btn btn-primary">Crear</button>
+        </div>
+      </form>
+    </div>
+    <div class="modal-backdrop" data-modal-close></div>
+  </div>
+  
+  {% block extra_scripts %}
+  <script src="{% static 'js/validaciones.js' %}"></script>
+  <script src="{% static 'js/gastos_list.js' %}"></script>
+  {% endblock %}
+</div>
+{% endblock %}
+
