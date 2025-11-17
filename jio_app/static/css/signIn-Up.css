@@ -1,4 +1,6 @@
 /* Modal de Login Simplificado para JIO */
+/* Importar paleta de colores */
+@import url('colors.css');
 
 /* Modal */
 .modal {
@@ -38,13 +40,13 @@
 
 .modal-content {
   position: relative;
-  background: #ffffff;
-  border-radius: 20px;
-  border: 2px solid #2E7D32;
+  background: var(--color-white);
+  border-radius: var(--radius-lg);
+  border: 2px solid var(--color-gray-light);
   padding: 40px;
   width: 90%;
   max-width: 400px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  box-shadow: var(--shadow-xl);
 }
 
 /* Botón de cierre */
@@ -55,22 +57,22 @@
   font-size: 24px;
   cursor: pointer;
   font-weight: bold;
-  color: #666;
-  background: #f8f8f8;
+  color: var(--color-gray);
+  background: var(--color-gray-lighter);
   border-radius: 50%;
   width: 30px;
   height: 30px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid #ddd;
+  border: 1px solid var(--color-gray-light);
   transition: all 0.3s ease;
 }
 
 .close:hover {
-  color: #2E7D32;
-  background: #fff;
-  border-color: #2E7D32;
+  color: var(--color-gray-dark);
+  background: var(--color-white);
+  border-color: var(--color-gray);
 }
 
 /* Contenedor del login */
@@ -79,14 +81,14 @@
 }
 
 .login-container h1 {
-  color: #2E7D32;
+  color: var(--color-secondary);
   font-weight: bold;
   margin: 0 0 10px 0;
   font-size: 1.8rem;
 }
 
 .login-subtitle {
-  color: #666;
+  color: var(--color-gray);
   font-size: 14px;
   margin: 0 0 30px 0;
   line-height: 1.4;
@@ -101,23 +103,23 @@
 .input-group input {
   width: 100%;
   padding: 15px 20px;
-  border: 2px solid #e0e0e0;
-  border-radius: 25px;
+  border: 2px solid var(--color-gray-light);
+  border-radius: var(--radius-xl);
   font-size: 14px;
-  background: #f8f8f8;
+  background: var(--color-gray-lighter);
   transition: all 0.3s ease;
   box-sizing: border-box;
 }
 
 .input-group input:focus {
   outline: none;
-  border-color: #2E7D32;
-  background: #fff;
-  box-shadow: 0 0 0 3px rgba(255, 107, 107, 0.1);
+  border-color: var(--color-primary);
+  background: var(--color-white);
+  box-shadow: 0 0 0 3px rgba(0, 188, 212, 0.1);
 }
 
 .input-group input:hover {
-  border-color: #ccc;
+  border-color: var(--color-gray);
 }
 
 /* Botón de login */
@@ -125,9 +127,9 @@
   width: 100%;
   padding: 15px;
   border: none;
-  border-radius: 25px;
-  background: linear-gradient(135deg, #2E7D32, #4CAF50);
-  color: white;
+  border-radius: var(--radius-xl);
+  background: var(--bg-gradient-secondary);
+  color: var(--color-white);
   font-size: 16px;
   font-weight: bold;
   cursor: pointer;
@@ -137,7 +139,7 @@
 
 .login-btn:hover {
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(255, 107, 107, 0.3);
+  box-shadow: var(--shadow-md);
 }
 
 .login-btn:active {

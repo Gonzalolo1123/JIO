@@ -14,9 +14,9 @@ document.addEventListener('DOMContentLoaded', function() {
     const fechaSeleccionadaElement = document.getElementById('fecha-seleccionada');
     const formularioReserva = document.getElementById('formulario-reserva');
     const cancelarReservaBtn = document.getElementById('cancelar-reserva');
-    const juegoSelect = document.getElementById('juego');
     const formErrors = document.getElementById('form-errors');
     const btnSubmit = document.getElementById('btn-submit');
+    let juegoCounter = 0; // Contador para IDs únicos de filas de juegos
     // Variables para dirección y mapa (se inicializan después de verificar que el modal existe)
     let direccionInput = null;
     let direccionLatInput = null;
@@ -743,8 +743,22 @@ document.addEventListener('DOMContentLoaded', function() {
         
         if (nextMonthBtn) {
             nextMonthBtn.addEventListener('click', () => {
-                currentDate.setMonth(currentDate.getMonth() + 1);
-                renderCalendario();
+                const hoy = new Date();
+                const fechaMaxima = new Date();
+                fechaMaxima.setFullYear(fechaMaxima.getFullYear() + 1);
+                
+                // Verificar si el siguiente mes no excede 1 año
+                const siguienteMes = new Date(currentDate);
+                siguienteMes.setMonth(siguienteMes.getMonth() + 1);
+                
+                // Si el siguiente mes no excede 1 año, permitir navegación
+                if (siguienteMes <= fechaMaxima) {
+                    currentDate.setMonth(currentDate.getMonth() + 1);
+                    renderCalendario();
+                } else {
+                    // Mostrar mensaje o simplemente no hacer nada
+                    console.log('No se puede navegar más de 1 año en el futuro');
+                }
             });
         }
         
@@ -772,6 +786,61 @@ document.addEventListener('DOMContentLoaded', function() {
                 procesarReserva();
             });
         }
+        
+        // Botón para agregar juego
+        const btnAddJuego = document.getElementById('btn-add-juego');
+        if (btnAddJuego) {
+            btnAddJuego.addEventListener('click', function() {
+                agregarFilaJuego();
+            });
+        }
+        
+        // Listener para distancia que actualiza el precio
+        const distanciaInput = document.getElementById('distancia_km');
+        if (distanciaInput) {
+            distanciaInput.addEventListener('input', function() {
+                actualizarPrecioDistancia();
+                actualizarTotal();
+            });
+        }
+        
+        // Listener para cambio de hora de instalación (calcular automáticamente hora de retiro)
+        const horaInstalacionInput = document.getElementById('hora_instalacion');
+        if (horaInstalacionInput) {
+            // Validar que la hora no sea antes de las 9:00 AM
+            horaInstalacionInput.addEventListener('input', function() {
+                if (this.value) {
+                    const [horas, minutos] = this.value.split(':').map(Number);
+                    if (horas < 9) {
+                        // Si la hora es menor a 9, ajustarla a 9:00
+                        this.value = '09:00';
+                        if (typeof Swal !== 'undefined' && Swal.fire) {
+                            Swal.fire({
+                                title: 'Hora inválida',
+                                text: 'Las instalaciones solo están disponibles desde las 9:00 AM',
+                                icon: 'warning',
+                                confirmButtonText: 'Entendido',
+                                timer: 3000
+                            });
+                        }
+                    }
+                }
+            });
+            
+            horaInstalacionInput.addEventListener('change', function() {
+                // Validar nuevamente al cambiar
+                if (this.value) {
+                    const [horas, minutos] = this.value.split(':').map(Number);
+                    if (horas < 9) {
+                        this.value = '09:00';
+                    }
+                }
+                calcularHoraRetiroAutomatica();
+            });
+        }
+        
+        // La hora de retiro ya no es editable, solo se muestra como texto
+        // No necesitamos listener de cambio ya que es solo lectura
     }
     
     function renderCalendario() {
@@ -806,6 +875,11 @@ document.addEventListener('DOMContentLoaded', function() {
         const hoy = new Date();
         hoy.setHours(0, 0, 0, 0);
         
+        // Calcular fecha máxima (1 año desde hoy)
+        const fechaMaxima = new Date();
+        fechaMaxima.setFullYear(fechaMaxima.getFullYear() + 1);
+        fechaMaxima.setHours(0, 0, 0, 0);
+        
         for (let dia = 1; dia <= diasEnMes; dia++) {
             const dayElement = document.createElement('div');
             const fechaActual = new Date(currentDate.getFullYear(), currentDate.getMonth(), dia);
@@ -821,6 +895,10 @@ document.addEventListener('DOMContentLoaded', function() {
             if (fechaActual < hoy) {
                 dayElement.classList.add('pasado');
                 dayElement.querySelector('.calendario-day-status').textContent = 'Pasado';
+            } else if (fechaActual > fechaMaxima) {
+                // Fecha más de 1 año en el futuro
+                dayElement.classList.add('pasado');
+                dayElement.querySelector('.calendario-day-status').textContent = 'No disponible';
             } else {
                 // Cargar disponibilidad desde el servidor
                 cargarDisponibilidadFecha(fechaActual, dayElement);
@@ -996,152 +1074,36 @@ document.addEventListener('DOMContentLoaded', function() {
             fechaSeleccionadaElement.textContent = `Reserva para: ${fechaFormateada}`;
         }
         
-        // Limpiar y poblar select de juegos
-        if (juegoSelect) {
-            juegoSelect.innerHTML = '<option value="">Selecciona un juego</option>';
-            
-            // Agregar juegos disponibles primero
-            if (juegosDisponibles && Array.isArray(juegosDisponibles) && juegosDisponibles.length > 0) {
-                console.log('➕ Agregando', juegosDisponibles.length, 'juegos disponibles');
-                juegosDisponibles.forEach(juego => {
-                    if (juego && juego.id && juego.nombre) {
-                        const option = document.createElement('option');
-                        option.value = juego.id;
-                        option.textContent = `${juego.nombre} - $${juego.precio.toLocaleString('es-CL')}`;
-                        option.style.color = '#000';
-                        option.style.backgroundColor = '#fff';
-                        option.classList.add('juego-disponible');
-                        juegoSelect.appendChild(option);
-                    }
-                });
-            }
-            
-            // IMPORTANTE: Agregar juegos ocupados (no disponibles) después
-            // Estos DEBEN aparecer siempre que existan, incluso si hay juegos disponibles
-            if (juegosOcupados && Array.isArray(juegosOcupados) && juegosOcupados.length > 0) {
-                console.log('🔴 Agregando', juegosOcupados.length, 'juegos ocupados:', juegosOcupados);
-                
-                // Separador visual más visible
-                const separator = document.createElement('option');
-                separator.disabled = true;
-                separator.textContent = '═══════════════════════════════════════════════════════════';
-                separator.style.fontWeight = 'bold';
-                separator.style.color = '#666';
-                separator.style.backgroundColor = '#e0e0e0';
-                separator.style.fontSize = '0.85rem';
-                juegoSelect.appendChild(separator);
-                
-                const separator2 = document.createElement('option');
-                separator2.disabled = true;
-                separator2.textContent = '  ⚠️ JUEGOS NO DISPONIBLES (RESERVADOS) ⚠️';
-                separator2.style.fontWeight = 'bold';
-                separator2.style.color = '#c62828';
-                separator2.style.backgroundColor = '#ffebee';
-                separator2.style.fontSize = '0.9rem';
-                juegoSelect.appendChild(separator2);
-                
-                const separator3 = document.createElement('option');
-                separator3.disabled = true;
-                separator3.textContent = '═══════════════════════════════════════════════════════════';
-                separator3.style.fontWeight = 'bold';
-                separator3.style.color = '#666';
-                separator3.style.backgroundColor = '#e0e0e0';
-                separator3.style.fontSize = '0.85rem';
-                juegoSelect.appendChild(separator3);
-                
-                juegosOcupados.forEach((juego, index) => {
-                    console.log(`   📝 Procesando juego ocupado ${index + 1}:`, juego);
-                    
-                    // Validar que el juego tenga datos válidos
-                    if (!juego) {
-                        console.warn(`   ⚠️ Juego ocupado ${index + 1} es null o undefined`);
-                        return;
-                    }
-                    
-                    if (!juego.id) {
-                        console.warn(`   ⚠️ Juego ocupado ${index + 1} no tiene ID:`, juego);
-                        return;
-                    }
-                    
-                    if (!juego.nombre) {
-                        console.warn(`   ⚠️ Juego ocupado ${index + 1} (ID: ${juego.id}) no tiene nombre:`, juego);
-                        return;
-                    }
-                    
-                    const option = document.createElement('option');
-                    option.value = juego.id;
-                    option.disabled = true; // Deshabilitar para que no se pueda seleccionar
-                    
-                    // Texto MUY visible con "NO DISPONIBLE" al lado del nombre
-                    // Formato: "Nombre del Juego - $Precio - ❌ NO DISPONIBLE"
-                    const precio = juego.precio ? juego.precio.toLocaleString('es-CL') : '0';
-                    option.textContent = `${juego.nombre} - $${precio} - ❌ NO DISPONIBLE`;
-                    
-                    // Aplicar estilos inline (aunque algunos navegadores los ignoren en option)
-                    // El texto "NO DISPONIBLE" será siempre visible incluso si los colores no se aplican
-                    try {
-                        option.style.cssText = 'color: #c62828 !important; background-color: #ffcdd2 !important; font-weight: 600 !important;';
-                    } catch (e) {
-                        console.warn('No se pudieron aplicar estilos inline:', e);
-                    }
-                    
-                    option.classList.add('juego-ocupado');
-                    option.setAttribute('data-ocupado', 'true');
-                    option.setAttribute('data-nombre', juego.nombre);
-                    option.setAttribute('data-juego-id', juego.id);
-                    
-                    juegoSelect.appendChild(option);
-                    console.log(`   ✅ Juego ocupado agregado al DOM: "${juego.nombre}" (ID: ${juego.id})`);
-                });
-                
-                console.log(`✅ Total: ${juegosOcupados.length} juegos ocupados procesados y agregados al select`);
+        // Guardar juegos disponibles y ocupados para usar en las filas
+        juegosDisponiblesData = juegosDisponibles || [];
+        juegosOcupadosData = juegosOcupados || [];
+        
+        // Limpiar contenedor de juegos
+        const juegosContainer = document.getElementById('juegos-container');
+        if (juegosContainer) {
+            juegosContainer.innerHTML = '';
+            juegoCounter = 0;
+        }
+        
+        // Ocultar contenedor de total inicialmente
+        const totalContainer = document.getElementById('total-container');
+        if (totalContainer) {
+            totalContainer.style.display = 'none';
+        }
+        
+        // Mostrar información de juegos ocupados si hay
+        const infoJuegosOcupados = document.getElementById('info-juegos-ocupados');
+        if (infoJuegosOcupados) {
+            if (juegosOcupados && juegosOcupados.length > 0) {
+                infoJuegosOcupados.style.display = 'block';
             } else {
-                console.log('ℹ️ No hay juegos ocupados para mostrar. Tipo:', typeof juegosOcupados, 'Valor:', juegosOcupados);
+                infoJuegosOcupados.style.display = 'none';
             }
-            
-            // Si no hay juegos disponibles ni ocupados
-            if ((!juegosDisponibles || juegosDisponibles.length === 0) && 
-                (!juegosOcupados || juegosOcupados.length === 0)) {
-                const option = document.createElement('option');
-                option.value = '';
-                option.disabled = true;
-                option.textContent = 'No hay juegos disponibles';
-                juegoSelect.appendChild(option);
-            }
-            
-            // Log final para verificar
-            const totalOpciones = juegoSelect.options.length;
-            const opcionesOcupadas = juegoSelect.querySelectorAll('.juego-ocupado').length;
-            console.log(`📊 Total opciones en select: ${totalOpciones}, Ocupadas: ${opcionesOcupadas}`);
-            
-            // Mostrar mensaje informativo si hay juegos ocupados
-            const infoOcupados = document.getElementById('info-juegos-ocupados');
-            if (infoOcupados) {
-                if (opcionesOcupadas > 0) {
-                    infoOcupados.style.display = 'block';
-                } else {
-                    infoOcupados.style.display = 'none';
-                }
-            }
-            
-            // Verificar visualmente que se agregaron
-            setTimeout(() => {
-                const opcionesVisible = Array.from(juegoSelect.options).filter(opt => opt.classList.contains('juego-ocupado'));
-                console.log(`🔍 Verificación: ${opcionesVisible.length} opciones ocupadas encontradas en el DOM`);
-                opcionesVisible.forEach((opt, idx) => {
-                    console.log(`   Opción ${idx + 1}: "${opt.textContent}" (disabled: ${opt.disabled}, value: ${opt.value})`);
-                });
-                
-                // También verificar todas las opciones para debug
-                console.log('📋 Todas las opciones del select:');
-                Array.from(juegoSelect.options).forEach((opt, idx) => {
-                    const esOcupado = opt.classList.contains('juego-ocupado');
-                    const icono = esOcupado ? '🔴' : '✅';
-                    console.log(`   ${icono} ${idx}: "${opt.textContent.substring(0, 50)}..." (disabled: ${opt.disabled}, ocupado: ${esOcupado})`);
-                });
-            }, 200);
-        } else {
-            console.error('❌ juegoSelect no encontrado');
+        }
+        
+        // Agregar una fila de juego por defecto
+        if (juegosDisponiblesData.length > 0) {
+            agregarFilaJuego();
         }
         
         // Limpiar errores
@@ -1184,6 +1146,16 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
         
+        // Establecer hora de instalación por defecto (09:00) y calcular hora de retiro
+        const horaInstalacionInput = document.getElementById('hora_instalacion');
+        if (horaInstalacionInput) {
+            horaInstalacionInput.value = '09:00';
+            // Calcular hora de retiro automáticamente
+            setTimeout(() => {
+                calcularHoraRetiroAutomatica();
+            }, 100);
+        }
+        
         // Mostrar modal
         modalReserva.classList.add('show');
         modalReserva.style.display = 'flex';
@@ -1217,6 +1189,19 @@ document.addEventListener('DOMContentLoaded', function() {
         formErrors.style.display = 'none';
         formErrors.innerHTML = '';
         
+        // Limpiar contenedor de juegos
+        const juegosContainer = document.getElementById('juegos-container');
+        if (juegosContainer) {
+            juegosContainer.innerHTML = '';
+            juegoCounter = 0;
+        }
+        
+        // Ocultar contenedor de total
+        const totalContainer = document.getElementById('total-container');
+        if (totalContainer) {
+            totalContainer.style.display = 'none';
+        }
+        
         // Limpiar campos de dirección
         if (direccionInput) direccionInput.value = '';
         if (direccionLatInput) direccionLatInput.value = '';
@@ -1230,30 +1215,366 @@ document.addEventListener('DOMContentLoaded', function() {
         ocultarAutocompletado();
     }
     
+    // Funciones para manejar múltiples juegos
+    let juegosDisponiblesData = []; // Almacenar juegos disponibles para la fecha seleccionada
+    let juegosOcupadosData = []; // Almacenar juegos ocupados para la fecha seleccionada
+    
+    function formatearPrecioChileno(precio) {
+        return '$' + precio.toLocaleString('es-CL');
+    }
+    
+    function calcularPrecioDistancia(km) {
+        return km * 1000; // $1.000 por km
+    }
+    
+    function actualizarPrecioDistancia() {
+        const distanciaInput = document.getElementById('distancia_km');
+        const precioDistanciaSpan = document.getElementById('precio-distancia');
+        if (distanciaInput && precioDistanciaSpan) {
+            const km = parseInt(distanciaInput.value) || 0;
+            const precio = calcularPrecioDistancia(km);
+            precioDistanciaSpan.textContent = formatearPrecioChileno(precio);
+        }
+    }
+    
+    function agregarFilaJuego(juegoId = null) {
+        const container = document.getElementById('juegos-container');
+        if (!container) return;
+        
+        const rowId = `juego-row-${juegoCounter++}`;
+        const row = document.createElement('div');
+        row.className = 'juego-row';
+        row.id = rowId;
+        
+        // Select de juegos
+        const select = document.createElement('select');
+        select.className = 'juego-select';
+        select.name = 'juego_id';
+        select.required = true;
+        select.innerHTML = '<option value="">Selecciona un juego</option>';
+        
+        // Agregar juegos disponibles
+        juegosDisponiblesData.forEach(juego => {
+            const option = document.createElement('option');
+            option.value = juego.id;
+            option.textContent = `${juego.nombre} - ${formatearPrecioChileno(juego.precio)}`;
+            option.dataset.precio = juego.precio;
+            option.classList.add('juego-disponible');
+            if (juegoId && juego.id == juegoId) {
+                option.selected = true;
+            }
+            select.appendChild(option);
+        });
+        
+        // Agregar separador visual si hay juegos disponibles y ocupados
+        if (juegosDisponiblesData.length > 0 && juegosOcupadosData.length > 0) {
+            const separator = document.createElement('option');
+            separator.disabled = true;
+            separator.textContent = '────────────────────────────';
+            separator.style.color = '#ccc';
+            separator.style.backgroundColor = '#f5f5f5';
+            separator.style.fontSize = '0.85rem';
+            select.appendChild(separator);
+        }
+        
+        // Agregar juegos ocupados (no disponibles) al final
+        juegosOcupadosData.forEach(juego => {
+            const option = document.createElement('option');
+            option.value = juego.id;
+            option.disabled = true; // Deshabilitar para que no se pueda seleccionar
+            option.textContent = `${juego.nombre} - ${formatearPrecioChileno(juego.precio)} (No disponible)`;
+            option.dataset.precio = juego.precio;
+            option.classList.add('juego-ocupado');
+            // Estilos más sutiles
+            option.style.color = '#d32f2f';
+            option.style.backgroundColor = '#fff5f5';
+            option.style.fontStyle = 'italic';
+            select.appendChild(option);
+        });
+        
+        // Precio
+        const precioSpan = document.createElement('span');
+        precioSpan.className = 'juego-precio';
+        precioSpan.textContent = '$0';
+        
+        // Botón eliminar (más pequeño con X)
+        const btnRemove = document.createElement('button');
+        btnRemove.type = 'button';
+        btnRemove.className = 'btn-remove-juego';
+        // Usar ícono de FontAwesome si está disponible, sino usar texto X
+        btnRemove.innerHTML = '<i class="fas fa-times" style="font-size: 1rem; font-weight: bold;"></i>';
+        btnRemove.title = 'Eliminar juego';
+        // Fallback: si no hay FontAwesome, mostrar texto X
+        if (!document.querySelector('link[href*="font-awesome"]')) {
+            btnRemove.innerHTML = '<span style="font-size: 1.5rem; font-weight: bold; line-height: 1;">×</span>';
+        }
+        btnRemove.addEventListener('click', function() {
+            row.remove();
+            actualizarTotal();
+            actualizarJuegosJson();
+        });
+        
+        // Event listeners
+        select.addEventListener('change', function() {
+            const selectedOption = this.options[this.selectedIndex];
+            if (selectedOption.value) {
+                const precio = parseFloat(selectedOption.dataset.precio) || 0;
+                precioSpan.textContent = formatearPrecioChileno(precio);
+            } else {
+                precioSpan.textContent = '$0';
+            }
+            actualizarTotal();
+            actualizarJuegosJson();
+        });
+        
+        row.appendChild(select);
+        row.appendChild(precioSpan);
+        row.appendChild(btnRemove);
+        
+        container.appendChild(row);
+        
+        // Mostrar contenedor de total si hay juegos
+        const totalContainer = document.getElementById('total-container');
+        if (totalContainer) {
+            totalContainer.style.display = 'block';
+        }
+        
+        // Si se pasó un juegoId, seleccionarlo
+        if (juegoId) {
+            select.value = juegoId;
+            select.dispatchEvent(new Event('change'));
+        }
+        
+        actualizarTotal();
+        actualizarJuegosJson();
+    }
+    
+    // Función para calcular hora de retiro automáticamente (6 horas después de instalación)
+    function calcularHoraRetiroAutomatica() {
+        const horaInstalacionInput = document.getElementById('hora_instalacion');
+        const horaRetiroInput = document.getElementById('hora_retiro'); // Campo hidden
+        const horaRetiroTexto = document.getElementById('hora_retiro_texto'); // Campo de texto visible
+        
+        if (!horaInstalacionInput || !horaRetiroInput || !horaRetiroTexto || !horaInstalacionInput.value) {
+            return;
+        }
+        
+        // Obtener hora de instalación
+        const [horas, minutos] = horaInstalacionInput.value.split(':').map(Number);
+        
+        // Calcular hora de retiro (6 horas después)
+        let horasRetiro = horas + 6;
+        let minutosRetiro = minutos;
+        
+        // Si pasa de medianoche, ajustar
+        if (horasRetiro >= 24) {
+            horasRetiro = horasRetiro - 24;
+        }
+        
+        // Formatear con 2 dígitos
+        const horaRetiroFormateada = `${String(horasRetiro).padStart(2, '0')}:${String(minutosRetiro).padStart(2, '0')}`;
+        
+        // Actualizar el campo hidden (para el formulario)
+        horaRetiroInput.value = horaRetiroFormateada;
+        
+        // Actualizar el campo de texto visible
+        horaRetiroTexto.textContent = horaRetiroFormateada;
+        
+        // Recalcular horas extra después de actualizar la hora
+        calcularHorasExtra();
+    }
+    
+    // Función para calcular horas extra y su precio
+    function calcularHorasExtra() {
+        const horaInstalacionInput = document.getElementById('hora_instalacion');
+        const horaRetiroInput = document.getElementById('hora_retiro');
+        const horasExtraSpan = document.getElementById('horas-extra');
+        const precioHorasExtraSpan = document.getElementById('precio-horas-extra');
+        
+        if (!horaInstalacionInput || !horaRetiroInput || !horaInstalacionInput.value || !horaRetiroInput.value) {
+            if (horasExtraSpan) horasExtraSpan.textContent = '0';
+            if (precioHorasExtraSpan) precioHorasExtraSpan.textContent = '$0';
+            actualizarTotal();
+            return;
+        }
+        
+        // Obtener horas de instalación y retiro
+        const [horasInst, minutosInst] = horaInstalacionInput.value.split(':').map(Number);
+        const [horasRet, minutosRet] = horaRetiroInput.value.split(':').map(Number);
+        
+        // Convertir a minutos para facilitar el cálculo
+        const minutosInstalacion = horasInst * 60 + minutosInst;
+        let minutosRetiro = horasRet * 60 + minutosRet;
+        
+        // Si la hora de retiro es menor que la de instalación, asumir que es al día siguiente
+        if (minutosRetiro < minutosInstalacion) {
+            minutosRetiro += 24 * 60; // Agregar 24 horas en minutos
+        }
+        
+        // Calcular diferencia en minutos
+        const diferenciaMinutos = minutosRetiro - minutosInstalacion;
+        
+        // Calcular horas base (6 horas = 360 minutos)
+        const horasBase = 6;
+        const minutosBase = horasBase * 60;
+        
+        // Calcular horas extra (solo si excede las 6 horas base)
+        let horasExtra = 0;
+        if (diferenciaMinutos > minutosBase) {
+            const minutosExtra = diferenciaMinutos - minutosBase;
+            // Redondear hacia arriba (si hay al menos 1 minuto extra, cuenta como 1 hora)
+            horasExtra = Math.ceil(minutosExtra / 60);
+        }
+        
+        // Calcular precio (10.000 pesos por hora extra)
+        const PRECIO_POR_HORA_EXTRA = 10000;
+        const precioHorasExtra = horasExtra * PRECIO_POR_HORA_EXTRA;
+        
+        // Actualizar la UI
+        if (horasExtraSpan) {
+            horasExtraSpan.textContent = horasExtra;
+        }
+        if (precioHorasExtraSpan) {
+            precioHorasExtraSpan.textContent = formatearPrecioChileno(precioHorasExtra);
+        }
+        
+        // Actualizar el total también
+        actualizarTotal();
+    }
+    
+    function actualizarTotal() {
+        const container = document.getElementById('juegos-container');
+        const subtotalJuegosSpan = document.getElementById('subtotal-juegos');
+        const precioDistanciaSpan = document.getElementById('precio-distancia-total');
+        const precioHorasExtraSpan = document.getElementById('precio-horas-extra-total');
+        const totalSpan = document.getElementById('total-reserva');
+        const distanciaInput = document.getElementById('distancia_km');
+        
+        if (!container) return;
+        
+        // Calcular subtotal de juegos
+        let subtotalJuegos = 0;
+        container.querySelectorAll('.juego-row').forEach(row => {
+            const select = row.querySelector('.juego-select');
+            const precioSpan = row.querySelector('.juego-precio');
+            if (select.value && precioSpan) {
+                const precioText = precioSpan.textContent.replace(/[^0-9]/g, '');
+                if (precioText) {
+                    subtotalJuegos += parseInt(precioText);
+                }
+            }
+        });
+        
+        // Calcular precio por distancia
+        const distanciaKm = distanciaInput ? (parseInt(distanciaInput.value) || 0) : 0;
+        const precioDistancia = calcularPrecioDistancia(distanciaKm);
+        
+        // Calcular precio de horas extra
+        const horasExtraSpan = document.getElementById('horas-extra');
+        const horasExtra = horasExtraSpan ? (parseInt(horasExtraSpan.textContent) || 0) : 0;
+        const PRECIO_POR_HORA_EXTRA = 10000;
+        const precioHorasExtra = horasExtra * PRECIO_POR_HORA_EXTRA;
+        
+        // Total = subtotal juegos + precio distancia + precio horas extra
+        const total = subtotalJuegos + precioDistancia + precioHorasExtra;
+        
+        if (subtotalJuegosSpan) subtotalJuegosSpan.textContent = formatearPrecioChileno(subtotalJuegos);
+        if (precioDistanciaSpan) precioDistanciaSpan.textContent = formatearPrecioChileno(precioDistancia);
+        if (precioHorasExtraSpan) precioHorasExtraSpan.textContent = formatearPrecioChileno(precioHorasExtra);
+        if (totalSpan) totalSpan.textContent = formatearPrecioChileno(total);
+    }
+    
+    function actualizarJuegosJson() {
+        const container = document.getElementById('juegos-container');
+        const jsonInput = document.getElementById('juegos-json');
+        
+        if (!container) {
+            console.error('❌ No se encontró el contenedor de juegos');
+            return;
+        }
+        
+        if (!jsonInput) {
+            console.error('❌ No se encontró el input juegos-json');
+            return;
+        }
+        
+        const juegos = [];
+        const rows = container.querySelectorAll('.juego-row');
+        console.log(`🔍 Encontradas ${rows.length} filas de juegos`);
+        
+        rows.forEach((row, index) => {
+            const select = row.querySelector('.juego-select');
+            
+            if (select && select.value) {
+                const juegoId = parseInt(select.value);
+                // Siempre cantidad 1 ya que solo hay un juego por cada uno
+                juegos.push({
+                    juego_id: juegoId,
+                    cantidad: 1
+                });
+                console.log(`✅ Juego ${index + 1}: ID=${juegoId}, Cantidad=1`);
+            } else {
+                console.warn(`⚠️ Fila ${index + 1} no tiene juego seleccionado`);
+            }
+        });
+        
+        const jsonString = JSON.stringify(juegos);
+        jsonInput.value = jsonString;
+        console.log('📝 JSON actualizado:', jsonString);
+        
+        return juegos;
+    }
+    
     async function procesarReserva() {
-        const formData = new FormData(formularioReserva);
+        if (!selectedDate) {
+            mostrarErroresValidacion(['Debe seleccionar una fecha'], 'Error en el Formulario');
+            return;
+        }
+        
         const fechaStr = selectedDate.toISOString().split('T')[0];
+        
+        // Actualizar JSON de juegos antes de obtener los datos
+        const juegosActualizados = actualizarJuegosJson();
         
         // Usar dirección completa de Google Maps si está disponible, sino usar la dirección ingresada
         const direccionFinal = direccionCompletaInput && direccionCompletaInput.value 
             ? direccionCompletaInput.value 
-            : formData.get('direccion');
+            : (direccionInput ? direccionInput.value.trim() : '');
+        
+        // Obtener valores directamente de los inputs
+        const nombreInput = document.getElementById('nombre');
+        const apellidoInput = document.getElementById('apellido');
+        const emailInput = document.getElementById('email');
+        const telefonoInput = document.getElementById('telefono');
+        const horaInstalacionInput = document.getElementById('hora_instalacion');
+        const horaRetiroInput = document.getElementById('hora_retiro');
+        const observacionesInput = document.getElementById('observaciones');
+        const distanciaInput = document.getElementById('distancia_km');
         
         const datosReserva = {
             fecha: fechaStr,
-            nombre: formData.get('nombre'),
-            email: formData.get('email'),
-            telefono: formData.get('telefono'),
-            juego: formData.get('juego'),
-            horario: formData.get('horario'),
+            nombre: nombreInput ? nombreInput.value.trim() : '',
+            apellido: apellidoInput ? apellidoInput.value.trim() : '',
+            email: emailInput ? emailInput.value.trim() : '',
+            telefono: telefonoInput ? telefonoInput.value.trim() : '',
+            hora_instalacion: horaInstalacionInput ? horaInstalacionInput.value.trim() : '',
+            hora_retiro: horaRetiroInput ? horaRetiroInput.value.trim() : '',
             direccion: direccionFinal,
             direccion_lat: direccionLatInput ? direccionLatInput.value : '',
             direccion_lng: direccionLngInput ? direccionLngInput.value : '',
-            comentarios: formData.get('comentarios'),
-            distancia_km: formData.get('distancia_km') || '0'
+            observaciones: observacionesInput ? observacionesInput.value.trim() : '',
+            distancia_km: distanciaInput ? (distanciaInput.value || '0') : '0',
+            juegos: juegosActualizados || []
         };
         
-        // Validar datos básicos
+        console.log('📤 Datos a enviar:', datosReserva);
+        console.log('🎮 Juegos:', datosReserva.juegos);
+        console.log('⏰ Horas:', {
+            instalacion: datosReserva.hora_instalacion,
+            retiro: datosReserva.hora_retiro
+        });
+        
+        // Validar datos con funciones estandarizadas (incluye validación de juegos)
         if (!validarDatosReserva(datosReserva)) {
             return;
         }
@@ -1278,18 +1599,18 @@ document.addEventListener('DOMContentLoaded', function() {
             const data = await response.json();
             
             if (data.success) {
-                mostrarMensajeExito(data.message || '¡Reserva creada exitosamente!');
+                mostrarExitoValidacion(data.message || '¡Reserva creada exitosamente!', '¡Éxito!');
                 cerrarModal();
                 // Recargar calendario para actualizar disponibilidad
                 setTimeout(() => {
                     renderCalendario();
                 }, 2000);
             } else {
-                mostrarErrores(data.errors || ['Error al crear la reserva']);
+                mostrarErroresValidacion(data.errors || ['Error al crear la reserva'], 'Error al Crear Reserva');
             }
         } catch (error) {
             console.error('Error al enviar reserva:', error);
-            mostrarErrores(['Error de conexión. Por favor, intenta nuevamente.']);
+            mostrarErroresValidacion(['Error de conexión. Por favor, intenta nuevamente.'], 'Error de Conexión');
         } finally {
             btnSubmit.disabled = false;
             btnSubmit.textContent = 'Confirmar Reserva';
@@ -1297,67 +1618,83 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     function validarDatosReserva(datos) {
-        const errores = [];
+        const todosLosErrores = [];
         
-        if (!datos.nombre || !datos.nombre.trim()) {
-            errores.push('El nombre es obligatorio');
+        // Validar fecha (aunque viene del calendario, validar que no sea pasada)
+        if (datos.fecha) {
+            const erroresFecha = validarFecha(datos.fecha, 'fecha del evento', true, false);
+            todosLosErrores.push(...erroresFecha);
+        } else {
+            todosLosErrores.push('La fecha del evento es obligatoria');
         }
         
-        if (!datos.email || !datos.email.trim()) {
-            errores.push('El email es obligatorio');
-        } else if (!isValidEmail(datos.email)) {
-            errores.push('El email no es válido');
+        // Validar nombre
+        const erroresNombre = validarNombre(datos.nombre, 'nombre', 3, 30, false, false);
+        todosLosErrores.push(...erroresNombre);
+        
+        // Validar apellido
+        const erroresApellido = validarNombre(datos.apellido, 'apellido', 3, 30, false, false);
+        todosLosErrores.push(...erroresApellido);
+        
+        // Validar email
+        const erroresEmail = validarEmail(datos.email, 'email', 100, true, false);
+        todosLosErrores.push(...erroresEmail);
+        
+        // Validar teléfono (opcional, pero si se ingresa debe ser válido)
+        if (datos.telefono && datos.telefono.trim()) {
+            const erroresTelefono = validarTelefonoChileno(datos.telefono, 'teléfono', false, false);
+            todosLosErrores.push(...erroresTelefono);
         }
         
-        if (!datos.telefono || !datos.telefono.trim()) {
-            errores.push('El teléfono es obligatorio');
+        // Validar hora de instalación (desde las 9:00 AM)
+        if (!datos.hora_instalacion) {
+            todosLosErrores.push('La hora de instalación es obligatoria');
+        } else {
+            const [horas, minutos] = datos.hora_instalacion.split(':').map(Number);
+            if (horas < 9 || (horas === 9 && minutos < 0)) {
+                todosLosErrores.push('Las instalaciones solo están disponibles desde las 9:00 AM');
+            }
         }
         
-        if (!datos.juego) {
-            errores.push('Debe seleccionar un juego');
+        // Validar hora de retiro (antes de las 00:00, máximo 23:59)
+        if (!datos.hora_retiro) {
+            todosLosErrores.push('La hora de retiro es obligatoria');
+        } else {
+            const [horas, minutos] = datos.hora_retiro.split(':').map(Number);
+            if (horas >= 24 || (horas === 23 && minutos > 59)) {
+                todosLosErrores.push('La hora de retiro debe ser antes de las 00:00');
+            }
         }
         
-        if (!datos.horario) {
-            errores.push('Debe seleccionar un horario');
+        // Validar que la hora de retiro sea posterior a la hora de instalación
+        if (datos.hora_instalacion && datos.hora_retiro) {
+            const erroresHorarioPosterior = validarHorarioRetiroPosterior(datos.hora_instalacion, datos.hora_retiro, false);
+            todosLosErrores.push(...erroresHorarioPosterior);
         }
         
-        if (!datos.direccion || !datos.direccion.trim()) {
-            errores.push('La dirección es obligatoria');
+        // Validar dirección
+        const erroresDireccion = validarDireccionChilena(datos.direccion, 'dirección', 5, 200, false);
+        todosLosErrores.push(...erroresDireccion);
+        
+        // Validar que haya al menos un juego
+        if (!datos.juegos || !Array.isArray(datos.juegos) || datos.juegos.length === 0) {
+            todosLosErrores.push('Debe agregar al menos un juego');
+        } else {
+            // Validar que todos los juegos tengan un juego_id válido
+            datos.juegos.forEach((juego, index) => {
+                if (!juego.juego_id || juego.juego_id <= 0) {
+                    todosLosErrores.push(`El juego ${index + 1} debe estar seleccionado correctamente`);
+                }
+            });
         }
         
-        if (errores.length > 0) {
-            mostrarErrores(errores);
+        // Mostrar errores si los hay
+        if (todosLosErrores.length > 0) {
+            mostrarErroresValidacion(todosLosErrores, 'Errores en el Formulario de Reserva');
             return false;
         }
         
         return true;
-    }
-    
-    function isValidEmail(email) {
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        return emailRegex.test(email);
-    }
-    
-    function mostrarErrores(errores) {
-        formErrors.style.display = 'block';
-        formErrors.innerHTML = '<ul>' + errores.map(error => `<li>${error}</li>`).join('') + '</ul>';
-        
-        // Scroll al área de errores
-        formErrors.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
-    
-    function mostrarMensajeExito(mensaje) {
-        // Usar alert simple o mejor, SweetAlert si está disponible
-        if (typeof Swal !== 'undefined') {
-            Swal.fire({
-                icon: 'success',
-                title: '¡Éxito!',
-                text: mensaje,
-                confirmButtonColor: '#2c5530'
-            });
-        } else {
-            alert(mensaje);
-        }
     }
     
     // Función auxiliar para obtener cookie CSRF

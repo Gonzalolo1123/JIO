@@ -39,10 +39,10 @@
   <!-- Lista de arriendos -->
   <div class="form-card" style="overflow:auto;">
     <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:.75rem;">
-      <h2 class="panel-title" style="font-size:1.25rem; color:#2E7D32; margin:0;">Lista de Arriendos</h2>
+      <h2 class="panel-title" style="font-size:1.25rem; color:#2E7D32; margin:0;">Lista de arriendos</h2>
       <div class="actions-wrap" style="gap:.5rem;">
         <button type="button" id="btnOpenCreateArriendo" class="btn btn-primary"><i class="fas fa-plus"></i> Nuevo
-          Arriendo</button>
+          arriendo</button>
       </div>
     </div>
     <table class="table">
@@ -78,7 +78,7 @@
             <a href="?{% if query %}q={{ query }}&{% endif %}{% if estado_filter %}estado={{ estado_filter }}&{% endif %}{% if fecha_desde %}fecha_desde={{ fecha_desde }}&{% endif %}{% if fecha_hasta %}fecha_hasta={{ fecha_hasta }}&{% endif %}order_by=fecha_evento&direction={% if order_by == 'fecha_evento' and direction == 'asc' %}desc{% else %}asc{% endif %}"
               class="sortable-header"
               style="text-decoration:none;color:inherit;display:flex;align-items:center;gap:0.5rem;">
-              Fecha Evento
+              Fecha evento
               {% if order_by == 'fecha_evento' %}
               <i class="fas fa-arrow-{% if direction == 'asc' %}up{% else %}down{% endif %}"
                 style="font-size:0.75rem;"></i>
@@ -127,8 +127,7 @@
           </td>
           <td>
             {{ arriendo.fecha_evento|date:"d/m/Y" }}
-            <br><small style="color:#666;">{{ arriendo.hora_instalacion|date:"H:i" }} - {{
-              arriendo.hora_retiro|date:"H:i" }}</small>
+            <br><small style="color:#666;">{{ arriendo.hora_instalacion|date:"H:i" }} - {{ arriendo.hora_retiro|date:"H:i" }}</small>
           </td>
           <td>
             {% for detalle in arriendo.detalles.all %}
@@ -162,7 +161,7 @@
   <div id="modalCreateArriendo" class="modal" aria-hidden="true">
     <div class="modal-content" style="max-width:800px;">
       <div class="modal-header">
-        <h2>Nuevo Arriendo</h2>
+        <h2>Nuevo arriendo</h2>
         <button class="modal-close" data-modal-close>&times;</button>
       </div>
       <form id="formCreateArriendo" class="form-grid" data-endpoint="{% url 'jio_app:arriendo_create_json' %}"
@@ -206,15 +205,33 @@
         </label>
         <label>
           Fecha del Evento *
-          <input type="date" id="createFechaEvento" name="fecha_evento" required>
+          <input type="date" id="createFechaEvento" name="fecha_evento" required min max>
+          <small style="display:block;color:#666;margin-top:0.25rem;visibility:hidden;">
+            &nbsp;
+          </small>
         </label>
         <label>
           Hora Instalación *
-          <input type="time" id="createHoraInstalacion" name="hora_instalacion" required>
+          <input type="time" id="createHoraInstalacion" name="hora_instalacion" required min="09:00">
+          <small style="display:block;color:#666;margin-top:0.25rem;">
+            <i class="fas fa-info-circle"></i> Las instalaciones están disponibles desde las 9:00 AM
+          </small>
         </label>
         <label>
           Hora Retiro *
-          <input type="time" id="createHoraRetiro" name="hora_retiro" required>
+          <input type="time" id="createHoraRetiro" name="hora_retiro" required max="23:59">
+          <small style="display:block;color:#666;margin-top:0.25rem;">
+            <i class="fas fa-info-circle"></i> Se calcula automáticamente 6 horas después de la instalación. Puedes modificarla si necesitas más tiempo. Máximo hasta las 23:59.
+          </small>
+        </label>
+        <label style="grid-column: 1 / -1;">
+          <span style="font-size:0.875rem;color:#666;">
+            Horas extra: <span id="createHorasExtra">0</span> horas | 
+            Precio horas extra: <span id="createPrecioHorasExtra">$0</span>
+          </span>
+          <small style="display:block;color:#666;margin-top:0.25rem;">
+            <i class="fas fa-info-circle"></i> Las primeras 6 horas están incluidas. Horas adicionales: $10.000 por hora.
+          </small>
         </label>
 
         <!-- Dirección con Mapa -->
@@ -265,6 +282,10 @@
               <span>Precio por Distancia:</span>
               <span id="precioDistanciaCreate">$0</span>
             </div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:0.5rem;">
+              <span>Horas Extra:</span>
+              <span id="precioHorasExtraCreate">$0</span>
+            </div>
             <div style="border-top:1px solid #ccc;padding-top:0.5rem;display:flex;justify-content:space-between;">
               <strong style="font-size:1.25rem;">Total:</strong>
               <strong style="font-size:1.25rem;"><span id="totalCreate">$0</span></strong>
@@ -281,7 +302,7 @@
           Estado *
           <select id="createEstado" name="estado" required>
             {% for value, label in estado_choices %}
-            <option value="{{ value }}" {% if value == 'Pendiente' %}selected{% endif %}>{{ label }}</option>
+            <option value="{{ value }}" {% if value|stringformat:"s" == "Pendiente" %}selected{% endif %}>{{ label }}</option>
             {% endfor %}
           </select>
         </label>
@@ -305,55 +326,77 @@
   <div id="modalEditArriendo" class="modal" aria-hidden="true">
     <div class="modal-content" style="max-width:800px;">
       <div class="modal-header">
-        <h2>Editar Arriendo</h2>
+        <h2>Editar arriendo</h2>
         <button class="modal-close" data-modal-close>&times;</button>
       </div>
       <form id="formEditArriendo" class="form-grid" data-endpoint-base="/panel/arriendos/"
-        style="max-height:70vh;overflow-y:auto;">
+        style="overflow-y:auto;overflow-x:hidden;">
         {% csrf_token %}
         <input type="hidden" name="arriendo_id" id="editArriendoId">
-        <!-- Datos del Cliente (solo lectura en edición) -->
+        <!-- Datos del Cliente (editable en edición) -->
         <label style="grid-column: 1 / -1; margin-top: 0.5rem; margin-bottom: 0.25rem;">
           <strong>Datos del Cliente</strong>
         </label>
         <label>
-          Nombre
-          <input type="text" id="editClienteNombre" readonly style="background:#f5f5f5;">
+          Nombre *
+          <input type="text" id="editClienteNombre" name="cliente_nombre" required>
         </label>
         <label>
-          Apellido
-          <input type="text" id="editClienteApellido" readonly style="background:#f5f5f5;">
+          Apellido *
+          <input type="text" id="editClienteApellido" name="cliente_apellido" required>
         </label>
         <label>
-          RUT
-          <input type="text" id="editClienteRut" readonly style="background:#f5f5f5;">
+          RUT *
+          <input type="text" id="editClienteRut" name="cliente_rut" required>
         </label>
         <label>
-          Email
-          <input type="email" id="editClienteEmail" readonly style="background:#f5f5f5;">
+          Email *
+          <input type="email" id="editClienteEmail" name="cliente_email" required>
         </label>
         <label>
           Teléfono
-          <input type="text" id="editClienteTelefono" readonly style="background:#f5f5f5;">
+          <input type="text" id="editClienteTelefono" name="cliente_telefono">
         </label>
         <label>
-          Tipo de Cliente
-          <input type="text" id="editClienteTipo" readonly style="background:#f5f5f5;">
+          Tipo de Cliente *
+          <select id="editClienteTipo" name="cliente_tipo" required>
+            <option value="">Seleccione un tipo</option>
+            <option value="particular">Particular</option>
+            <option value="empresa">Empresa</option>
+          </select>
         </label>
         <input type="hidden" id="editClienteId" name="cliente_id">
 
         <!-- Fechas y Horarios -->
         <label>
           Fecha del Evento *
-          <input type="date" id="editFechaEvento" name="fecha_evento" required>
+          <input type="date" id="editFechaEvento" name="fecha_evento" required min max>
+          <small style="display:block;color:#666;margin-top:0.25rem;visibility:hidden;">
+            &nbsp;
+          </small>
         </label>
         <label>
           Hora Instalación *
-          <input type="time" id="editHoraInstalacion" name="hora_instalacion" required>
+          <input type="time" id="editHoraInstalacion" name="hora_instalacion" required min="09:00">
+          <small style="display:block;color:#666;margin-top:0.25rem;">
+            <i class="fas fa-info-circle"></i> Las instalaciones están disponibles desde las 9:00 AM
+          </small>
         </label>
         <label>
           Hora Retiro *
-          <input type="time" id="editHoraRetiro" name="hora_retiro" required>
+          <input type="time" id="editHoraRetiro" name="hora_retiro" required max="23:59">
+          <small style="display:block;color:#666;margin-top:0.25rem;">
+            <i class="fas fa-info-circle"></i> Se calcula automáticamente 6 horas después de la instalación. Puedes modificarla si necesitas más tiempo. Máximo hasta las 23:59.
+          </small>
+        </label>
+        <label style="grid-column: 1 / -1;">
+          <span style="font-size:0.875rem;color:#666;">
+            Horas extra: <span id="editHorasExtra">0</span> horas | 
+            Precio horas extra: <span id="editPrecioHorasExtra">$0</span>
+          </span>
+          <small style="display:block;color:#666;margin-top:0.25rem;">
+            <i class="fas fa-info-circle"></i> Las primeras 6 horas están incluidas. Horas adicionales: $10.000 por hora.
+          </small>
         </label>
 
         <!-- Dirección con Mapa -->
@@ -368,249 +411,7 @@
             style="width:100%;height:300px;border-radius:8px;border:1px solid #ddd;margin-top:0.5rem;background:#f5f5f5;">
           </div>
           <input type="hidden" id="editLatitud" name="latitud">
-          <input type="hidden" id="editLongitud" name="longitud">(jio-env) PS C:\Users\Gonzalo\Desktop\JIO> python manage.py runserver
-          Watching for file changes with StatReloader
-          Performing system checks...
-          
-          System check identified no issues (0 silenced).
-          November 03, 2025 - 03:56:15
-          Django version 5.2.6, using settings 'JIO.settings'
-          Starting development server at http://127.0.0.1:8000/
-          Quit the server with CTRL-BREAK.
-          
-          WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
-          For more information on production servers see: https://docs.djangoproject.com/en/5.2/howto/deployment/
-          [03/Nov/2025 03:56:18] "GET / HTTP/1.1" 200 11577
-          [03/Nov/2025 03:56:18] "GET /static/images/hero-bg.jpg HTTP/1.1" 404 1868
-          [03/Nov/2025 03:56:19] "GET /static/videos/juego1.mp4 HTTP/1.1" 404 1865
-          [03/Nov/2025 03:56:19] "GET /static/videos/juego2.mp4 HTTP/1.1" 404 1865
-          [03/Nov/2025 03:56:19] "GET /static/videos/juego3.mp4 HTTP/1.1" 404 1865
-          [03/Nov/2025 03:56:24] "POST /login_jio/ HTTP/1.1" 200 96
-          [03/Nov/2025 03:56:25] "GET /static/images/hero-bg.jpg HTTP/1.1" 404 1868
-          [03/Nov/2025 03:56:26] "GET /panel/ HTTP/1.1" 302 0
-          [03/Nov/2025 03:56:26] "GET /static/images/hero-bg.jpg HTTP/1.1" 404 1868
-          [03/Nov/2025 03:56:26] "GET /admin_panel/ HTTP/1.1" 200 6151
-          Internal Server Error: /panel/arriendos/
-          Traceback (most recent call last):
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\smartif.py", line 180, in translate_token    
-              op = OPERATORS[token]
-                   ~~~~~~~~~^^^^^^^
-          KeyError: "value=='Pendiente'"
-          
-          During handling of the above exception, another exception occurred:
-          
-          Traceback (most recent call last):
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner        
-              response = get_response(request)
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response    
-              response = wrapped_callback(request, *callback_args, **callback_kwargs)
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\contrib\auth\decorators.py", line 59, in _view_wrapper
-              return view_func(request, *args, **kwargs)
-            File "C:\Users\Gonzalo\Desktop\JIO\jio_app\views.py", line 2359, in arriendos_list
-              return render(request, 'jio_app/arriendos_list.html', {
-                  'arriendos': base_qs,
-              ...<8 lines>...
-                  'juegos_disponibles': juegos_disponibles,
-              })
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\shortcuts.py", line 25, in render
-              content = loader.render_to_string(template_name, context, request, using=using)
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\loader.py", line 61, in render_to_string     
-              template = get_template(template_name, using=using)
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\loader.py", line 15, in get_template
-              return engine.get_template(template_name)
-                     ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\backends\django.py", line 79, in get_template
-              return Template(self.engine.get_template(template_name), self)
-                              ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\engine.py", line 177, in get_template        
-              template, origin = self.find_template(template_name)
-                                 ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\engine.py", line 159, in find_template       
-              template = loader.get_template(name, skip=skip)
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\loaders\cached.py", line 57, in get_template 
-              template = super().get_template(template_name, skip)
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\loaders\base.py", line 28, in get_template   
-              return Template(
-                  contents,
-              ...<2 lines>...
-                  self.engine,
-              )
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\base.py", line 154, in __init__
-              self.nodelist = self.compile_nodelist()
-                              ~~~~~~~~~~~~~~~~~~~~~^^
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\base.py", line 196, in compile_nodelist      
-              nodelist = parser.parse()
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\base.py", line 518, in parse
-              raise self.error(token, e)
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\base.py", line 516, in parse
-              compiled_result = compile_func(self, token)
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\loader_tags.py", line 299, in do_extends     
-              nodelist = parser.parse()
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\base.py", line 518, in parse
-              raise self.error(token, e)
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\base.py", line 516, in parse
-              compiled_result = compile_func(self, token)
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\loader_tags.py", line 234, in do_block       
-              nodelist = parser.parse(("endblock",))
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\base.py", line 518, in parse
-              raise self.error(token, e)
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\base.py", line 516, in parse
-              compiled_result = compile_func(self, token)
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\defaulttags.py", line 862, in do_for
-              nodelist_loop = parser.parse(
-                  (
-              ...<2 lines>...
-                  )
-              )
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\base.py", line 518, in parse
-              raise self.error(token, e)
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\base.py", line 516, in parse
-              compiled_result = compile_func(self, token)
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\defaulttags.py", line 961, in do_if
-              condition = TemplateIfParser(parser, bits).parse()
-                          ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\defaulttags.py", line 894, in __init__       
-              super().__init__(*args, **kwargs)
-              ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\smartif.py", line 171, in __init__
-              mapped_tokens.append(self.translate_token(token))
-                                   ~~~~~~~~~~~~~~~~~~~~^^^^^^^
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\smartif.py", line 182, in translate_token    
-              return self.create_var(token)
-                     ~~~~~~~~~~~~~~~^^^^^^^
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\defaulttags.py", line 897, in create_var     
-              return TemplateLiteral(self.template_parser.compile_filter(value), value)
-                                     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\base.py", line 609, in compile_filter        
-              return FilterExpression(token, self)
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\base.py", line 710, in __init__
-              raise TemplateSyntaxError(
-              ...<2 lines>...
-              )
-          django.template.exceptions.TemplateSyntaxError: Could not parse the remainder: '=='Pendiente'' from 'value=='Pendiente'' 
-          [03/Nov/2025 03:56:28] "GET /panel/arriendos/ HTTP/1.1" 500 275374
-          (jio-env) PS C:\Users\Gonzalo\Desktop\JIO> python manage.py runserver
-          Watching for file changes with StatReloader
-          Performing system checks...
-          
-          System check identified no issues (0 silenced).
-          November 03, 2025 - 03:56:15
-          Django version 5.2.6, using settings 'JIO.settings'
-          Starting development server at http://127.0.0.1:8000/
-          Quit the server with CTRL-BREAK.
-          
-          WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
-          For more information on production servers see: https://docs.djangoproject.com/en/5.2/howto/deployment/
-          [03/Nov/2025 03:56:18] "GET / HTTP/1.1" 200 11577
-          [03/Nov/2025 03:56:18] "GET /static/images/hero-bg.jpg HTTP/1.1" 404 1868
-          [03/Nov/2025 03:56:19] "GET /static/videos/juego1.mp4 HTTP/1.1" 404 1865
-          [03/Nov/2025 03:56:19] "GET /static/videos/juego2.mp4 HTTP/1.1" 404 1865
-          [03/Nov/2025 03:56:19] "GET /static/videos/juego3.mp4 HTTP/1.1" 404 1865
-          [03/Nov/2025 03:56:24] "POST /login_jio/ HTTP/1.1" 200 96
-          [03/Nov/2025 03:56:25] "GET /static/images/hero-bg.jpg HTTP/1.1" 404 1868
-          [03/Nov/2025 03:56:26] "GET /panel/ HTTP/1.1" 302 0
-          [03/Nov/2025 03:56:26] "GET /static/images/hero-bg.jpg HTTP/1.1" 404 1868
-          [03/Nov/2025 03:56:26] "GET /admin_panel/ HTTP/1.1" 200 6151
-          Internal Server Error: /panel/arriendos/
-          Traceback (most recent call last):
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\smartif.py", line 180, in translate_token    
-              op = OPERATORS[token]
-                   ~~~~~~~~~^^^^^^^
-          KeyError: "value=='Pendiente'"
-          
-          During handling of the above exception, another exception occurred:
-          
-          Traceback (most recent call last):
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner        
-              response = get_response(request)
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response    
-              response = wrapped_callback(request, *callback_args, **callback_kwargs)
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\contrib\auth\decorators.py", line 59, in _view_wrapper
-              return view_func(request, *args, **kwargs)
-            File "C:\Users\Gonzalo\Desktop\JIO\jio_app\views.py", line 2359, in arriendos_list
-              return render(request, 'jio_app/arriendos_list.html', {
-                  'arriendos': base_qs,
-              ...<8 lines>...
-                  'juegos_disponibles': juegos_disponibles,
-              })
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\shortcuts.py", line 25, in render
-              content = loader.render_to_string(template_name, context, request, using=using)
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\loader.py", line 61, in render_to_string     
-              template = get_template(template_name, using=using)
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\loader.py", line 15, in get_template
-              return engine.get_template(template_name)
-                     ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\backends\django.py", line 79, in get_template
-              return Template(self.engine.get_template(template_name), self)
-                              ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\engine.py", line 177, in get_template        
-              template, origin = self.find_template(template_name)
-                                 ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\engine.py", line 159, in find_template       
-              template = loader.get_template(name, skip=skip)
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\loaders\cached.py", line 57, in get_template 
-              template = super().get_template(template_name, skip)
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\loaders\base.py", line 28, in get_template   
-              return Template(
-                  contents,
-              ...<2 lines>...
-                  self.engine,
-              )
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\base.py", line 154, in __init__
-              self.nodelist = self.compile_nodelist()
-                              ~~~~~~~~~~~~~~~~~~~~~^^
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\base.py", line 196, in compile_nodelist      
-              nodelist = parser.parse()
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\base.py", line 518, in parse
-              raise self.error(token, e)
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\base.py", line 516, in parse
-              compiled_result = compile_func(self, token)
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\loader_tags.py", line 299, in do_extends     
-              nodelist = parser.parse()
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\base.py", line 518, in parse
-              raise self.error(token, e)
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\base.py", line 516, in parse
-              compiled_result = compile_func(self, token)
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\loader_tags.py", line 234, in do_block       
-              nodelist = parser.parse(("endblock",))
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\base.py", line 518, in parse
-              raise self.error(token, e)
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\base.py", line 516, in parse
-              compiled_result = compile_func(self, token)
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\defaulttags.py", line 862, in do_for
-              nodelist_loop = parser.parse(
-                  (
-              ...<2 lines>...
-                  )
-              )
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\base.py", line 518, in parse
-              raise self.error(token, e)
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\base.py", line 516, in parse
-              compiled_result = compile_func(self, token)
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\defaulttags.py", line 961, in do_if
-              condition = TemplateIfParser(parser, bits).parse()
-                          ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\defaulttags.py", line 894, in __init__       
-              super().__init__(*args, **kwargs)
-              ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\smartif.py", line 171, in __init__
-              mapped_tokens.append(self.translate_token(token))
-                                   ~~~~~~~~~~~~~~~~~~~~^^^^^^^
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\smartif.py", line 182, in translate_token    
-              return self.create_var(token)
-                     ~~~~~~~~~~~~~~~^^^^^^^
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\defaulttags.py", line 897, in create_var     
-              return TemplateLiteral(self.template_parser.compile_filter(value), value)
-                                     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\base.py", line 609, in compile_filter        
-              return FilterExpression(token, self)
-            File "C:\Users\Gonzalo\Desktop\JIO\venv\Lib\site-packages\django\template\base.py", line 710, in __init__
-              raise TemplateSyntaxError(
-              ...<2 lines>...
-              )
-          django.template.exceptions.TemplateSyntaxError: Could not parse the remainder: '=='Pendiente'' from 'value=='Pendiente'' 
-          [03/Nov/2025 03:56:28] "GET /panel/arriendos/ HTTP/1.1" 500 275374
-                    
+          <input type="hidden" id="editLongitud" name="longitud">
         </label>
 
         <!-- Distancia -->
@@ -646,6 +447,10 @@
             <div style="display:flex;justify-content:space-between;margin-bottom:0.5rem;">
               <span>Precio por Distancia:</span>
               <span id="precioDistanciaEdit">$0</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:0.5rem;">
+              <span>Horas Extra:</span>
+              <span id="precioHorasExtraEdit">$0</span>
             </div>
             <div style="border-top:1px solid #ccc;padding-top:0.5rem;display:flex;justify-content:space-between;">
               <strong style="font-size:1.25rem;">Total:</strong>
@@ -699,12 +504,8 @@
     window.mapEdit = null;
     window.markerCreate = null;
     window.markerEdit = null;
-    let mapCreate = null;
-    let mapEdit = null;
-    let markerCreate = null;
-    let markerEdit = null;
-    let osornoMarkerCreate = null;
-    let osornoMarkerEdit = null;
+    window.osornoMarkerCreate = null;
+    window.osornoMarkerEdit = null;
 
     // Coordenadas de Osorno
     const OSORNO_LAT = -40.5739;

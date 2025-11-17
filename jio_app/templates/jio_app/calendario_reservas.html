@@ -3,6 +3,8 @@
 
 {% block extra_head %}
 <link rel="stylesheet" href="{% static 'css/calendario.css' %}">
+<!-- Font Awesome -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <!-- Leaflet CSS para el mapa -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
 <style>
@@ -34,6 +36,144 @@
   
   .modal-reserva-body {
     overflow: visible !important;
+  }
+  
+  /* Grid para el formulario */
+  #formulario-reserva {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+  }
+  
+  #formulario-reserva .form-group {
+    display: flex;
+    flex-direction: column;
+  }
+  
+  #formulario-reserva label {
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+    color: #333;
+  }
+  
+  #formulario-reserva input[type="text"],
+  #formulario-reserva input[type="email"],
+  #formulario-reserva input[type="tel"],
+  #formulario-reserva input[type="time"],
+  #formulario-reserva input[type="number"],
+  #formulario-reserva select,
+  #formulario-reserva textarea {
+    padding: 0.75rem;
+    border: 2px solid #ddd;
+    border-radius: 4px;
+    font-size: 1rem;
+    transition: border-color 0.3s;
+  }
+  
+  #formulario-reserva input:focus,
+  #formulario-reserva select:focus,
+  #formulario-reserva textarea:focus {
+    outline: none;
+    border-color: #2c5530;
+  }
+  
+  /* Estilos para filas de juegos */
+  .juego-row {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: 0.75rem;
+    align-items: center;
+    padding: 0.75rem;
+    background: #f9f9f9;
+    border-radius: 8px;
+    border: 1px solid #ddd;
+  }
+  
+  .juego-row .juego-select {
+    padding: 0.75rem;
+    border: 2px solid #ddd;
+    border-radius: 4px;
+    font-size: 1rem;
+  }
+  
+  /* Estilos para opciones de juegos en el select */
+  .juego-row .juego-select option.juego-disponible {
+    color: #000;
+    background-color: #fff;
+  }
+  
+  .juego-row .juego-select option.juego-ocupado {
+    color: #d32f2f !important;
+    background-color: #fff5f5 !important;
+    font-style: italic !important;
+  }
+  
+  .juego-row .juego-select option:disabled.juego-ocupado {
+    color: #d32f2f !important;
+    background-color: #fff5f5 !important;
+    font-style: italic !important;
+    cursor: not-allowed !important;
+  }
+  
+  .juego-row .juego-select option:disabled:not(.juego-ocupado) {
+    color: #ccc !important;
+    background-color: #f5f5f5 !important;
+    font-size: 0.85rem !important;
+  }
+  
+  .juego-row .juego-precio {
+    padding: 0.75rem;
+    font-weight: 600;
+    color: #2c5530;
+    text-align: right;
+    min-width: 100px;
+  }
+  
+  .juego-row .btn-remove-juego {
+    padding: 0;
+    background: #dc3545;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 32px;
+    transition: all 0.2s ease;
+  }
+  
+  .juego-row .btn-remove-juego:hover {
+    background: #c82333;
+    transform: scale(1.1);
+  }
+  
+  .juego-row .btn-remove-juego i {
+    font-size: 1rem;
+    font-weight: bold;
+    color: white;
+    line-height: 1;
+  }
+  
+  /* Si FontAwesome no está disponible, mostrar texto X */
+  .juego-row .btn-remove-juego:not(:has(i))::before {
+    content: '×';
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: white;
+    line-height: 1;
+  }
+  
+  .form-actions {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: flex-end;
+    gap: 1rem;
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid #ddd;
   }
   
   .direccion-search-container {
@@ -236,7 +376,7 @@
   .mapa-container {
     position: relative;
     width: 100%;
-    height: 400px;
+    height: 600px;
     margin-top: 15px;
     margin-bottom: 15px;
     border-radius: 8px;
@@ -252,7 +392,7 @@
     width: 100%;
     height: 100%;
     z-index: 1;
-    min-height: 400px;
+    min-height: 600px;
   }
   
   .mapa-loading {
@@ -444,48 +584,117 @@
           <p id="fecha-seleccionada" class="fecha-seleccionada-text"></p>
           
           <form id="formulario-reserva">
+            <!-- Datos del Cliente -->
+            <div class="form-group" style="grid-column: 1 / -1; margin-top: 0.5rem; margin-bottom: 0.25rem;">
+              <strong style="font-size: 1.1rem; color: #2c5530;">Datos del Cliente *</strong>
+            </div>
+            
             <div class="form-group">
-              <label for="nombre">Nombre completo:</label>
+              <label for="nombre">Nombre *</label>
               <input type="text" id="nombre" name="nombre" required>
             </div>
             
             <div class="form-group">
-              <label for="email">Correo electrónico:</label>
+              <label for="apellido">Apellido *</label>
+              <input type="text" id="apellido" name="apellido" required>
+            </div>
+            
+            <div class="form-group">
+              <label for="email">Correo electrónico *</label>
               <input type="email" id="email" name="email" required>
             </div>
             
             <div class="form-group">
-              <label for="telefono">Teléfono:</label>
-              <input type="tel" id="telefono" name="telefono" required>
+              <label for="telefono">Teléfono</label>
+              <input type="tel" id="telefono" name="telefono" placeholder="+56912345678">
+            </div>
+
+            <!-- Datos del Evento -->
+            <div class="form-group" style="grid-column: 1 / -1; margin-top: 0.5rem; margin-bottom: 0.25rem;">
+              <strong style="font-size: 1.1rem; color: #2c5530;">Datos del Evento</strong>
             </div>
             
             <div class="form-group">
-              <label for="juego">Juego inflable:</label>
-              <select id="juego" name="juego" required>
-                <option value="">Cargando juegos disponibles...</option>
-              </select>
+              <label for="hora_instalacion">Hora Instalación *</label>
+              <input type="time" id="hora_instalacion" name="hora_instalacion" required min="09:00">
+              <small style="display:block;color:#666;margin-top:0.25rem;">
+                <i class="fas fa-info-circle"></i> Las instalaciones están disponibles desde las 9:00 AM
+              </small>
+            </div>
+            
+            <div class="form-group">
+              <label>Hora Retiro Estimada</label>
+              <div style="padding:0.75rem;background:#f5f5f5;border-radius:4px;border:1px solid #ddd;">
+                <span id="hora_retiro_texto" style="font-weight:bold;color:#2c5530;">--:--</span>
+              </div>
+              <input type="hidden" id="hora_retiro" name="hora_retiro">
+              <small style="display:block;color:#666;margin-top:0.25rem;">
+                <i class="fas fa-info-circle"></i> Se calcula automáticamente 6 horas después de la instalación. Si necesitas un retiro diferente, indícalo en las observaciones.
+              </small>
+            </div>
+            
+            <div class="form-group" style="grid-column: 1 / -1;">
+              <span style="font-size:0.875rem;color:#666;">
+                Horas extra: <span id="horas-extra">0</span> horas | 
+                Precio horas extra: <span id="precio-horas-extra">$0</span>
+              </span>
+              <small style="display:block;color:#666;margin-top:0.25rem;">
+                <i class="fas fa-info-circle"></i> Las primeras 6 horas están incluidas. Horas adicionales: $10.000 por hora.
+              </small>
+            </div>
+            
+            <div class="form-group">
+              <label for="distancia_km">Distancia (km fuera de Osorno)</label>
+              <input type="number" id="distancia_km" name="distancia_km" min="0" step="1" value="0" placeholder="0">
+              <small class="form-help" style="display:block;color:#666;margin-top:0.25rem;">
+                <i class="fas fa-info-circle"></i> $1.000 por kilómetro fuera de Osorno
+              </small>
+            </div>
+            
+            <div class="form-group">
+              <span style="font-size:0.875rem;color:#666;">Precio por distancia: <span id="precio-distancia">$0</span></span>
+            </div>
+            
+            <!-- Juegos -->
+            <div class="form-group" style="grid-column: 1 / -1;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+                <label style="margin:0;"><strong>Juegos Disponibles *</strong></label>
+                <button type="button" id="btn-add-juego" class="btn btn-secondary" style="padding:0.25rem 0.75rem;font-size:0.875rem;background:#2c5530;color:white;border:none;border-radius:4px;cursor:pointer;">
+                  <i class="fas fa-plus"></i> Agregar Juego
+                </button>
+              </div>
+              <div id="juegos-container" style="display:grid;gap:0.75rem;">
+                <!-- Juegos se agregarán aquí dinámicamente -->
+              </div>
+              <div id="total-container" style="margin-top:1rem;padding:1rem;background:#fff3e0;border-radius:8px;display:none;">
+                <div style="display:flex;justify-content:space-between;margin-bottom:0.5rem;">
+                  <span>Subtotal Juegos:</span>
+                  <span id="subtotal-juegos">$0</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:0.5rem;">
+                  <span>Precio por Distancia:</span>
+                  <span id="precio-distancia-total">$0</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:0.5rem;">
+                  <span>Horas Extra:</span>
+                  <span id="precio-horas-extra-total">$0</span>
+                </div>
+                <div style="border-top:1px solid #ccc;padding-top:0.5rem;display:flex;justify-content:space-between;">
+                  <strong style="font-size:1.25rem;">Total:</strong>
+                  <strong style="font-size:1.25rem;"><span id="total-reserva">$0</span></strong>
+                </div>
+              </div>
               <div id="info-juegos-ocupados" class="info-juegos-ocupados" style="display: none; margin-top: 8px; padding: 10px; background-color: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px; font-size: 0.9rem; color: #856404;">
                 <strong>ℹ️ Nota:</strong> Los juegos marcados con ❌ en <span style="color: #c62828; font-weight: 600;">rojo</span> están reservados y no están disponibles para esta fecha.
               </div>
+              <small style="color:#666;margin-top:0.5rem;display:block;">
+                <i class="fas fa-info-circle"></i> Los juegos disponibles se actualizarán automáticamente según la fecha seleccionada.
+              </small>
             </div>
             
-            <div class="form-group">
-              <label for="distancia_km">Distancia desde Osorno (km):</label>
-              <input type="number" id="distancia_km" name="distancia_km" min="0" value="0" required>
-              <small class="form-help">Precio adicional: $1.000 por km</small>
-            </div>
+            <input type="hidden" id="juegos-json" name="juegos" value="[]">
             
-            <div class="form-group">
-              <label for="horario">Horario preferido:</label>
-              <select id="horario" name="horario" required>
-                <option value="">Selecciona un horario</option>
-                <option value="09:00-13:00">Mañana (9:00 - 13:00)</option>
-                <option value="14:00-18:00">Tarde (14:00 - 18:00)</option>
-                <option value="09:00-18:00">Todo el día (9:00 - 18:00)</option>
-              </select>
-            </div>
-            
-            <div class="form-group">
+            <div class="form-group" style="grid-column: 1 / -1;">
               <label for="direccion">Dirección del evento:</label>
               
               <!-- Barra de búsqueda con botón -->
@@ -536,9 +745,12 @@
               </div>
             </div>
             
-            <div class="form-group">
-              <label for="comentarios">Comentarios adicionales:</label>
-              <textarea id="comentarios" name="comentarios" rows="3"></textarea>
+            <div class="form-group" style="grid-column: 1 / -1;">
+              <label for="observaciones">Observaciones</label>
+              <textarea id="observaciones" name="observaciones" rows="3" placeholder="Si necesitas un horario de retiro diferente al calculado automáticamente, indícalo aquí..."></textarea>
+              <small style="display:block;color:#666;margin-top:0.25rem;">
+                <i class="fas fa-info-circle"></i> Si necesitas un horario de retiro diferente al estimado, indícalo aquí y el administrador lo revisará.
+              </small>
             </div>
             
             <div id="form-errors" class="form-errors" style="display: none;"></div>

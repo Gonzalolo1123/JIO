@@ -6,7 +6,7 @@
 {% block content %}
 <div class="panel-container">
     <div class="panel-header">
-        <h1 class="panel-title">Panel Administrativo</h1>
+        <h1 class="panel-title">Panel administrativo</h1>
         <p class="panel-subtitle">Bienvenido, {{ user.get_full_name|default:user.username }}</p>
     </div>
 
@@ -63,7 +63,7 @@
                     <i class="fas fa-gamepad"></i>
                 </div>
                 <div class="module-content">
-                    <h3 class="module-title">Juegos Inflables</h3>
+                    <h3 class="module-title">Juegos inflables</h3>
                     <p class="module-description">Administra el catálogo de juegos y disponibilidad</p>
                 </div>
                 <div class="module-arrow">
@@ -84,7 +84,7 @@
                 </div>
             </a>
 
-            <a href="#" class="module-card module-info">
+            <a href="{% url 'jio_app:repartos_list' %}" class="module-card module-info">
                 <div class="module-icon">
                     <i class="fas fa-truck"></i>
                 </div>
@@ -97,7 +97,7 @@
                 </div>
             </a>
 
-            <a href="#" class="module-card module-purple">
+            <a href="{% url 'jio_app:estadisticas' %}" class="module-card module-purple">
                 <div class="module-icon">
                     <i class="fas fa-chart-line"></i>
                 </div>
@@ -109,6 +109,20 @@
                     <i class="fas fa-chevron-right"></i>
                 </div>
             </a>
+            <!-- 
+            <a href="{% url 'jio_app:contabilidad' %}" class="module-card module-success">
+                <div class="module-icon">
+                    <i class="fas fa-calculator"></i>
+                </div>
+                
+                <div class="module-content">
+                    <h3 class="module-title">Contabilidad</h3>
+                    <p class="module-description">Ingresos, egresos y control financiero</p>
+                </div>
+                <div class="module-arrow">
+                    <i class="fas fa-chevron-right"></i>
+                </div>
+            </a>--> <!--comentado hasta que se implemente la contabilidad-->
         </div>
     </div>
 </div>

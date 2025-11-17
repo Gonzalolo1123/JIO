@@ -1,0 +1,66 @@
+/* ============================================
+   PALETA DE COLORES - DISEÑO MODERNO Y SENCILLO
+   ============================================ */
+
+:root {
+    /* Colores Principales - Tonos suaves y profesionales */
+    --color-primary: #5B7C99;            /* Azul grisáceo suave */
+    --color-primary-dark: #415A77;       /* Azul grisáceo oscuro */
+    --color-primary-light: #C7D7E8;      /* Azul grisáceo claro */
+    
+    --color-secondary: #E07A5F;          /* Terracota suave */
+    --color-secondary-dark: #C4634D;     /* Terracota oscuro */
+    --color-secondary-light: #F4D8D0;    /* Terracota claro */
+    
+    --color-accent-yellow: #F2CC8F;      /* Beige dorado */
+    --color-accent-yellow-dark: #E0B677; /* Beige oscuro */
+    --color-accent-yellow-light: #FFF8E7; /* Beige claro */
+    
+    --color-accent-green: #81B29A;       /* Verde salvia */
+    --color-accent-green-dark: #6A9C83;  /* Verde salvia oscuro */
+    --color-accent-green-light: #D8EBE4; /* Verde salvia claro */
+    
+    --color-accent-orange: #E9A178;      /* Naranja pálido */
+    --color-accent-orange-dark: #D58A61; /* Naranja pálido oscuro */
+    --color-accent-orange-light: #F8E5D8; /* Naranja pálido claro */
+    
+    /* Colores de Fondo - Gradientes suaves */
+    --bg-gradient-primary: linear-gradient(135deg, #5B7C99, #415A77);
+    --bg-gradient-secondary: linear-gradient(135deg, #E07A5F, #C4634D);
+    --bg-gradient-yellow: linear-gradient(135deg, #F2CC8F, #E0B677);
+    --bg-gradient-green: linear-gradient(135deg, #81B29A, #6A9C83);
+    --bg-gradient-orange: linear-gradient(135deg, #E9A178, #D58A61);
+    --bg-gradient-page: linear-gradient(135deg, #F8F9FA 0%, #E9ECEF 100%);
+    --bg-gradient-header: linear-gradient(135deg, #3D5A80, #415A77);
+    
+    /* Colores Neutros */
+    --color-white: #FFFFFF;
+    --color-black: #2B2D42;
+    --color-gray-dark: #415A77;
+    --color-gray: #778DA9;
+    --color-gray-light: #DFE4E8;
+    --color-gray-lighter: #F1F3F5;
+    
+    /* Colores de Estado */
+    --color-success: #81B29A;
+    --color-success-dark: #6A9C83;
+    --color-warning: #F2CC8F;
+    --color-warning-dark: #E0B677;
+    --color-danger: #E07A5F;
+    --color-danger-dark: #C4634D;
+    --color-info: #5B7C99;
+    --color-info-dark: #415A77;
+    
+    /* Sombras */
+    --shadow-sm: 0 2px 8px rgba(65, 90, 119, 0.08);
+    --shadow-md: 0 4px 16px rgba(65, 90, 119, 0.12);
+    --shadow-lg: 0 8px 24px rgba(65, 90, 119, 0.15);
+    --shadow-xl: 0 12px 32px rgba(65, 90, 119, 0.18);
+    
+    /* Bordes redondeados */
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 16px;
+    --radius-xl: 50px;
+}
+

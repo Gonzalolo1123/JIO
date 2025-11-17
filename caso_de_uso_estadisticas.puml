@@ -1,0 +1,83 @@
+@startuml Caso_de_Uso_Estadisticas
+!theme plain
+skinparam packageStyle rectangle
+skinparam usecase {
+  BackgroundColor #E3F2FD
+  BorderColor #1976D2
+}
+
+left to right direction
+
+actor "Administrador" as Admin
+
+package "Gestión de Estadísticas" {
+  usecase "Consultar KPIs y métricas del mes" as UC1
+  usecase "Ver comparaciones temporales" as UC2
+  usecase "Visualizar gráfico de ventas" as UC3
+  usecase "Visualizar ventas por categoría\nde juego" as UC4
+  usecase "Ver días con mayor demanda\nde reservas" as UC5
+  usecase "Navegar entre períodos (mes/año)" as UC6
+  usecase "Cambiar tamaño de visualización\nde gráficos" as UC7
+}
+
+Admin --> UC1
+Admin --> UC2
+Admin --> UC3
+Admin --> UC4
+Admin --> UC5
+Admin --> UC6
+Admin --> UC7
+
+note right of UC1
+  KPIs mostrados:
+  - Reservas del mes
+  - Ventas del mes
+  - Clientes (nuevos/recurrentes)
+  Con crecimiento vs mes anterior
+end note
+
+note right of UC2
+  Comparaciones:
+  - Mes a mes
+  - Año a año
+  Incluye porcentajes de crecimiento
+end note
+
+note right of UC3
+  Períodos disponibles:
+  - Semanal (8 semanas)
+  - Mensual (12 meses)
+  - Anual (5 años)
+end note
+
+note right of UC4
+  Categorías:
+  - Pequeño
+  - Mediano
+  - Grande
+  Períodos: semanal, mensual, anual
+end note
+
+note right of UC5
+  Análisis por día de semana:
+  - Semanal (4 semanas)
+  - Mensual (3 meses)
+  - Anual (1 año)
+end note
+
+note right of UC6
+  Funcionalidades:
+  - Selector de mes/año
+  - Navegación anterior/siguiente
+  - No permite avanzar más allá del mes actual
+end note
+
+note right of UC7
+  Opciones:
+  - Vista pequeña
+  - Vista mediana (default)
+  - Vista grande
+end note
+
+@enduml
+

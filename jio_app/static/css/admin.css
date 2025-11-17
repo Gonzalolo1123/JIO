@@ -1,4 +1,6 @@
 /* Estilos para Paneles Administrativos - Sin Bootstrap */
+/* Importar paleta de colores */
+@import url('colors.css');
 
 * {
     margin: 0;
@@ -8,20 +10,20 @@
 
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background-color: #f8f9fa;
-    color: #333;
+    background-color: var(--color-gray-lighter);
+    color: var(--color-black);
     line-height: 1.6;
 }
 
 /* Navbar */
 .navbar {
-    background: linear-gradient(135deg, #2E7D32, #4CAF50);
+    background: var(--bg-gradient-header);
     color: white;
     padding: 1rem 2rem;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    box-shadow: var(--shadow-sm);
     position: fixed;
     top: 0;
     left: 0;
@@ -143,11 +145,11 @@ body {
 }
 
 .panel-header {
-    background: linear-gradient(135deg, #2E7D32, #4CAF50);
+    background: var(--bg-gradient-primary);
     color: white;
     padding: 3rem 2rem;
     border-radius: 15px;
-    box-shadow: 0 4px 20px rgba(46, 125, 50, 0.3);
+    box-shadow: var(--shadow-md);
     text-align: center;
     margin-top: 2rem;
 }
@@ -223,38 +225,38 @@ body {
 
 /* Colores para stat-card */
 .stat-primary {
-    border-left-color: #3498db;
+    border-left-color: var(--color-primary);
 }
 
 .stat-primary .stat-icon {
-    background: linear-gradient(135deg, #3498db, #2980b9);
+    background: var(--bg-gradient-primary);
     color: white;
 }
 
 .stat-success {
-    border-left-color: #2ecc71;
+    border-left-color: var(--color-accent-green);
 }
 
 .stat-success .stat-icon {
-    background: linear-gradient(135deg, #2ecc71, #27ae60);
+    background: var(--bg-gradient-green);
     color: white;
 }
 
 .stat-warning {
-    border-left-color: #f39c12;
+    border-left-color: var(--color-secondary);
 }
 
 .stat-warning .stat-icon {
-    background: linear-gradient(135deg, #f39c12, #e67e22);
-    color: white;
+    background: var(--bg-gradient-secondary);
+    color: var(--color-black);
 }
 
 .stat-info {
-    border-left-color: #1abc9c;
+    border-left-color: var(--color-accent-orange);
 }
 
 .stat-info .stat-icon {
-    background: linear-gradient(135deg, #1abc9c, #16a085);
+    background: var(--bg-gradient-orange);
     color: white;
 }
 
@@ -358,39 +360,41 @@ body {
 
 /* Colores para module-card */
 .module-primary {
-    --module-color-from: #3498db;
-    --module-color-to: #2980b9;
+    --module-color-from: var(--color-primary);
+    --module-color-to: var(--color-primary-dark);
 }
 
 .module-primary .module-icon {
-    background: linear-gradient(135deg, #3498db, #2980b9);
+    background: var(--bg-gradient-primary);
 }
 
 .module-success {
-    --module-color-from: #2ecc71;
-    --module-color-to: #27ae60;
+    --module-color-from: var(--color-accent-green);
+    --module-color-to: var(--color-accent-green-dark);
 }
 
 .module-success .module-icon {
-    background: linear-gradient(135deg, #2ecc71, #27ae60);
+    background: var(--bg-gradient-green);
+    color: white;
 }
 
 .module-warning {
-    --module-color-from: #f39c12;
-    --module-color-to: #e67e22;
+    --module-color-from: var(--color-secondary);
+    --module-color-to: var(--color-secondary-dark);
 }
 
 .module-warning .module-icon {
-    background: linear-gradient(135deg, #f39c12, #e67e22);
+    background: var(--bg-gradient-secondary);
+    color: var(--color-black);
 }
 
 .module-info {
-    --module-color-from: #1abc9c;
-    --module-color-to: #16a085;
+    --module-color-from: var(--color-accent-orange);
+    --module-color-to: var(--color-accent-orange-dark);
 }
 
 .module-info .module-icon {
-    background: linear-gradient(135deg, #1abc9c, #16a085);
+    background: var(--bg-gradient-orange);
 }
 
 .module-purple {
@@ -442,24 +446,24 @@ body {
 }
 
 .btn-primary {
-    background: linear-gradient(135deg, #2E7D32, #4CAF50);
+    background: var(--bg-gradient-primary);
     color: #fff;
-    box-shadow: 0 4px 14px rgba(76, 175, 80, 0.35);
+    box-shadow: 0 4px 14px rgba(25, 118, 210, 0.35);
 }
 
 .btn-primary:hover {
-    background: linear-gradient(135deg, #256628, #3ea043);
+    background: linear-gradient(135deg, var(--color-primary-dark), #0D47A1);
 }
 
 .btn-secondary {
     background: #ffffff;
-    color: #2E7D32;
-    border-color: #c8e6c9;
-    box-shadow: 0 4px 14px rgba(46, 125, 50, 0.15);
+    color: var(--color-gray-dark);
+    border-color: var(--color-gray-light);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
 }
 
 .btn-secondary:hover {
-    background: #f6fff7;
+    background: var(--color-gray-lightest);
 }
 
 .btn-danger {
@@ -487,6 +491,65 @@ body {
     font-size: 0.95rem;
 }
 
+/* Estilos globales para todos los select, textarea e inputs */
+select,
+textarea,
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="time"],
+input[type="date"],
+input[type="number"],
+input[type="tel"],
+input[type="url"],
+input[type="search"] {
+    padding: 0.7rem 0.9rem;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+    background-color: white;
+}
+
+select:focus,
+textarea:focus,
+input[type="text"]:focus,
+input[type="email"]:focus,
+input[type="password"]:focus,
+input[type="time"]:focus,
+input[type="date"]:focus,
+input[type="number"]:focus,
+input[type="tel"]:focus,
+input[type="url"]:focus,
+input[type="search"]:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px rgba(25, 118, 210, 0.1);
+}
+
+/* Estilos para select con flecha personalizada */
+select {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%232c3e50' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.9rem center;
+    background-size: 12px;
+    padding-right: 2.5rem;
+    cursor: pointer;
+}
+
+select:hover {
+    border-color: var(--color-primary);
+}
+
+/* Estilos para textarea */
+textarea {
+    resize: vertical;
+    min-height: 80px;
+    line-height: 1.5;
+}
+
 .form-card {
     margin-top: 1.5rem;
     background: #fff;
@@ -508,13 +571,29 @@ body {
     font-weight: 600;
 }
 
-.form-grid input[type="text"],
-.form-grid input[type="email"],
-.form-grid input[type="password"] {
-    padding: 0.7rem 0.9rem;
-    border: 1px solid #e0e0e0;
-    border-radius: 8px;
-    font-size: 0.95rem;
+/* Los estilos de inputs, select y textarea ya están definidos globalmente arriba */
+
+/* Estilos adicionales específicos para file input */
+input[type="file"] {
+    padding: 0.5rem 0.9rem;
+    cursor: pointer;
+}
+
+input[type="file"]::file-selector-button {
+    padding: 0.4rem 0.8rem;
+    margin-right: 0.75rem;
+    background: var(--bg-gradient-secondary);
+    color: var(--color-black);
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+
+input[type="file"]::file-selector-button:hover {
+    background: linear-gradient(135deg, var(--color-secondary-dark), #E6A800);
 }
 
 .form-actions {
@@ -537,9 +616,9 @@ body {
 }
 
 .table thead th {
-    background: #f6fff7;
-    color: #2E7D32;
-    border-bottom: 2px solid #c8e6c9;
+    background: var(--color-gray-lighter);
+    color: var(--color-gray-dark);
+    border-bottom: 2px solid var(--color-gray-light);
     font-weight: 700;
 }
 
@@ -570,8 +649,12 @@ body {
     z-index: 1201;
     background: #fff;
     width: min(700px, 92%);
+    max-height: 90vh;
     border-radius: 14px;
     box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
 }
 
 .modal-header {
@@ -580,6 +663,7 @@ body {
     justify-content: space-between;
     padding: 1rem 1.25rem;
     border-bottom: 1px solid #eee;
+    flex-shrink: 0;
 }
 
 .modal-header h2 {
@@ -595,14 +679,42 @@ body {
     cursor: pointer;
 }
 
-.modal .form-grid { padding: 1rem 1.25rem; }
-.modal .form-actions { justify-content: flex-end; }
+.modal .form-grid { 
+    padding: 1rem 1.25rem; 
+    overflow-y: auto;
+    overflow-x: hidden;
+    flex: 1;
+    min-height: 0; /* Importante para que flex funcione con overflow */
+}
+.modal .form-actions { 
+    justify-content: flex-end; 
+    flex-shrink: 0;
+}
+
+/* Smooth scroll para modales */
+.modal .form-grid,
+#detalleInstalacionContent,
+#detalleRetiroContent {
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: smooth;
+}
 
 /* Asegurar que las alertas SweetAlert2 queden por encima de cualquier modal propio */
 .swal2-container { z-index: 5000 !important; }
 
 /* Responsive */
 @media (max-width: 768px) {
+    .modal-content {
+        width: 95%;
+        max-height: 95vh;
+        margin: auto;
+    }
+    
+    #detalleInstalacionContent,
+    #detalleRetiroContent {
+        max-height: calc(95vh - 60px);
+    }
+    
     .navbar {
         padding: 1rem;
     }
@@ -742,7 +854,6 @@ body {
     .module-arrow {
         font-size: 1rem;
     }
- 
 }
 
 /* ===== ESTILOS PARA GESTIÓN DE REPARTOS ===== */
@@ -826,17 +937,17 @@ body {
 }
 
 .agenda-instalacion {
-    border-left-color: #2ecc71;
+    border-left-color: var(--color-accent-green);
 }
 
 .agenda-retiro {
-    border-left-color: #e74c3c;
+    border-left-color: var(--color-primary);
 }
 
 .agenda-time {
     font-size: 1.1rem;
     font-weight: 700;
-    color: #2E7D32;
+    color: var(--color-gray-dark);
     min-width: 60px;
     text-align: center;
 }
@@ -950,6 +1061,25 @@ body {
     background-color: #f8f9fa;
 }
 
+/* Encabezados ordenables */
+.sortable-header {
+    cursor: pointer;
+    user-select: none;
+    transition: color 0.2s ease;
+}
+
+.sortable-header:hover {
+    color: #2E7D32 !important;
+}
+
+.sortable-header i {
+    transition: color 0.2s ease;
+}
+
+.sortable-header:hover i {
+    color: #2E7D32 !important;
+}
+
 /* Responsive para repartos */
 @media (max-width: 768px) {
     .agenda-grid {
@@ -1034,8 +1164,8 @@ body {
 }
 
 .status-habilitado {
-    background-color: #e8f5e8;
-    color: #2e7d32;
+    background-color: var(--color-accent-green-light);
+    color: var(--color-accent-green-dark);
 }
 
 .status-deshabilitado {
@@ -1062,5 +1192,4 @@ body {
 .status-no_disponible {
     background-color: #ffebee;
     color: #d32f2f;
- 
 }

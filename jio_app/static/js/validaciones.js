@@ -106,12 +106,19 @@ function validarNombre(nombre, campo = 'nombre', minLength = 3, maxLength = 30, 
 }
 
 // Función para validar descripción
-function validarDescripcion(descripcion, campo = 'descripción', minLength = 5, maxLength = 50, mostrarAlerta = false) {
+function validarDescripcion(descripcion, campo = 'descripción', minLength = 5, maxLength = 50, obligatorio = true, mostrarAlerta = false) {
   const errores = [];
   
-  if (!descripcion) {
-    errores.push(`La ${campo} es obligatoria`);
-  } else if (descripcion.length < minLength) {
+  if (!descripcion || descripcion.trim() === '') {
+    if (obligatorio) {
+      errores.push(`La ${campo} es obligatoria`);
+    }
+    // Si no es obligatorio y está vacío, no hay errores
+    return errores;
+  }
+  
+  // Si tiene contenido, validar
+  if (descripcion.length < minLength) {
     errores.push(`La ${campo} debe tener al menos ${minLength} caracteres`);
   } else if (descripcion.length > maxLength) {
     errores.push(`La ${campo} no puede exceder los ${maxLength} caracteres`);
@@ -129,7 +136,7 @@ function validarDescripcion(descripcion, campo = 'descripción', minLength = 5, 
 }
 
 // Función para validar precio en pesos chilenos (enteros, mínimo 1 peso)
-function validarPrecioChileno(valor, campo = 'precio', min = 1, max = 999999999, obligatorio = true, mostrarAlerta = false) {
+function validarPrecioChileno(valor, campo = 'precio', min = 1, max = 1000000, obligatorio = true, mostrarAlerta = false) {
   const errores = [];
   
   if (!valor && obligatorio) {
@@ -269,15 +276,46 @@ function validarFecha(fecha, campo = 'fecha', obligatorio = true, mostrarAlerta 
   if (!fecha && obligatorio) {
     errores.push(`La ${campo} es obligatoria`);
   } else if (fecha) {
+    // Crear fecha de hoy sin hora (para comparación justa)
     const hoy = new Date();
-    const inicio = new Date(fecha);
-    hoy.setHours(0,0,0,0);
-    inicio.setHours(0,0,0,0);
-    // Calcula 'ayer'
-    const ayer = new Date(hoy);
-    ayer.setDate(hoy.getDate() - 1);
-    if (inicio < ayer) {
-      errores.push(`La ${campo} no puede ser anterior a hoy`);
+    hoy.setHours(0, 0, 0, 0);
+    
+    // Crear fecha máxima (1 año desde hoy)
+    const fechaMaxima = new Date();
+    fechaMaxima.setFullYear(fechaMaxima.getFullYear() + 1);
+    fechaMaxima.setHours(0, 0, 0, 0);
+    
+    // Parsear la fecha del input (formato YYYY-MM-DD)
+    // Usar solo la fecha sin considerar la hora para evitar problemas de zona horaria
+    const partesFecha = fecha.split('-');
+    if (partesFecha.length === 3) {
+      const año = parseInt(partesFecha[0], 10);
+      const mes = parseInt(partesFecha[1], 10) - 1; // Mes en JS es 0-11
+      const dia = parseInt(partesFecha[2], 10);
+      const inicio = new Date(año, mes, dia);
+      
+      // Validar que la fecha no sea anterior a hoy (permitir el día actual)
+      if (inicio < hoy) {
+        errores.push(`La ${campo} no puede ser anterior al día actual`);
+      }
+      // Validar que la fecha no sea más de 1 año en el futuro
+      else if (inicio > fechaMaxima) {
+        errores.push(`La ${campo} no puede ser más de 1 año desde la fecha actual`);
+      }
+      // Permitir el día actual (inicio >= hoy) y días futuros hasta 1 año
+    } else {
+      // Si el formato no es correcto, intentar parsear normalmente
+      const inicio = new Date(fecha);
+      if (isNaN(inicio.getTime())) {
+        errores.push(`La ${campo} tiene un formato inválido`);
+      } else {
+        inicio.setHours(0, 0, 0, 0);
+        if (inicio < hoy) {
+          errores.push(`La ${campo} no puede ser anterior al día actual`);
+        } else if (inicio > fechaMaxima) {
+          errores.push(`La ${campo} no puede ser más de 1 año desde la fecha actual`);
+        }
+      }
     }
   }
   if (mostrarAlerta && errores.length > 0) {
@@ -503,4 +541,56 @@ function validarFormulario(validaciones, titulo = 'Errores en el Formulario') {
   }
   
   return true;
-} 
+}
+
+// Función para validar que la hora de retiro sea posterior a la hora de instalación
+function validarHorarioRetiroPosterior(horaInstalacion, horaRetiro, mostrarAlerta = false) {
+  const errores = [];
+  
+  if (!horaInstalacion || !horaRetiro) {
+    return errores; // Si alguna hora falta, las validaciones individuales se encargarán
+  }
+  
+  // Convertir horas a minutos para comparar
+  const [hInst, mInst] = horaInstalacion.split(':').map(Number);
+  const [hRet, mRet] = horaRetiro.split(':').map(Number);
+  
+  const minutosInstalacion = hInst * 60 + mInst;
+  const minutosRetiro = hRet * 60 + mRet;
+  
+  if (minutosRetiro <= minutosInstalacion) {
+    errores.push('La hora de retiro debe ser posterior a la hora de instalación');
+  }
+  
+  if (mostrarAlerta && errores.length > 0) {
+    mostrarErroresValidacion(errores, 'Error en horarios');
+  }
+  
+  return errores;
+}
+
+// Función para mostrar confirmación de eliminación con SweetAlert2
+function mostrarConfirmacionEliminar(mensaje, titulo = '¿Estás seguro?') {
+  return new Promise((resolve) => {
+    // Verificar si SweetAlert2 está disponible
+    if (typeof Swal !== 'undefined' && Swal.fire) {
+      Swal.fire({
+        title: titulo,
+        text: mensaje,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        cancelButtonColor: '#3085d6',
+        confirmButtonText: 'Sí, eliminar',
+        cancelButtonText: 'Cancelar',
+        reverseButtons: true
+      }).then((result) => {
+        resolve(result.isConfirmed);
+      });
+    } else {
+      // Fallback si SweetAlert2 no está disponible
+      const confirmado = confirm(`${titulo}\n\n${mensaje}`);
+      resolve(confirmado);
+    }
+  });
+}

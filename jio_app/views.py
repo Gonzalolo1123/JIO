@@ -5,7 +5,7 @@ from django.contrib import messages
 from django.http import JsonResponse
 from django.core.exceptions import PermissionDenied
 from django.urls import reverse
-from .models import Juego, Usuario, Repartidor, Cliente, Reserva, DetalleReserva
+from .models import Juego, Usuario, Repartidor, Cliente, Instalacion, Retiro, Reserva, DetalleReserva
 from django.views.decorators.http import require_http_methods
 from django.core import signing
 from django.utils import timezone
@@ -23,11 +23,11 @@ def index(request):
     """
     Vista para la página principal del sitio público
     """
-    # Obtener algunos juegos destacados para mostrar
-    juegos_destacados = Juego.objects.filter(estado='disponible')[:6]
+    # Obtener todos los juegos habilitados ordenados por categoría y nombre
+    juegos_disponibles = Juego.objects.filter(estado__iexact='habilitado').order_by('categoria', 'nombre')
     
     context = {
-        'juegos_destacados': juegos_destacados,
+        'juegos_disponibles': juegos_disponibles,
     }
     return render(request, 'jio_app/index.html', context)
 
@@ -71,9 +71,11 @@ def disponibilidad_fecha_json(request):
                 'fecha': fecha_str,
             })
         
-        # Obtener todos los juegos disponibles (estado='disponible')
+        # Obtener todos los juegos disponibles (aceptar tanto 'Habilitado' como 'disponible')
         try:
-            todos_juegos = Juego.objects.filter(estado='disponible').order_by('nombre')
+            todos_juegos = Juego.objects.filter(
+                Q(estado='Habilitado') | Q(estado='disponible')
+            ).order_by('nombre')
             total_juegos_sistema = Juego.objects.count()  # Para debugging
             juegos_disponibles_count = todos_juegos.count()
         except Exception as e:
@@ -99,17 +101,27 @@ def disponibilidad_fecha_json(request):
                 }
             })
         
-        # Obtener reservas confirmadas o pendientes para esa fecha
-        # IMPORTANTE: Buscar por fecha_evento y estados válidos
+        # Obtener reservas confirmadas, pendientes o completadas para esa fecha
+        # IMPORTANTE: Buscar por fecha_evento y estados válidos (usar valores exactos del modelo)
         try:
+            # Primero, verificar qué estados existen realmente en la base de datos para esta fecha
+            reservas_fecha_crudas = Reserva.objects.filter(fecha_evento=fecha_obj)
+            estados_existentes_fecha = reservas_fecha_crudas.values_list('estado', flat=True).distinct()
+            print(f"🔍 DEBUG - Estados de reservas para {fecha_obj}: {list(estados_existentes_fecha)}")
+            print(f"🔍 DEBUG - Total reservas para {fecha_obj} (sin filtrar estado): {reservas_fecha_crudas.count()}")
+            
+            # Buscar con todos los posibles estados (usar Q para case-insensitive)
             reservas_fecha = Reserva.objects.filter(
-                fecha_evento=fecha_obj,
-                estado__in=['pendiente', 'confirmada']
+                fecha_evento=fecha_obj
+            ).filter(
+                Q(estado__iexact='Pendiente') | 
+                Q(estado__iexact='Confirmada') | 
+                Q(estado__iexact='completada')
             ).select_related('cliente').prefetch_related('detalles__juego')
             
             # Debug: verificar cuántas reservas se encontraron
             num_reservas = reservas_fecha.count()
-            print(f"🔍 DEBUG - Reservas encontradas para {fecha_obj}: {num_reservas}")
+            print(f"🔍 DEBUG - Reservas encontradas con filtro de estado: {num_reservas}")
             
         except Exception as e:
             import traceback
@@ -170,11 +182,11 @@ def disponibilidad_fecha_json(request):
             # Excluir los juegos ocupados de la lista de disponibles
             juegos_disponibles = todos_juegos.exclude(id__in=juegos_ocupados)
             # Obtener los juegos ocupados de la tabla Juego para mostrarlos
-            juegos_ocupados_list = todos_juegos.filter(id__in=juegos_ocupados)
-            print(f"📊 Juegos disponibles: {juegos_disponibles.count()}, Juegos ocupados: {juegos_ocupados_list.count()}")
+            juegos_ocupados_queryset = todos_juegos.filter(id__in=juegos_ocupados)
+            print(f"📊 Juegos disponibles: {juegos_disponibles.count()}, Juegos ocupados: {juegos_ocupados_queryset.count()}")
         else:
             juegos_disponibles = todos_juegos
-            juegos_ocupados_list = []
+            juegos_ocupados_queryset = Juego.objects.none()  # QuerySet vacío
             print(f"📊 No hay juegos ocupados. Todos los {todos_juegos.count()} juegos están disponibles")
         
         # Construir lista de juegos disponibles
@@ -198,7 +210,8 @@ def disponibilidad_fecha_json(request):
         # Construir lista de juegos ocupados (para mostrarlos como no disponibles)
         juegos_ocupados_data = []
         try:
-            for juego in juegos_ocupados_list:
+            # Asegurar que siempre iteramos sobre un QuerySet o lista
+            for juego in juegos_ocupados_queryset:
                 juego_data = {
                     'id': juego.id,
                     'nombre': juego.nombre,
@@ -241,8 +254,16 @@ def disponibilidad_fecha_json(request):
         print(f"📤 Enviando respuesta para {fecha_str}:")
         print(f"   - Disponible: {respuesta['disponible']}")
         print(f"   - Juegos disponibles: {len(juegos_data)}")
-        print(f"   - Juegos ocupados: {len(juegos_ocupados_data)}")
+        print(f"   - Juegos ocupados en data: {len(juegos_ocupados_data)}")
+        print(f"   - juegos_ocupados_list en respuesta: {'SÍ' if 'juegos_ocupados_list' in respuesta else 'NO'}")
+        print(f"   - Tipo de juegos_ocupados_list: {type(respuesta.get('juegos_ocupados_list'))}")
         print(f"   - IDs ocupados: {list(juegos_ocupados)}")
+        print(f"   - Total juegos sistema: {respuesta['total_juegos']}")
+        
+        # Verificar que la respuesta tenga todos los campos necesarios
+        import json
+        respuesta_json = json.dumps(respuesta, default=str)
+        print(f"   - Respuesta JSON (primeros 500 chars): {respuesta_json[:500]}")
         
         return JsonResponse(respuesta)
     except Exception as e:
@@ -271,29 +292,53 @@ def crear_reserva_publica(request):
     except:
         data = request.POST.dict()
     
-    # Extraer datos del formulario
-    nombre_completo = data.get('nombre', '').strip()
+    # Extraer datos del formulario (nuevos campos)
+    nombre = data.get('nombre', '').strip()
+    apellido = data.get('apellido', '').strip()
     email = data.get('email', '').strip()
     telefono = data.get('telefono', '').strip()
-    juego_id = data.get('juego', '').strip()
     fecha_evento = data.get('fecha', '').strip()
-    horario = data.get('horario', '').strip()
+    hora_instalacion = data.get('hora_instalacion', '').strip()
+    hora_retiro = data.get('hora_retiro', '').strip()
     direccion = data.get('direccion', '').strip()
-    comentarios = data.get('comentarios', '').strip()
+    observaciones = data.get('observaciones', '').strip()
     distancia_km = data.get('distancia_km', '0').strip()
+    juegos_data = data.get('juegos', [])  # Array de juegos
+    
+    # Debug: imprimir datos recibidos
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"📥 Datos recibidos: nombre={nombre}, apellido={apellido}, hora_instalacion={hora_instalacion}, hora_retiro={hora_retiro}, juegos={juegos_data}")
+    
+    # Si juegos_data es string, intentar parsearlo
+    if isinstance(juegos_data, str):
+        try:
+            juegos_data = json.loads(juegos_data)
+        except:
+            juegos_data = []
+    
+    # Compatibilidad con formulario antiguo (si viene nombre completo)
+    if not nombre and data.get('nombre_completo'):
+        nombre_completo = data.get('nombre_completo', '').strip()
+        partes_nombre = nombre_completo.split(' ', 1)
+        nombre = partes_nombre[0]
+        apellido = partes_nombre[1] if len(partes_nombre) > 1 else ''
     
     errors = []
     
     # Validaciones básicas
-    if not nombre_completo:
+    if not nombre:
         errors.append('El nombre es obligatorio')
-    elif len(nombre_completo) < 3:
-        errors.append('El nombre debe tener al menos 3 caracteres')
+    elif len(nombre) < 2:
+        errors.append('El nombre debe tener al menos 2 caracteres')
     
-    # Separar nombre y apellido
-    partes_nombre = nombre_completo.split(' ', 1)
-    first_name = partes_nombre[0]
-    last_name = partes_nombre[1] if len(partes_nombre) > 1 else ''
+    if not apellido:
+        errors.append('El apellido es obligatorio')
+    elif len(apellido) < 2:
+        errors.append('El apellido debe tener al menos 2 caracteres')
+    
+    first_name = nombre
+    last_name = apellido
     
     if not email:
         errors.append('El email es obligatorio')
@@ -302,42 +347,70 @@ def crear_reserva_publica(request):
         if not email_regex.match(email):
             errors.append('Email inválido')
     
-    if not telefono:
-        errors.append('El teléfono es obligatorio')
-    
-    if not juego_id:
-        errors.append('Debe seleccionar un juego')
+    # Teléfono es opcional (no validamos si está vacío)
     
     if not fecha_evento:
         errors.append('La fecha es obligatoria')
     else:
         try:
-            from datetime import datetime
+            from datetime import datetime, timedelta
             fecha_obj = datetime.strptime(fecha_evento, '%Y-%m-%d').date()
             hoy = timezone.now().date()
             if fecha_obj < hoy:
                 errors.append('No se pueden hacer reservas para fechas pasadas')
+            # Validar que la fecha no sea más de 1 año en el futuro
+            fecha_maxima = hoy + timedelta(days=365)
+            if fecha_obj > fecha_maxima:
+                errors.append('La fecha del evento no puede ser más de 1 año desde la fecha actual')
         except ValueError:
             errors.append('Formato de fecha inválido')
     
-    if not horario:
-        errors.append('Debe seleccionar un horario')
+    # Validar horas de instalación y retiro
+    hora_inst_obj = None
+    hora_ret_obj = None
+    if not hora_instalacion:
+        errors.append('La hora de instalación es obligatoria')
     else:
-        # Convertir horario a hora_instalacion y hora_retiro
-        horarios_map = {
-            '09:00-13:00': ('09:00', '13:00'),
-            '14:00-18:00': ('14:00', '18:00'),
-            '09:00-18:00': ('09:00', '18:00'),
-        }
-        if horario in horarios_map:
-            hora_instalacion_str, hora_retiro_str = horarios_map[horario]
-            try:
-                hora_inst_obj = datetime.strptime(hora_instalacion_str, '%H:%M').time()
-                hora_ret_obj = datetime.strptime(hora_retiro_str, '%H:%M').time()
-            except ValueError:
-                errors.append('Error en el formato de horario')
-        else:
-            errors.append('Horario inválido')
+        try:
+            from datetime import datetime
+            hora_inst_obj = datetime.strptime(hora_instalacion, '%H:%M').time()
+            # Validar que la hora de instalación sea desde las 9:00 AM
+            hora_minima = datetime.strptime('09:00', '%H:%M').time()
+            if hora_inst_obj < hora_minima:
+                errors.append('Las instalaciones solo están disponibles desde las 9:00 AM')
+        except ValueError:
+            errors.append('Formato de hora de instalación inválido (debe ser HH:MM)')
+    
+    if not hora_retiro:
+        errors.append('La hora de retiro es obligatoria')
+    else:
+        try:
+            from datetime import datetime
+            hora_ret_obj = datetime.strptime(hora_retiro, '%H:%M').time()
+            # Validar que la hora de retiro sea antes de las 00:00 (23:59 máximo)
+            hora_maxima = datetime.strptime('23:59', '%H:%M').time()
+            if hora_ret_obj > hora_maxima:
+                errors.append('La hora de retiro debe ser antes de las 00:00')
+        except ValueError:
+            errors.append('Formato de hora de retiro inválido (debe ser HH:MM)')
+    
+    # Validar que hora_retiro sea después de hora_instalacion
+    if hora_inst_obj and hora_ret_obj:
+        if hora_ret_obj <= hora_inst_obj:
+            errors.append('La hora de retiro debe ser posterior a la hora de instalación')
+    
+    # Validar juegos
+    if not juegos_data:
+        errors.append('Debe agregar al menos un juego')
+    elif not isinstance(juegos_data, list):
+        try:
+            juegos_data = json.loads(juegos_data) if isinstance(juegos_data, str) else []
+        except:
+            errors.append('Formato de juegos inválido')
+            juegos_data = []
+    
+    if not juegos_data or len(juegos_data) == 0:
+        errors.append('Debe agregar al menos un juego')
     
     if not direccion:
         errors.append('La dirección es obligatoria')
@@ -357,30 +430,65 @@ def crear_reserva_publica(request):
     if errors:
         return JsonResponse({'success': False, 'errors': errors}, status=400)
     
-    # Verificar que el juego existe y está disponible
-    try:
-        juego = Juego.objects.get(id=int(juego_id), estado='disponible')
-    except (Juego.DoesNotExist, ValueError):
-        errors.append('Juego no encontrado o no disponible')
+    # Validar y verificar juegos
+    juegos_validos = []
+    total_juegos = 0
+    
+    for juego_item in juegos_data:
+        juego_id = juego_item.get('juego_id') or juego_item.get('id')
+        cantidad = juego_item.get('cantidad', 1)
+        
+        if not juego_id:
+            errors.append('Uno de los juegos no tiene ID válido')
+            continue
+        
+        try:
+            juego = Juego.objects.get(id=int(juego_id))
+            
+            # Verificar estado del juego
+            if juego.estado not in ['disponible', 'Habilitado']:
+                errors.append(f'El juego "{juego.nombre}" no está disponible')
+                continue
+            
+            # Verificar disponibilidad en la fecha
+            reservas_fecha = Reserva.objects.filter(
+                fecha_evento=fecha_obj,
+                estado__in=['pendiente', 'confirmada', 'Pendiente', 'Confirmada']
+            ).prefetch_related('detalles__juego')
+            
+            juego_ocupado = False
+            for reserva in reservas_fecha:
+                for detalle in reserva.detalles.all():
+                    if detalle.juego.id == juego.id:
+                        juego_ocupado = True
+                        break
+                if juego_ocupado:
+                    break
+            
+            if juego_ocupado:
+                errors.append(f'El juego "{juego.nombre}" ya está reservado para esa fecha')
+                continue
+            
+            precio_unitario = juego.precio_base
+            subtotal = precio_unitario * cantidad
+            
+            juegos_validos.append({
+                'juego': juego,
+                'cantidad': cantidad,
+                'precio_unitario': precio_unitario,
+                'subtotal': subtotal
+            })
+            total_juegos += subtotal
+            
+        except (Juego.DoesNotExist, ValueError) as e:
+            errors.append(f'Juego con ID {juego_id} no encontrado')
+            continue
+    
+    if not juegos_validos:
+        errors.append('No hay juegos válidos para la reserva')
         return JsonResponse({'success': False, 'errors': errors}, status=400)
     
-    # Verificar disponibilidad del juego en la fecha
-    reservas_fecha = Reserva.objects.filter(
-        fecha_evento=fecha_obj,
-        estado__in=['pendiente', 'confirmada']
-    ).prefetch_related('detalles__juego')
-    
-    juego_ocupado = False
-    for reserva in reservas_fecha:
-        for detalle in reserva.detalles.all():
-            if detalle.juego.id == juego.id:
-                juego_ocupado = True
-                break
-        if juego_ocupado:
-            break
-    
-    if juego_ocupado:
-        errors.append('El juego seleccionado ya está reservado para esa fecha')
+    if errors:
         return JsonResponse({'success': False, 'errors': errors}, status=400)
     
     # Buscar o crear cliente
@@ -439,8 +547,39 @@ def crear_reserva_publica(request):
     PRECIO_POR_KM = 1000
     precio_distancia = distancia_km_int * PRECIO_POR_KM
     
-    # Calcular total
-    total_final = juego.precio_base + precio_distancia
+    # Calcular horas extra y su precio
+    horas_extra = 0
+    precio_horas_extra = 0
+    if hora_inst_obj and hora_ret_obj:
+        from datetime import timedelta
+        # Convertir horas a datetime para calcular diferencia
+        fecha_base = datetime(2000, 1, 1).date()
+        datetime_inst = datetime.combine(fecha_base, hora_inst_obj)
+        datetime_ret = datetime.combine(fecha_base, hora_ret_obj)
+        
+        # Si la hora de retiro es menor que la de instalación, asumir que es al día siguiente
+        if datetime_ret < datetime_inst:
+            datetime_ret += timedelta(days=1)
+        
+        # Calcular diferencia en minutos
+        diferencia = datetime_ret - datetime_inst
+        diferencia_minutos = diferencia.total_seconds() / 60
+        
+        # Calcular horas base (6 horas = 360 minutos)
+        minutos_base = 6 * 60
+        
+        # Calcular horas extra (solo si excede las 6 horas base)
+        if diferencia_minutos > minutos_base:
+            minutos_extra = diferencia_minutos - minutos_base
+            # Redondear hacia arriba (si hay al menos 1 minuto extra, cuenta como 1 hora)
+            horas_extra = int((minutos_extra + 59) // 60)  # Redondear hacia arriba
+        
+        # Calcular precio (10.000 pesos por hora extra)
+        PRECIO_POR_HORA_EXTRA = 10000
+        precio_horas_extra = horas_extra * PRECIO_POR_HORA_EXTRA
+    
+    # Calcular total (suma de todos los juegos + precio por distancia + horas extra)
+    total_final = total_juegos + precio_distancia + precio_horas_extra
     
     try:
         # Crear reserva
@@ -452,19 +591,22 @@ def crear_reserva_publica(request):
             direccion_evento=direccion,
             distancia_km=distancia_km_int,
             precio_distancia=precio_distancia,
+            horas_extra=horas_extra,
+            precio_horas_extra=precio_horas_extra,
             estado='pendiente',
-            observaciones=comentarios or None,
+            observaciones=observaciones or None,
             total_reserva=total_final,
         )
         
-        # Crear detalle de reserva
-        DetalleReserva.objects.create(
-            reserva=reserva,
-            juego=juego,
-            cantidad=1,
-            precio_unitario=juego.precio_base,
-            subtotal=juego.precio_base,
-        )
+        # Crear detalles de reserva para cada juego
+        for juego_item in juegos_validos:
+            DetalleReserva.objects.create(
+                reserva=reserva,
+                juego=juego_item['juego'],
+                cantidad=juego_item['cantidad'],
+                precio_unitario=juego_item['precio_unitario'],
+                subtotal=juego_item['subtotal'],
+            )
         
         return JsonResponse({
             'success': True,
@@ -594,13 +736,47 @@ def admin_panel(request):
 @login_required
 def delivery_panel(request):
     """
-    Panel de repartidor
+    Panel de repartidor - Ver sus repartos asignados
     """
     if not request.user.tipo_usuario == 'repartidor':
         raise PermissionDenied("Solo los repartidores pueden acceder a este panel.")
     
+    from datetime import date
+    fecha_hoy = date.today()
+    
+    # Obtener el repartidor actual
+    try:
+        repartidor = request.user.repartidor
+    except:
+        raise PermissionDenied("Usuario no tiene perfil de repartidor.")
+    
+    # Instalaciones asignadas al repartidor
+    instalaciones_hoy = Instalacion.objects.filter(
+        repartidor=repartidor,
+        fecha_instalacion=fecha_hoy
+    ).select_related('reserva__cliente__usuario').order_by('hora_instalacion')
+    
+    instalaciones_todas = Instalacion.objects.filter(
+        repartidor=repartidor
+    ).select_related('reserva__cliente__usuario').order_by('-fecha_instalacion', '-hora_instalacion')[:20]
+    
+    # Retiros asignados al repartidor
+    retiros_hoy = Retiro.objects.filter(
+        repartidor=repartidor,
+        fecha_retiro=fecha_hoy
+    ).select_related('reserva__cliente__usuario').order_by('hora_retiro')
+    
+    retiros_todos = Retiro.objects.filter(
+        repartidor=repartidor
+    ).select_related('reserva__cliente__usuario').order_by('-fecha_retiro', '-hora_retiro')[:20]
+    
     context = {
         'user': request.user,
+        'fecha_hoy': fecha_hoy,
+        'instalaciones_hoy': instalaciones_hoy,
+        'instalaciones_todas': instalaciones_todas,
+        'retiros_hoy': retiros_hoy,
+        'retiros_todos': retiros_todos,
     }
     return render(request, 'jio_app/delivery_panel.html', context)
 
@@ -1153,6 +1329,507 @@ def user_delete_json(request, user_id: int):
     return JsonResponse({'success': True})
 
 
+# --------- Gestión de Repartos (solo administrador) ---------
+
+@login_required
+def repartos_list(request):
+    """Vista principal para gestión de repartos"""
+    if request.user.tipo_usuario != 'administrador':
+        raise PermissionDenied("Solo los administradores pueden acceder a este recurso.")
+
+    # Obtener fecha base
+    from datetime import date, timedelta, datetime
+    from calendar import monthrange
+    from django.utils import timezone
+    
+    fecha_hoy = date.today()
+    
+    # Cancelar automáticamente instalaciones fuera de fecha que no están realizadas ni canceladas
+    instalaciones_vencidas = Instalacion.objects.filter(
+        fecha_instalacion__lt=fecha_hoy,
+        estado_instalacion__in=['programada', 'pendiente']
+    )
+    count_instalaciones_canceladas = 0
+    for instalacion in instalaciones_vencidas:
+        obs_actual = instalacion.observaciones_instalacion or ''
+        nueva_obs = f"[{timezone.now().strftime('%d/%m/%Y %H:%M')}] Cancelada automáticamente por estar fuera de fecha y no haber sido realizada."
+        instalacion.observaciones_instalacion = f"{obs_actual}\n{nueva_obs}".strip() if obs_actual else nueva_obs
+        instalacion.estado_instalacion = 'cancelada'
+        instalacion.save()
+        count_instalaciones_canceladas += 1
+    
+    # Cancelar automáticamente retiros fuera de fecha que no están realizados ni cancelados
+    retiros_vencidos = Retiro.objects.filter(
+        fecha_retiro__lt=fecha_hoy,
+        estado_retiro__in=['programado', 'pendiente']
+    )
+    count_retiros_cancelados = 0
+    for retiro in retiros_vencidos:
+        obs_actual = retiro.observaciones_retiro or ''
+        nueva_obs = f"[{timezone.now().strftime('%d/%m/%Y %H:%M')}] Cancelado automáticamente por estar fuera de fecha y no haber sido realizado."
+        retiro.observaciones_retiro = f"{obs_actual}\n{nueva_obs}".strip() if obs_actual else nueva_obs
+        retiro.estado_retiro = 'cancelado'
+        retiro.save()
+        count_retiros_cancelados += 1
+
+    query = request.GET.get('q', '').strip()
+    estado_filter = request.GET.get('estado', '').strip()
+    
+    # Parámetros de ordenamiento para instalaciones
+    order_by_inst = request.GET.get('order_by_inst', 'fecha_instalacion').strip()
+    direction_inst = request.GET.get('direction_inst', 'asc').strip()
+    
+    # Parámetros de ordenamiento para retiros
+    order_by_ret = request.GET.get('order_by_ret', 'fecha_retiro').strip()
+    direction_ret = request.GET.get('direction_ret', 'asc').strip()
+    
+    # Obtener parámetros de vista
+    vista = request.GET.get('vista', 'diaria').strip()  # diaria, semanal, mensual
+    fecha_seleccionada = request.GET.get('fecha', '').strip()
+    
+    # Determinar rango de fechas según la vista
+    if fecha_seleccionada:
+        try:
+            fecha_base = datetime.strptime(fecha_seleccionada, '%Y-%m-%d').date()
+        except ValueError:
+            fecha_base = fecha_hoy
+    else:
+        fecha_base = fecha_hoy
+    
+    if vista == 'semanal':
+        # Semana: lunes a domingo
+        # Obtener el lunes de la semana
+        dias_desde_lunes = fecha_base.weekday()
+        fecha_inicio = fecha_base - timedelta(days=dias_desde_lunes)
+        fecha_fin = fecha_inicio + timedelta(days=6)
+        rango_fechas = (fecha_inicio, fecha_fin)
+    elif vista == 'mensual':
+        # Mes: primer día al último día del mes
+        primer_dia = fecha_base.replace(day=1)
+        ultimo_dia_num = monthrange(fecha_base.year, fecha_base.month)[1]
+        ultimo_dia = fecha_base.replace(day=ultimo_dia_num)
+        fecha_inicio = primer_dia
+        fecha_fin = ultimo_dia
+        rango_fechas = (fecha_inicio, fecha_fin)
+    else:  # diaria
+        fecha_inicio = fecha_base
+        fecha_fin = fecha_base
+        rango_fechas = (fecha_inicio, fecha_fin)
+    
+    # Filtrar instalaciones
+    instalaciones_qs = Instalacion.objects.select_related(
+        'reserva__cliente__usuario', 'repartidor__usuario'
+    )
+    
+    # Campos válidos para ordenar instalaciones
+    valid_order_fields_inst = {
+        'id': 'id',
+        'fecha_instalacion': 'fecha_instalacion',
+        'hora_instalacion': 'hora_instalacion',
+        'cliente': 'reserva__cliente__usuario__last_name',
+        'direccion': 'direccion_instalacion',
+        'estado': 'estado_instalacion',
+    }
+    
+    # Validar y aplicar ordenamiento de instalaciones
+    if order_by_inst not in valid_order_fields_inst:
+        order_by_inst = 'fecha_instalacion'
+    if direction_inst not in ['asc', 'desc']:
+        direction_inst = 'asc'
+    
+    order_field_inst = valid_order_fields_inst[order_by_inst]
+    if direction_inst == 'desc':
+        order_field_inst = '-' + order_field_inst
+    
+    instalaciones_qs = instalaciones_qs.order_by(order_field_inst)
+    
+    # Filtrar solo instalaciones posteriores o iguales a la fecha actual
+    instalaciones_qs = instalaciones_qs.filter(fecha_instalacion__gte=fecha_hoy)
+    
+    if query:
+        instalaciones_qs = instalaciones_qs.filter(
+            Q(reserva__cliente__usuario__first_name__icontains=query) |
+            Q(reserva__cliente__usuario__last_name__icontains=query) |
+            Q(repartidor__usuario__first_name__icontains=query) |
+            Q(repartidor__usuario__last_name__icontains=query) |
+            Q(direccion_instalacion__icontains=query)
+        )
+    
+    if estado_filter:
+        instalaciones_qs = instalaciones_qs.filter(estado_instalacion=estado_filter)
+    
+    # Filtrar retiros
+    retiros_qs = Retiro.objects.select_related(
+        'reserva__cliente__usuario', 'repartidor__usuario'
+    )
+    
+    # Campos válidos para ordenar retiros
+    valid_order_fields_ret = {
+        'id': 'id',
+        'fecha_retiro': 'fecha_retiro',
+        'hora_retiro': 'hora_retiro',
+        'cliente': 'reserva__cliente__usuario__last_name',
+        'direccion': 'reserva__direccion_evento',
+        'estado': 'estado_retiro',
+    }
+    
+    # Validar y aplicar ordenamiento de retiros
+    if order_by_ret not in valid_order_fields_ret:
+        order_by_ret = 'fecha_retiro'
+    if direction_ret not in ['asc', 'desc']:
+        direction_ret = 'asc'
+    
+    order_field_ret = valid_order_fields_ret[order_by_ret]
+    if direction_ret == 'desc':
+        order_field_ret = '-' + order_field_ret
+    
+    retiros_qs = retiros_qs.order_by(order_field_ret)
+    
+    # Filtrar solo retiros posteriores o iguales a la fecha actual
+    retiros_qs = retiros_qs.filter(fecha_retiro__gte=fecha_hoy)
+    
+    if query:
+        retiros_qs = retiros_qs.filter(
+            Q(reserva__cliente__usuario__first_name__icontains=query) |
+            Q(reserva__cliente__usuario__last_name__icontains=query) |
+            Q(repartidor__usuario__first_name__icontains=query) |
+            Q(repartidor__usuario__last_name__icontains=query)
+        )
+    
+    if estado_filter:
+        # Mapear estados (instalacion usa _instalacion, retiro usa _retiro)
+        estado_map = {
+            'programada': 'programado',
+            'realizada': 'realizado',
+            'cancelada': 'cancelado'
+        }
+        estado_retiro = estado_map.get(estado_filter, estado_filter)
+        retiros_qs = retiros_qs.filter(estado_retiro=estado_retiro)
+    
+    # Agenda según vista seleccionada (solo futuros o del día actual)
+    # Asegurar que la fecha_inicio sea al menos la fecha de hoy
+    fecha_inicio_efectiva = max(fecha_inicio, fecha_hoy)
+    
+    instalaciones_agenda = instalaciones_qs.filter(
+        fecha_instalacion__gte=fecha_inicio_efectiva,
+        fecha_instalacion__lte=fecha_fin
+    )
+    retiros_agenda = retiros_qs.filter(
+        fecha_retiro__gte=fecha_inicio_efectiva,
+        fecha_retiro__lte=fecha_fin
+    )
+    
+    # Repartidores disponibles
+    repartidores_disponibles = Usuario.objects.filter(
+        tipo_usuario='repartidor',
+        is_active=True
+    ).select_related('repartidor')
+    
+    context = {
+        'query': query,
+        'estado_filter': estado_filter,
+        'vista': vista,
+        'fecha_base': fecha_base,
+        'fecha_inicio': fecha_inicio,
+        'fecha_fin': fecha_fin,
+        'fecha_hoy': fecha_hoy,
+        'order_by_inst': order_by_inst,
+        'direction_inst': direction_inst,
+        'order_by_ret': order_by_ret,
+        'direction_ret': direction_ret,
+        'instalaciones': instalaciones_qs[:50],  # Limitar resultados
+        'retiros': retiros_qs[:50],
+        'instalaciones_agenda': instalaciones_agenda,
+        'retiros_agenda': retiros_agenda,
+        'repartidores_disponibles': repartidores_disponibles,
+    }
+    
+    return render(request, 'jio_app/repartos_list.html', context)
+
+
+@login_required
+@require_http_methods(["GET"])
+def agenda_repartos_json(request):
+    """Endpoint JSON para obtener agenda de repartos por rango de fechas"""
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    vista = request.GET.get('vista', 'diaria').strip()
+    fecha_seleccionada = request.GET.get('fecha', '').strip()
+    
+    from datetime import date, timedelta, datetime
+    from calendar import monthrange
+    
+    fecha_hoy = date.today()
+    
+    if fecha_seleccionada:
+        try:
+            fecha_base = datetime.strptime(fecha_seleccionada, '%Y-%m-%d').date()
+        except ValueError:
+            fecha_base = fecha_hoy
+    else:
+        fecha_base = fecha_hoy
+    
+    if vista == 'semanal':
+        dias_desde_lunes = fecha_base.weekday()
+        fecha_inicio = fecha_base - timedelta(days=dias_desde_lunes)
+        fecha_fin = fecha_inicio + timedelta(days=6)
+    elif vista == 'mensual':
+        primer_dia = fecha_base.replace(day=1)
+        ultimo_dia_num = monthrange(fecha_base.year, fecha_base.month)[1]
+        ultimo_dia = fecha_base.replace(day=ultimo_dia_num)
+        fecha_inicio = primer_dia
+        fecha_fin = ultimo_dia
+    else:  # diaria
+        fecha_inicio = fecha_base
+        fecha_fin = fecha_base
+    
+    # Obtener instalaciones (solo futuras o del día actual)
+    # Asegurar que la fecha_inicio sea al menos la fecha de hoy
+    fecha_inicio_efectiva = max(fecha_inicio, fecha_hoy)
+    
+    instalaciones = Instalacion.objects.filter(
+        fecha_instalacion__gte=fecha_inicio_efectiva,
+        fecha_instalacion__lte=fecha_fin
+    ).select_related(
+        'reserva__cliente__usuario', 'repartidor__usuario'
+    ).order_by('fecha_instalacion', 'hora_instalacion')
+    
+    # Obtener retiros (solo futuros o del día actual)
+    retiros = Retiro.objects.filter(
+        fecha_retiro__gte=fecha_inicio_efectiva,
+        fecha_retiro__lte=fecha_fin
+    ).select_related(
+        'reserva__cliente__usuario', 'repartidor__usuario'
+    ).order_by('fecha_retiro', 'hora_retiro')
+    
+    # Serializar instalaciones
+    instalaciones_data = []
+    for inst in instalaciones:
+        instalaciones_data.append({
+            'id': inst.id,
+            'fecha': inst.fecha_instalacion.strftime('%Y-%m-%d'),
+            'hora': inst.hora_instalacion.strftime('%H:%M'),
+            'cliente': inst.reserva.cliente.usuario.get_full_name(),
+            'direccion': inst.direccion_instalacion,
+            'repartidor': inst.repartidor.usuario.get_full_name() if inst.repartidor else None,
+            'estado': inst.estado_instalacion,
+        })
+    
+    # Serializar retiros
+    retiros_data = []
+    for ret in retiros:
+        retiros_data.append({
+            'id': ret.id,
+            'fecha': ret.fecha_retiro.strftime('%Y-%m-%d'),
+            'hora': ret.hora_retiro.strftime('%H:%M'),
+            'cliente': ret.reserva.cliente.usuario.get_full_name(),
+            'direccion': ret.reserva.direccion_evento,
+            'repartidor': ret.repartidor.usuario.get_full_name() if ret.repartidor else None,
+            'estado': ret.estado_retiro,
+        })
+    
+    return JsonResponse({
+        'vista': vista,
+        'fecha_base': fecha_base.strftime('%Y-%m-%d'),
+        'fecha_inicio': fecha_inicio.strftime('%Y-%m-%d'),
+        'fecha_fin': fecha_fin.strftime('%Y-%m-%d'),
+        'instalaciones': instalaciones_data,
+        'retiros': retiros_data,
+    })
+
+
+@login_required
+@require_http_methods(["POST"])
+def asignar_repartidor(request, tipo_reparto: str, reparto_id: int):
+    """Asignar un repartidor a una instalación o retiro"""
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    repartidor_id = request.POST.get('repartidor_id')
+    observaciones = request.POST.get('observaciones', '')
+    
+    if not repartidor_id:
+        return JsonResponse({'success': False, 'errors': ['Debe seleccionar un repartidor']}, status=400)
+    
+    try:
+        repartidor = Repartidor.objects.get(usuario_id=repartidor_id)
+    except Repartidor.DoesNotExist:
+        return JsonResponse({'success': False, 'errors': ['Repartidor no encontrado']}, status=404)
+    
+    try:
+        if tipo_reparto == 'instalacion':
+            instalacion = Instalacion.objects.get(id=reparto_id)
+            instalacion.repartidor = repartidor
+            if observaciones:
+                instalacion.observaciones_instalacion = observaciones
+            instalacion.save()
+            message = f'Repartidor {repartidor.usuario.get_full_name()} asignado a la instalación'
+        elif tipo_reparto == 'retiro':
+            retiro = Retiro.objects.get(id=reparto_id)
+            retiro.repartidor = repartidor
+            if observaciones:
+                retiro.observaciones_retiro = observaciones
+            retiro.save()
+            message = f'Repartidor {repartidor.usuario.get_full_name()} asignado al retiro'
+        else:
+            return JsonResponse({'success': False, 'errors': ['Tipo de reparto inválido']}, status=400)
+        
+        return JsonResponse({'success': True, 'message': message})
+    
+    except (Instalacion.DoesNotExist, Retiro.DoesNotExist):
+        return JsonResponse({'success': False, 'errors': ['Reparto no encontrado']}, status=404)
+
+
+# --------- Endpoints para Repartidores ---------
+
+@login_required
+@require_http_methods(["POST"])
+def cambiar_estado_repartidor(request):
+    """Cambiar el estado del repartidor actual"""
+    if request.user.tipo_usuario != 'repartidor':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    nuevo_estado = request.POST.get('nuevo_estado')
+    
+    if not nuevo_estado:
+        return JsonResponse({'success': False, 'errors': ['Debe seleccionar un estado']}, status=400)
+    
+    try:
+        repartidor = request.user.repartidor
+        # Validar estado
+        estados_validos = [choice[0] for choice in repartidor._meta.get_field('estado').choices]
+        if nuevo_estado not in estados_validos:
+            return JsonResponse({'success': False, 'errors': ['Estado inválido']}, status=400)
+        
+        repartidor.estado = nuevo_estado
+        repartidor.save()
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'Estado actualizado a: {repartidor.get_estado_display()}'
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'errors': [str(e)]}, status=400)
+
+
+@login_required
+@require_http_methods(["GET"])
+def detalle_instalacion_json(request, instalacion_id: int):
+    """Obtener detalles de una instalación"""
+    if request.user.tipo_usuario not in ['administrador', 'repartidor']:
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    try:
+        instalacion = Instalacion.objects.select_related(
+            'reserva__cliente__usuario',
+            'repartidor__usuario'
+        ).get(id=instalacion_id)
+        
+        # Si es repartidor, solo puede ver sus propias instalaciones
+        if request.user.tipo_usuario == 'repartidor' and instalacion.repartidor != request.user.repartidor:
+            return JsonResponse({'error': 'No autorizado'}, status=403)
+        
+        # Obtener juegos de la reserva
+        juegos = []
+        precio_juegos_total = 0.0
+        for detalle in instalacion.reserva.detalles.all():
+            subtotal_juego = float(detalle.cantidad * detalle.precio_unitario)
+            precio_juegos_total += subtotal_juego
+            
+            # Intentar obtener URL de imagen del juego
+            imagen_url = None
+            if detalle.juego.foto:
+                try:
+                    imagen_url = request.build_absolute_uri(detalle.juego.foto.url)
+                except:
+                    imagen_url = None
+            
+            juegos.append({
+                'nombre': detalle.juego.nombre,
+                'cantidad': detalle.cantidad,
+                'precio': str(detalle.precio_unitario),
+                'imagen_url': imagen_url
+            })
+        
+        # Calcular precio de distancia (total - precio juegos)
+        total_reserva = float(instalacion.reserva.total_reserva)
+        precio_distancia = total_reserva - precio_juegos_total
+        kilometros = None
+        
+        # Si hay precio de distancia, calcular kilómetros ($1.000 por km)
+        if precio_distancia > 0:
+            kilometros = int(precio_distancia / 1000)
+        
+        data = {
+            'id': instalacion.id,
+            'fecha': instalacion.fecha_instalacion.strftime('%d/%m/%Y'),
+            'hora': instalacion.hora_instalacion.strftime('%H:%M'),
+            'direccion': instalacion.direccion_instalacion,
+            'telefono': instalacion.telefono_cliente,
+            'estado': instalacion.estado_instalacion,
+            'estado_display': instalacion.get_estado_instalacion_display(),
+            'observaciones': instalacion.observaciones_instalacion or '',
+            'cliente': {
+                'nombre': instalacion.reserva.cliente.usuario.get_full_name(),
+                'email': instalacion.reserva.cliente.usuario.email,
+                'telefono': instalacion.reserva.cliente.usuario.telefono or instalacion.telefono_cliente,
+            },
+            'repartidor': {
+                'nombre': instalacion.repartidor.usuario.get_full_name() if instalacion.repartidor else 'Sin asignar'
+            },
+            'juegos': juegos,
+            'precio_juegos': str(int(precio_juegos_total)),
+            'precio_distancia': str(int(precio_distancia)) if precio_distancia > 0 else '0',
+            'kilometros': kilometros,
+            'total': str(int(total_reserva)),
+            'mapa_url': None  # Puede agregarse en el futuro si se guarda en el modelo
+        }
+        
+        return JsonResponse(data)
+    except Instalacion.DoesNotExist:
+        return JsonResponse({'error': 'Instalación no encontrada'}, status=404)
+
+
+@login_required
+@require_http_methods(["GET"])
+def detalle_retiro_json(request, retiro_id: int):
+    """Obtener detalles de un retiro"""
+    if request.user.tipo_usuario not in ['administrador', 'repartidor']:
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    try:
+        retiro = Retiro.objects.select_related(
+            'reserva__cliente__usuario',
+            'repartidor__usuario'
+        ).get(id=retiro_id)
+        
+        # Si es repartidor, solo puede ver sus propios retiros
+        if request.user.tipo_usuario == 'repartidor' and retiro.repartidor != request.user.repartidor:
+            return JsonResponse({'error': 'No autorizado'}, status=403)
+        
+        data = {
+            'id': retiro.id,
+            'fecha': retiro.fecha_retiro.strftime('%d/%m/%Y'),
+            'hora': retiro.hora_retiro.strftime('%H:%M'),
+            'direccion': retiro.reserva.direccion_evento,
+            'estado': retiro.estado_retiro,
+            'estado_display': retiro.get_estado_retiro_display(),
+            'observaciones': retiro.observaciones_retiro or '',
+            'cliente': {
+                'nombre': retiro.reserva.cliente.usuario.get_full_name(),
+                'email': retiro.reserva.cliente.usuario.email,
+                'telefono': retiro.reserva.cliente.usuario.telefono or '-',
+            },
+            'repartidor': {
+                'nombre': retiro.repartidor.usuario.get_full_name() if retiro.repartidor else 'Sin asignar'
+            }
+        }
+        
+        return JsonResponse(data)
+    except Retiro.DoesNotExist:
+        return JsonResponse({'error': 'Retiro no encontrado'}, status=404)
+
 # --------- CRUD de Juegos Inflables (solo administrador) ---------
 
 @login_required
@@ -1167,7 +1844,34 @@ def juegos_list(request):
     categoria_filter = request.GET.get('categoria', '').strip()
     estado_filter = request.GET.get('estado', '').strip()
     
-    base_qs = Juego.objects.all().order_by('nombre')
+    # Parámetros de ordenamiento
+    order_by = request.GET.get('order_by', 'nombre').strip()
+    direction = request.GET.get('direction', 'asc').strip()
+    
+    # Campos válidos para ordenar
+    valid_order_fields = {
+        'id': 'id',
+        'nombre': 'nombre',
+        'categoria': 'categoria',
+        'capacidad_personas': 'capacidad_personas',
+        'precio_base': 'precio_base',
+        'estado': 'estado',
+    }
+    
+    # Validar campo de ordenamiento
+    if order_by not in valid_order_fields:
+        order_by = 'nombre'
+    
+    # Validar dirección
+    if direction not in ['asc', 'desc']:
+        direction = 'asc'
+    
+    # Aplicar ordenamiento
+    order_field = valid_order_fields[order_by]
+    if direction == 'desc':
+        order_field = '-' + order_field
+    
+    base_qs = Juego.objects.all().order_by(order_field)
     
     if query:
         base_qs = base_qs.filter(
@@ -1187,6 +1891,8 @@ def juegos_list(request):
         'query': query,
         'categoria_filter': categoria_filter,
         'estado_filter': estado_filter,
+        'order_by': order_by,
+        'direction': direction,
         'categoria_choices': Juego.CATEGORIA_CHOICES,
         'estado_choices': Juego.ESTADO_CHOICES,
     })
@@ -1203,16 +1909,24 @@ def juego_detail_json(request, juego_id: int):
     
     try:
         juego = Juego.objects.get(id=juego_id)
+        # Obtener URL completa de la imagen si existe
+        foto_url = request.build_absolute_uri(juego.foto.url) if juego.foto else ''
+        
         return JsonResponse({
             'id': juego.id,
             'nombre': juego.nombre,
             'descripcion': juego.descripcion or '',
             'categoria': juego.categoria,
-            'dimensiones': juego.dimensiones,
+            'edad_minima': juego.edad_minima,
+            'edad_maxima': juego.edad_maxima,
+            'dimension_largo': float(juego.dimension_largo),
+            'dimension_ancho': float(juego.dimension_ancho),
+            'dimension_alto': float(juego.dimension_alto),
+            'dimensiones': juego.dimensiones,  # Para compatibilidad
             'capacidad_personas': juego.capacidad_personas,
             'peso_maximo': juego.peso_maximo,
             'precio_base': int(juego.precio_base),
-            'foto': juego.foto or '',
+            'foto': foto_url,
             'estado': juego.estado,
             'categoria_choices': Juego.CATEGORIA_CHOICES,
             'estado_choices': Juego.ESTADO_CHOICES,
@@ -1220,6 +1934,34 @@ def juego_detail_json(request, juego_id: int):
     except Juego.DoesNotExist:
         return JsonResponse({'error': 'Juego no encontrado'}, status=404)
 
+
+
+# Función auxiliar para obtener límites según categoría
+def obtener_limites_categoria(categoria):
+    """
+    Retorna los límites esperados para cada categoría de juego
+    """
+    limites = {
+        'Pequeño': {
+            'edad_minima': 3,
+            'edad_maxima': 8,
+            'capacidad_maxima': 10,
+            'peso_maximo': 300
+        },
+        'Mediano': {
+            'edad_minima': 4,
+            'edad_maxima': 12,
+            'capacidad_maxima': 20,
+            'peso_maximo': 400
+        },
+        'Grande': {
+            'edad_minima': 4,
+            'edad_maxima': 12,
+            'capacidad_maxima': 30,
+            'peso_maximo': 600
+        }
+    }
+    return limites.get(categoria, {})
 
 @login_required
 @require_http_methods(["POST"])
@@ -1233,14 +1975,25 @@ def juego_create_json(request):
     nombre = request.POST.get('nombre', '').strip()
     descripcion = request.POST.get('descripcion', '').strip()
     categoria = request.POST.get('categoria', '').strip()
-    dimensiones = request.POST.get('dimensiones', '').strip()
+    edad_minima = request.POST.get('edad_minima', '').strip()
+    edad_maxima = request.POST.get('edad_maxima', '').strip()
+    dimension_largo = request.POST.get('dimension_largo', '').strip()
+    dimension_ancho = request.POST.get('dimension_ancho', '').strip()
+    dimension_alto = request.POST.get('dimension_alto', '').strip()
     capacidad_personas = request.POST.get('capacidad_personas', '').strip()
     peso_maximo = request.POST.get('peso_maximo', '').strip()
     precio_base = request.POST.get('precio_base', '').strip()
-    foto = request.POST.get('foto', '').strip()
-    estado = request.POST.get('estado', 'disponible').strip()
+    foto = request.FILES.get('foto')  # Cambio: Ahora recibimos un archivo
+    estado = request.POST.get('estado', 'habilitado').strip()
+    peso_excedido_confirmado = request.POST.get('peso_excedido_confirmado', 'false').strip().lower() == 'true'
 
     errors = []
+    capacidad = None
+    peso = None
+    precio = None
+    largo = None
+    ancho = None
+    alto = None
     
     # Validaciones
     if not nombre:
@@ -1251,37 +2004,131 @@ def juego_create_json(request):
     if len(descripcion) > 1000:
         errors.append('La descripción no puede exceder 1000 caracteres')
     
-    if categoria not in [choice[0] for choice in Juego.CATEGORIA_CHOICES]:
-        errors.append('Categoría inválida')
+    if not categoria or categoria not in [choice[0] for choice in Juego.CATEGORIA_CHOICES]:
+        errors.append('Categoría inválida o no seleccionada')
     
-    if not dimensiones:
-        errors.append('Las dimensiones son obligatorias')
-    elif len(dimensiones) > 50:
-        errors.append('Las dimensiones no pueden exceder 50 caracteres')
+    # Obtener límites según categoría
+    limites = obtener_limites_categoria(categoria) if categoria else {}
     
-    try:
-        capacidad = int(capacidad_personas)
-        if capacidad <= 0:
-            errors.append('La capacidad debe ser mayor a 0')
-    except (ValueError, TypeError):
-        errors.append('La capacidad debe ser un número válido')
+    # Validar edades
+    edad_min = None
+    edad_max = None
+    if not edad_minima:
+        if limites:
+            edad_min = limites.get('edad_minima', 3)
+        else:
+            errors.append('La edad mínima es obligatoria')
+    else:
+        try:
+            edad_min = int(edad_minima)
+            if edad_min < 1:
+                errors.append('La edad mínima debe ser mayor a 0')
+            elif limites and edad_min != limites.get('edad_minima'):
+                errors.append(f'Para la categoría {categoria}, la edad mínima debe ser {limites.get("edad_minima")} años')
+        except (ValueError, TypeError):
+            errors.append('La edad mínima debe ser un número válido')
     
-    try:
-        peso = int(peso_maximo)
-        if peso <= 0:
-            errors.append('El peso máximo debe ser mayor a 0')
-    except (ValueError, TypeError):
-        errors.append('El peso máximo debe ser un número válido')
+    if not edad_maxima:
+        if limites:
+            edad_max = limites.get('edad_maxima', 12)
+        else:
+            errors.append('La edad máxima es obligatoria')
+    else:
+        try:
+            edad_max = int(edad_maxima)
+            if edad_max < 1:
+                errors.append('La edad máxima debe ser mayor a 0')
+            elif edad_min and edad_max < edad_min:
+                errors.append('La edad máxima debe ser mayor o igual a la edad mínima')
+            elif limites and edad_max != limites.get('edad_maxima'):
+                errors.append(f'Para la categoría {categoria}, la edad máxima debe ser {limites.get("edad_maxima")} años')
+        except (ValueError, TypeError):
+            errors.append('La edad máxima debe ser un número válido')
     
-    try:
-        precio = int(precio_base)
-        if precio < 1:
-            errors.append('El precio base debe ser un número entero mayor a 0')
-    except (ValueError, TypeError):
-        errors.append('El precio base debe ser un número entero válido')
+    # Validar dimensiones
+    if not dimension_largo:
+        errors.append('El largo es obligatorio')
+    else:
+        try:
+            largo = float(dimension_largo)
+            if largo <= 0:
+                errors.append('El largo debe ser mayor a 0')
+        except (ValueError, TypeError):
+            errors.append('El largo debe ser un número válido')
     
-    if len(foto) > 200:
-        errors.append('La URL de la foto no puede exceder 200 caracteres')
+    if not dimension_ancho:
+        errors.append('El ancho es obligatorio')
+    else:
+        try:
+            ancho = float(dimension_ancho)
+            if ancho <= 0:
+                errors.append('El ancho debe ser mayor a 0')
+        except (ValueError, TypeError):
+            errors.append('El ancho debe ser un número válido')
+    
+    if not dimension_alto:
+        errors.append('El alto es obligatorio')
+    else:
+        try:
+            alto = float(dimension_alto)
+            if alto <= 0:
+                errors.append('El alto debe ser mayor a 0')
+        except (ValueError, TypeError):
+            errors.append('El alto debe ser un número válido')
+    
+    if not capacidad_personas:
+        errors.append('La capacidad de personas es obligatoria')
+    else:
+        try:
+            capacidad = int(capacidad_personas)
+            if capacidad <= 0:
+                errors.append('La capacidad debe ser mayor a 0')
+            elif capacidad > 100:
+                errors.append('La capacidad de personas no puede exceder 100')
+            elif limites and capacidad != limites.get('capacidad_maxima'):
+                errors.append(f'Para la categoría {categoria}, la capacidad máxima debe ser {limites.get("capacidad_maxima")} personas')
+        except (ValueError, TypeError):
+            errors.append('La capacidad debe ser un número válido')
+    
+    peso_excedido = False
+    if not peso_maximo:
+        errors.append('El peso máximo es obligatorio')
+    else:
+        try:
+            peso = int(peso_maximo)
+            if peso <= 0:
+                errors.append('El peso máximo debe ser mayor a 0')
+            elif limites:
+                peso_max_categoria = limites.get('peso_maximo', 0)
+                if peso > peso_max_categoria:
+                    peso_excedido = True
+                    if not peso_excedido_confirmado:
+                        errors.append(f'El peso máximo ({peso} kg) excede el límite de la categoría {categoria} ({peso_max_categoria} kg). Debe confirmar que está seguro de este valor.')
+        except (ValueError, TypeError):
+            errors.append('El peso máximo debe ser un número válido')
+    
+    if not precio_base:
+        errors.append('El precio base es obligatorio')
+    else:
+        try:
+            precio = int(precio_base)
+            if precio < 1:
+                errors.append('El precio base debe ser un número entero mayor a 0')
+            elif precio > 1000000:
+                errors.append('El precio base no puede exceder 1.000.000 pesos')
+        except (ValueError, TypeError):
+            errors.append('El precio base debe ser un número entero válido')
+    
+    # Validar foto si se proporciona
+    if foto:
+        # Validar tamaño (máximo 5MB)
+        if foto.size > 5 * 1024 * 1024:
+            errors.append('La imagen no puede exceder 5MB')
+        
+        # Validar tipo de archivo
+        allowed_types = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp']
+        if foto.content_type not in allowed_types:
+            errors.append('Formato de imagen no válido. Use JPG, PNG, GIF o WEBP')
     
     if estado not in [choice[0] for choice in Juego.ESTADO_CHOICES]:
         errors.append('Estado inválido')
@@ -1293,16 +2140,24 @@ def juego_create_json(request):
         return JsonResponse({'success': False, 'errors': errors}, status=400)
 
     try:
+        from django.utils import timezone
         juego = Juego.objects.create(
             nombre=nombre,
             descripcion=descripcion or None,
             categoria=categoria,
-            dimensiones=dimensiones,
+            edad_minima=edad_min,
+            edad_maxima=edad_max,
+            dimension_largo=largo,
+            dimension_ancho=ancho,
+            dimension_alto=alto,
             capacidad_personas=capacidad,
             peso_maximo=peso,
             precio_base=precio,
-            foto=foto or None,
+            foto=foto if foto else None,
             estado=estado,
+            peso_excedido=peso_excedido,
+            peso_excedido_por=request.user if peso_excedido else None,
+            peso_excedido_fecha=timezone.now() if peso_excedido else None,
         )
         return JsonResponse({
             'success': True, 
@@ -1318,6 +2173,647 @@ def juego_create_json(request):
 
 @login_required
 @require_http_methods(["POST"])
+def cambiar_estado_reparto(request, tipo_reparto: str, reparto_id: int):
+    """Cambiar el estado de una instalación o retiro"""
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    nuevo_estado = request.POST.get('nuevo_estado')
+    observaciones = request.POST.get('observaciones', '')
+    
+    if not nuevo_estado:
+        return JsonResponse({'success': False, 'errors': ['Debe seleccionar un estado']}, status=400)
+    
+    try:
+        if tipo_reparto == 'instalacion':
+            instalacion = Instalacion.objects.get(id=reparto_id)
+            # Validar estado
+            estados_validos = [choice[0] for choice in instalacion._meta.get_field('estado_instalacion').choices]
+            if nuevo_estado not in estados_validos:
+                return JsonResponse({'success': False, 'errors': ['Estado inválido']}, status=400)
+            
+            # Validar que solo se puede marcar como "realizado" el día que está agendada
+            if nuevo_estado == 'realizada':
+                from datetime import date
+                fecha_hoy = date.today()
+                if instalacion.fecha_instalacion != fecha_hoy:
+                    return JsonResponse({
+                        'success': False, 
+                        'errors': [f'Solo se puede marcar como realizado el día agendado ({instalacion.fecha_instalacion.strftime("%d/%m/%Y")}). Hoy es {fecha_hoy.strftime("%d/%m/%Y")}']
+                    }, status=400)
+            
+            instalacion.estado_instalacion = nuevo_estado
+            if observaciones:
+                obs_actual = instalacion.observaciones_instalacion or ''
+                instalacion.observaciones_instalacion = f"{obs_actual}\n[{timezone.now().strftime('%d/%m/%Y %H:%M')}] {observaciones}".strip()
+            instalacion.save()
+            message = 'Estado de instalación actualizado correctamente'
+            
+        elif tipo_reparto == 'retiro':
+            retiro = Retiro.objects.get(id=reparto_id)
+            # Validar estado
+            estados_validos = [choice[0] for choice in retiro._meta.get_field('estado_retiro').choices]
+            if nuevo_estado not in estados_validos:
+                return JsonResponse({'success': False, 'errors': ['Estado inválido']}, status=400)
+            
+            # Validar que solo se puede marcar como "realizado" el día que está agendado
+            if nuevo_estado == 'realizado':
+                from datetime import date
+                fecha_hoy = date.today()
+                if retiro.fecha_retiro != fecha_hoy:
+                    return JsonResponse({
+                        'success': False, 
+                        'errors': [f'Solo se puede marcar como realizado el día agendado ({retiro.fecha_retiro.strftime("%d/%m/%Y")}). Hoy es {fecha_hoy.strftime("%d/%m/%Y")}']
+                    }, status=400)
+            
+            retiro.estado_retiro = nuevo_estado
+            if observaciones:
+                obs_actual = retiro.observaciones_retiro or ''
+                retiro.observaciones_retiro = f"{obs_actual}\n[{timezone.now().strftime('%d/%m/%Y %H:%M')}] {observaciones}".strip()
+            retiro.save()
+            message = 'Estado de retiro actualizado correctamente'
+        else:
+            return JsonResponse({'success': False, 'errors': ['Tipo de reparto inválido']}, status=400)
+        
+        return JsonResponse({'success': True, 'message': message})
+    
+    except (Instalacion.DoesNotExist, Retiro.DoesNotExist):
+        return JsonResponse({'success': False, 'errors': ['Reparto no encontrado']}, status=404)
+
+
+# --------- Endpoints para Repartidores ---------
+
+@login_required
+@require_http_methods(["POST"])
+def cambiar_estado_repartidor(request):
+    """Cambiar el estado del repartidor actual"""
+    if request.user.tipo_usuario != 'repartidor':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    nuevo_estado = request.POST.get('nuevo_estado')
+    
+    if not nuevo_estado:
+        return JsonResponse({'success': False, 'errors': ['Debe seleccionar un estado']}, status=400)
+    
+    try:
+        repartidor = request.user.repartidor
+        # Validar estado
+        estados_validos = [choice[0] for choice in repartidor._meta.get_field('estado').choices]
+        if nuevo_estado not in estados_validos:
+            return JsonResponse({'success': False, 'errors': ['Estado inválido']}, status=400)
+        
+        repartidor.estado = nuevo_estado
+        repartidor.save()
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'Estado actualizado a: {repartidor.get_estado_display()}'
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'errors': [str(e)]}, status=400)
+
+
+@login_required
+@require_http_methods(["GET"])
+def detalle_instalacion_json(request, instalacion_id: int):
+    """Obtener detalles de una instalación"""
+    if request.user.tipo_usuario not in ['administrador', 'repartidor']:
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    try:
+        instalacion = Instalacion.objects.select_related(
+            'reserva__cliente__usuario',
+            'repartidor__usuario'
+        ).get(id=instalacion_id)
+        
+        # Si es repartidor, solo puede ver sus propias instalaciones
+        if request.user.tipo_usuario == 'repartidor' and instalacion.repartidor != request.user.repartidor:
+            return JsonResponse({'error': 'No autorizado'}, status=403)
+        
+        # Obtener juegos de la reserva
+        juegos = []
+        precio_juegos_total = 0.0
+        for detalle in instalacion.reserva.detalles.all():
+            subtotal_juego = float(detalle.cantidad * detalle.precio_unitario)
+            precio_juegos_total += subtotal_juego
+            
+            # Intentar obtener URL de imagen del juego
+            imagen_url = None
+            if detalle.juego.foto:
+                try:
+                    imagen_url = request.build_absolute_uri(detalle.juego.foto.url)
+                except:
+                    imagen_url = None
+            
+            juegos.append({
+                'nombre': detalle.juego.nombre,
+                'cantidad': detalle.cantidad,
+                'precio': str(detalle.precio_unitario),
+                'imagen_url': imagen_url
+            })
+        
+        # Calcular precio de distancia (total - precio juegos)
+        total_reserva = float(instalacion.reserva.total_reserva)
+        precio_distancia = total_reserva - precio_juegos_total
+        kilometros = None
+        
+        # Si hay precio de distancia, calcular kilómetros ($1.000 por km)
+        if precio_distancia > 0:
+            kilometros = int(precio_distancia / 1000)
+        
+        data = {
+            'id': instalacion.id,
+            'fecha': instalacion.fecha_instalacion.strftime('%d/%m/%Y'),
+            'hora': instalacion.hora_instalacion.strftime('%H:%M'),
+            'direccion': instalacion.direccion_instalacion,
+            'telefono': instalacion.telefono_cliente,
+            'estado': instalacion.estado_instalacion,
+            'estado_display': instalacion.get_estado_instalacion_display(),
+            'observaciones': instalacion.observaciones_instalacion or '',
+            'cliente': {
+                'nombre': instalacion.reserva.cliente.usuario.get_full_name(),
+                'email': instalacion.reserva.cliente.usuario.email,
+                'telefono': instalacion.reserva.cliente.usuario.telefono or instalacion.telefono_cliente,
+            },
+            'repartidor': {
+                'nombre': instalacion.repartidor.usuario.get_full_name() if instalacion.repartidor else 'Sin asignar'
+            },
+            'juegos': juegos,
+            'precio_juegos': str(int(precio_juegos_total)),
+            'precio_distancia': str(int(precio_distancia)) if precio_distancia > 0 else '0',
+            'kilometros': kilometros,
+            'total': str(int(total_reserva)),
+            'mapa_url': None  # Puede agregarse en el futuro si se guarda en el modelo
+        }
+        
+        return JsonResponse(data)
+    except Instalacion.DoesNotExist:
+        return JsonResponse({'error': 'Instalación no encontrada'}, status=404)
+
+
+@login_required
+@require_http_methods(["GET"])
+def detalle_retiro_json(request, retiro_id: int):
+    """Obtener detalles de un retiro"""
+    if request.user.tipo_usuario not in ['administrador', 'repartidor']:
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    try:
+        retiro = Retiro.objects.select_related(
+            'reserva__cliente__usuario',
+            'repartidor__usuario'
+        ).get(id=retiro_id)
+        
+        # Si es repartidor, solo puede ver sus propios retiros
+        if request.user.tipo_usuario == 'repartidor' and retiro.repartidor != request.user.repartidor:
+            return JsonResponse({'error': 'No autorizado'}, status=403)
+        
+        data = {
+            'id': retiro.id,
+            'fecha': retiro.fecha_retiro.strftime('%d/%m/%Y'),
+            'hora': retiro.hora_retiro.strftime('%H:%M'),
+            'direccion': retiro.reserva.direccion_evento,
+            'estado': retiro.estado_retiro,
+            'estado_display': retiro.get_estado_retiro_display(),
+            'observaciones': retiro.observaciones_retiro or '',
+            'cliente': {
+                'nombre': retiro.reserva.cliente.usuario.get_full_name(),
+                'email': retiro.reserva.cliente.usuario.email,
+                'telefono': retiro.reserva.cliente.usuario.telefono or '-',
+            },
+            'repartidor': {
+                'nombre': retiro.repartidor.usuario.get_full_name() if retiro.repartidor else 'Sin asignar'
+            }
+        }
+        
+        return JsonResponse(data)
+    except Retiro.DoesNotExist:
+        return JsonResponse({'error': 'Retiro no encontrado'}, status=404)
+
+
+@login_required
+@require_http_methods(["POST"])
+def actualizar_estado_reparto_repartidor(request, tipo_reparto: str, reparto_id: int):
+    """Actualizar estado de reparto por el repartidor"""
+    if request.user.tipo_usuario != 'repartidor':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    nuevo_estado = request.POST.get('nuevo_estado')
+    observaciones = request.POST.get('observaciones', '')
+    
+    if not nuevo_estado:
+        return JsonResponse({'success': False, 'errors': ['Debe seleccionar un estado']}, status=400)
+    
+    try:
+        if tipo_reparto == 'instalacion':
+            instalacion = Instalacion.objects.get(id=reparto_id)
+            
+            # Verificar que el repartidor sea el asignado
+            if instalacion.repartidor != request.user.repartidor:
+                return JsonResponse({'success': False, 'errors': ['No autorizado para actualizar esta instalación']}, status=403)
+            
+            # Validar estado
+            estados_validos = [choice[0] for choice in instalacion._meta.get_field('estado_instalacion').choices]
+            if nuevo_estado not in estados_validos:
+                return JsonResponse({'success': False, 'errors': ['Estado inválido']}, status=400)
+            
+            instalacion.estado_instalacion = nuevo_estado
+            if observaciones:
+                obs_actual = instalacion.observaciones_instalacion or ''
+                instalacion.observaciones_instalacion = f"{obs_actual}\n[{timezone.now().strftime('%d/%m/%Y %H:%M')}] {observaciones}".strip()
+            instalacion.save()
+            message = 'Estado de instalación actualizado'
+            
+        elif tipo_reparto == 'retiro':
+            retiro = Retiro.objects.get(id=reparto_id)
+            
+            # Verificar que el repartidor sea el asignado
+            if retiro.repartidor != request.user.repartidor:
+                return JsonResponse({'success': False, 'errors': ['No autorizado para actualizar este retiro']}, status=403)
+            
+            # Validar estado
+            estados_validos = [choice[0] for choice in retiro._meta.get_field('estado_retiro').choices]
+            if nuevo_estado not in estados_validos:
+                return JsonResponse({'success': False, 'errors': ['Estado inválido']}, status=400)
+            
+            retiro.estado_retiro = nuevo_estado
+            if observaciones:
+                obs_actual = retiro.observaciones_retiro or ''
+                retiro.observaciones_retiro = f"{obs_actual}\n[{timezone.now().strftime('%d/%m/%Y %H:%M')}] {observaciones}".strip()
+            retiro.save()
+            message = 'Estado de retiro actualizado'
+        else:
+            return JsonResponse({'success': False, 'errors': ['Tipo de reparto inválido']}, status=400)
+        
+        return JsonResponse({'success': True, 'message': message})
+    
+    except (Instalacion.DoesNotExist, Retiro.DoesNotExist):
+        return JsonResponse({'success': False, 'errors': ['Reparto no encontrado']}, status=404)
+
+
+@login_required
+@require_http_methods(["POST"])
+def marcar_reparto_realizado(request, tipo_reparto: str, reparto_id: int):
+    """Marcar reparto como realizado con información de pago (solo repartidores)"""
+    if request.user.tipo_usuario != 'repartidor':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    observaciones = request.POST.get('observaciones', '')
+    
+    try:
+        if tipo_reparto == 'instalacion':
+            instalacion = Instalacion.objects.get(id=reparto_id)
+            
+            # Verificar que el repartidor sea el asignado
+            if instalacion.repartidor != request.user.repartidor:
+                return JsonResponse({'success': False, 'errors': ['No autorizado para actualizar esta instalación']}, status=403)
+            
+            # Validar que solo se puede marcar como realizado el día que está agendada
+            from datetime import date
+            fecha_hoy = date.today()
+            if instalacion.fecha_instalacion != fecha_hoy:
+                return JsonResponse({
+                    'success': False, 
+                    'errors': [f'Solo se puede marcar como realizado el día agendado ({instalacion.fecha_instalacion.strftime("%d/%m/%Y")}). Hoy es {fecha_hoy.strftime("%d/%m/%Y")}']
+                }, status=400)
+            
+            # Validar campos de pago (requeridos para instalación)
+            metodo_pago = request.POST.get('metodo_pago')
+            comprobante_pago = request.FILES.get('comprobante_pago')
+            hora_retiro = request.POST.get('hora_retiro')
+            
+            if not metodo_pago:
+                return JsonResponse({'success': False, 'errors': ['Debe seleccionar un método de pago']}, status=400)
+            
+            # Solo requerir comprobante si el método de pago es transferencia
+            if metodo_pago == 'transferencia' and not comprobante_pago:
+                return JsonResponse({'success': False, 'errors': ['Debe adjuntar el comprobante de transferencia']}, status=400)
+            
+            # Actualizar instalación
+            instalacion.estado_instalacion = 'realizada'
+            instalacion.metodo_pago = metodo_pago
+            if comprobante_pago:
+                instalacion.comprobante_pago = comprobante_pago
+            
+            # Actualizar hora de retiro si se proporcionó
+            if hora_retiro:
+                try:
+                    # Buscar el retiro asociado a esta reserva
+                    retiro = Retiro.objects.filter(reserva=instalacion.reserva).first()
+                    if retiro:
+                        from datetime import datetime
+                        hora_obj = datetime.strptime(hora_retiro, '%H:%M').time()
+                        retiro.hora_retiro = hora_obj
+                        retiro.save()
+                        obs_adicional = f"\nHora de retiro actualizada: {hora_retiro}"
+                    else:
+                        obs_adicional = f"\nHora de retiro solicitada: {hora_retiro} (retiro no encontrado)"
+                except Exception as e:
+                    obs_adicional = f"\nError al actualizar hora de retiro: {str(e)}"
+            else:
+                obs_adicional = ""
+            
+            if observaciones:
+                obs_actual = instalacion.observaciones_instalacion or ''
+                instalacion.observaciones_instalacion = f"{obs_actual}\n[{timezone.now().strftime('%d/%m/%Y %H:%M')}] Realizado por {request.user.get_full_name()}\nMétodo de pago: {instalacion.get_metodo_pago_display()}\n{observaciones}{obs_adicional}".strip()
+            else:
+                obs_actual = instalacion.observaciones_instalacion or ''
+                instalacion.observaciones_instalacion = f"{obs_actual}\n[{timezone.now().strftime('%d/%m/%Y %H:%M')}] Realizado por {request.user.get_full_name()}\nMétodo de pago: {instalacion.get_metodo_pago_display()}{obs_adicional}".strip()
+            
+            instalacion.save()
+            message = 'Instalación marcada como realizada'
+            if hora_retiro:
+                message += f'. Hora de retiro actualizada: {hora_retiro}'
+            
+        elif tipo_reparto == 'retiro':
+            retiro = Retiro.objects.get(id=reparto_id)
+            
+            # Verificar que el repartidor sea el asignado
+            if retiro.repartidor != request.user.repartidor:
+                return JsonResponse({'success': False, 'errors': ['No autorizado para actualizar este retiro']}, status=403)
+            
+            # Validar que solo se puede marcar como realizado el día que está agendado
+            from datetime import date
+            fecha_hoy = date.today()
+            if retiro.fecha_retiro != fecha_hoy:
+                return JsonResponse({
+                    'success': False, 
+                    'errors': [f'Solo se puede marcar como realizado el día agendado ({retiro.fecha_retiro.strftime("%d/%m/%Y")}). Hoy es {fecha_hoy.strftime("%d/%m/%Y")}']
+                }, status=400)
+            
+            # Actualizar retiro
+            retiro.estado_retiro = 'realizado'
+            
+            if observaciones:
+                obs_actual = retiro.observaciones_retiro or ''
+                retiro.observaciones_retiro = f"{obs_actual}\n[{timezone.now().strftime('%d/%m/%Y %H:%M')}] Realizado por {request.user.get_full_name()}\n{observaciones}".strip()
+            else:
+                obs_actual = retiro.observaciones_retiro or ''
+                retiro.observaciones_retiro = f"{obs_actual}\n[{timezone.now().strftime('%d/%m/%Y %H:%M')}] Realizado por {request.user.get_full_name()}".strip()
+            
+            retiro.save()
+            message = 'Retiro marcado como realizado'
+        else:
+            return JsonResponse({'success': False, 'errors': ['Tipo de reparto inválido']}, status=400)
+        
+        return JsonResponse({'success': True, 'message': message})
+    
+    except (Instalacion.DoesNotExist, Retiro.DoesNotExist):
+        return JsonResponse({'success': False, 'errors': ['Reparto no encontrado']}, status=404)
+
+
+@login_required
+@require_http_methods(["POST"])
+def registrar_incidente(request, tipo_reparto: str, reparto_id: int):
+    """Registrar un incidente en una instalación o retiro"""
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    tipo_incidente = request.POST.get('tipo_incidente')
+    descripcion = request.POST.get('descripcion', '').strip()
+    solucion = request.POST.get('solucion', '').strip()
+    
+    if not tipo_incidente or not descripcion:
+        return JsonResponse({'success': False, 'errors': ['Complete todos los campos obligatorios']}, status=400)
+    
+    # Formatear el incidente
+    timestamp = timezone.now().strftime('%d/%m/%Y %H:%M')
+    incidente_texto = f"\n--- INCIDENTE [{timestamp}] ---\nTipo: {tipo_incidente}\nDescripción: {descripcion}"
+    if solucion:
+        incidente_texto += f"\nSolución: {solucion}"
+    incidente_texto += "\n"
+    
+    try:
+        if tipo_reparto == 'instalacion':
+            instalacion = Instalacion.objects.get(id=reparto_id)
+            obs_actual = instalacion.observaciones_instalacion or ''
+            instalacion.observaciones_instalacion = (obs_actual + incidente_texto).strip()
+            instalacion.save()
+            message = 'Incidente registrado en la instalación'
+            
+        elif tipo_reparto == 'retiro':
+            retiro = Retiro.objects.get(id=reparto_id)
+            obs_actual = retiro.observaciones_retiro or ''
+            retiro.observaciones_retiro = (obs_actual + incidente_texto).strip()
+            retiro.save()
+            message = 'Incidente registrado en el retiro'
+        else:
+            return JsonResponse({'success': False, 'errors': ['Tipo de reparto inválido']}, status=400)
+        
+        return JsonResponse({'success': True, 'message': message})
+    
+    except (Instalacion.DoesNotExist, Retiro.DoesNotExist):
+        return JsonResponse({'success': False, 'errors': ['Reparto no encontrado']}, status=404)
+
+
+# --------- Endpoints para Repartidores ---------
+
+@login_required
+@require_http_methods(["POST"])
+def cambiar_estado_repartidor(request):
+    """Cambiar el estado del repartidor actual"""
+    if request.user.tipo_usuario != 'repartidor':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    nuevo_estado = request.POST.get('nuevo_estado')
+    
+    if not nuevo_estado:
+        return JsonResponse({'success': False, 'errors': ['Debe seleccionar un estado']}, status=400)
+    
+    try:
+        repartidor = request.user.repartidor
+        # Validar estado
+        estados_validos = [choice[0] for choice in repartidor._meta.get_field('estado').choices]
+        if nuevo_estado not in estados_validos:
+            return JsonResponse({'success': False, 'errors': ['Estado inválido']}, status=400)
+        
+        repartidor.estado = nuevo_estado
+        repartidor.save()
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'Estado actualizado a: {repartidor.get_estado_display()}'
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'errors': [str(e)]}, status=400)
+
+
+@login_required
+@require_http_methods(["GET"])
+def detalle_instalacion_json(request, instalacion_id: int):
+    """Obtener detalles de una instalación"""
+    if request.user.tipo_usuario not in ['administrador', 'repartidor']:
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    try:
+        instalacion = Instalacion.objects.select_related(
+            'reserva__cliente__usuario',
+            'repartidor__usuario'
+        ).get(id=instalacion_id)
+        
+        # Si es repartidor, solo puede ver sus propias instalaciones
+        if request.user.tipo_usuario == 'repartidor' and instalacion.repartidor != request.user.repartidor:
+            return JsonResponse({'error': 'No autorizado'}, status=403)
+        
+        # Obtener juegos de la reserva
+        juegos = []
+        precio_juegos_total = 0.0
+        for detalle in instalacion.reserva.detalles.all():
+            subtotal_juego = float(detalle.cantidad * detalle.precio_unitario)
+            precio_juegos_total += subtotal_juego
+            
+            # Intentar obtener URL de imagen del juego
+            imagen_url = None
+            if detalle.juego.foto:
+                try:
+                    imagen_url = request.build_absolute_uri(detalle.juego.foto.url)
+                except:
+                    imagen_url = None
+            
+            juegos.append({
+                'nombre': detalle.juego.nombre,
+                'cantidad': detalle.cantidad,
+                'precio': str(detalle.precio_unitario),
+                'imagen_url': imagen_url
+            })
+        
+        # Calcular precio de distancia (total - precio juegos)
+        total_reserva = float(instalacion.reserva.total_reserva)
+        precio_distancia = total_reserva - precio_juegos_total
+        kilometros = None
+        
+        # Si hay precio de distancia, calcular kilómetros ($1.000 por km)
+        if precio_distancia > 0:
+            kilometros = int(precio_distancia / 1000)
+        
+        data = {
+            'id': instalacion.id,
+            'fecha': instalacion.fecha_instalacion.strftime('%d/%m/%Y'),
+            'hora': instalacion.hora_instalacion.strftime('%H:%M'),
+            'direccion': instalacion.direccion_instalacion,
+            'telefono': instalacion.telefono_cliente,
+            'estado': instalacion.estado_instalacion,
+            'estado_display': instalacion.get_estado_instalacion_display(),
+            'observaciones': instalacion.observaciones_instalacion or '',
+            'cliente': {
+                'nombre': instalacion.reserva.cliente.usuario.get_full_name(),
+                'email': instalacion.reserva.cliente.usuario.email,
+                'telefono': instalacion.reserva.cliente.usuario.telefono or instalacion.telefono_cliente,
+            },
+            'repartidor': {
+                'nombre': instalacion.repartidor.usuario.get_full_name() if instalacion.repartidor else 'Sin asignar'
+            },
+            'juegos': juegos,
+            'precio_juegos': str(int(precio_juegos_total)),
+            'precio_distancia': str(int(precio_distancia)) if precio_distancia > 0 else '0',
+            'kilometros': kilometros,
+            'total': str(int(total_reserva)),
+            'mapa_url': None  # Puede agregarse en el futuro si se guarda en el modelo
+        }
+        
+        return JsonResponse(data)
+    except Instalacion.DoesNotExist:
+        return JsonResponse({'error': 'Instalación no encontrada'}, status=404)
+
+
+@login_required
+@require_http_methods(["GET"])
+def detalle_retiro_json(request, retiro_id: int):
+    """Obtener detalles de un retiro"""
+    if request.user.tipo_usuario not in ['administrador', 'repartidor']:
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    try:
+        retiro = Retiro.objects.select_related(
+            'reserva__cliente__usuario',
+            'repartidor__usuario'
+        ).get(id=retiro_id)
+        
+        # Si es repartidor, solo puede ver sus propios retiros
+        if request.user.tipo_usuario == 'repartidor' and retiro.repartidor != request.user.repartidor:
+            return JsonResponse({'error': 'No autorizado'}, status=403)
+        
+        data = {
+            'id': retiro.id,
+            'fecha': retiro.fecha_retiro.strftime('%d/%m/%Y'),
+            'hora': retiro.hora_retiro.strftime('%H:%M'),
+            'direccion': retiro.reserva.direccion_evento,
+            'estado': retiro.estado_retiro,
+            'estado_display': retiro.get_estado_retiro_display(),
+            'observaciones': retiro.observaciones_retiro or '',
+            'cliente': {
+                'nombre': retiro.reserva.cliente.usuario.get_full_name(),
+                'email': retiro.reserva.cliente.usuario.email,
+                'telefono': retiro.reserva.cliente.usuario.telefono or '-',
+            },
+            'repartidor': {
+                'nombre': retiro.repartidor.usuario.get_full_name() if retiro.repartidor else 'Sin asignar'
+            }
+        }
+        
+        return JsonResponse(data)
+    except Retiro.DoesNotExist:
+        return JsonResponse({'error': 'Retiro no encontrado'}, status=404)
+
+
+@login_required
+@require_http_methods(["POST"])
+def actualizar_estado_reparto_repartidor(request, tipo_reparto: str, reparto_id: int):
+    """Actualizar estado de reparto por el repartidor"""
+    if request.user.tipo_usuario != 'repartidor':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    nuevo_estado = request.POST.get('nuevo_estado')
+    observaciones = request.POST.get('observaciones', '')
+    
+    if not nuevo_estado:
+        return JsonResponse({'success': False, 'errors': ['Debe seleccionar un estado']}, status=400)
+    
+    try:
+        if tipo_reparto == 'instalacion':
+            instalacion = Instalacion.objects.get(id=reparto_id)
+            
+            # Verificar que el repartidor sea el asignado
+            if instalacion.repartidor != request.user.repartidor:
+                return JsonResponse({'success': False, 'errors': ['No autorizado para actualizar esta instalación']}, status=403)
+            
+            # Validar estado
+            estados_validos = [choice[0] for choice in instalacion._meta.get_field('estado_instalacion').choices]
+            if nuevo_estado not in estados_validos:
+                return JsonResponse({'success': False, 'errors': ['Estado inválido']}, status=400)
+            
+            instalacion.estado_instalacion = nuevo_estado
+            if observaciones:
+                obs_actual = instalacion.observaciones_instalacion or ''
+                instalacion.observaciones_instalacion = f"{obs_actual}\n[{timezone.now().strftime('%d/%m/%Y %H:%M')}] {observaciones}".strip()
+            instalacion.save()
+            message = 'Estado de instalación actualizado'
+            
+        elif tipo_reparto == 'retiro':
+            retiro = Retiro.objects.get(id=reparto_id)
+            
+            # Verificar que el repartidor sea el asignado
+            if retiro.repartidor != request.user.repartidor:
+                return JsonResponse({'success': False, 'errors': ['No autorizado para actualizar este retiro']}, status=403)
+            
+            # Validar estado
+            estados_validos = [choice[0] for choice in retiro._meta.get_field('estado_retiro').choices]
+            if nuevo_estado not in estados_validos:
+                return JsonResponse({'success': False, 'errors': ['Estado inválido']}, status=400)
+            
+            retiro.estado_retiro = nuevo_estado
+            if observaciones:
+                obs_actual = retiro.observaciones_retiro or ''
+                retiro.observaciones_retiro = f"{obs_actual}\n[{timezone.now().strftime('%d/%m/%Y %H:%M')}] {observaciones}".strip()
+            retiro.save()
+            message = 'Estado de retiro actualizado'
+        else:
+            return JsonResponse({'success': False, 'errors': ['Tipo de reparto inválido']}, status=400)
+        
+        return JsonResponse({'success': True, 'message': message})
+    
+    except (Instalacion.DoesNotExist, Retiro.DoesNotExist):
+        return JsonResponse({'success': False, 'errors': ['Reparto no encontrado']}, status=404)
 def juego_update_json(request, juego_id: int):
     """
     Actualiza un juego inflable existente
@@ -1333,14 +2829,23 @@ def juego_update_json(request, juego_id: int):
     nombre = request.POST.get('nombre', '').strip()
     descripcion = request.POST.get('descripcion', '').strip()
     categoria = request.POST.get('categoria', '').strip()
-    dimensiones = request.POST.get('dimensiones', '').strip()
+    edad_minima = request.POST.get('edad_minima', '').strip()
+    edad_maxima = request.POST.get('edad_maxima', '').strip()
+    dimension_largo = request.POST.get('dimension_largo', '').strip()
+    dimension_ancho = request.POST.get('dimension_ancho', '').strip()
+    dimension_alto = request.POST.get('dimension_alto', '').strip()
     capacidad_personas = request.POST.get('capacidad_personas', '').strip()
     peso_maximo = request.POST.get('peso_maximo', '').strip()
     precio_base = request.POST.get('precio_base', '').strip()
-    foto = request.POST.get('foto', '').strip()
+    foto = request.FILES.get('foto')  # Cambio: Ahora recibimos un archivo
+    eliminar_foto = request.POST.get('eliminar_foto') == 'true'  # Para eliminar foto existente
     estado = request.POST.get('estado', '').strip()
+    peso_excedido_confirmado = request.POST.get('peso_excedido_confirmado', 'false').strip().lower() == 'true'
 
     errors = []
+    largo = None
+    ancho = None
+    alto = None
     
     # Validaciones
     if not nombre:
@@ -1356,22 +2861,97 @@ def juego_update_json(request, juego_id: int):
     elif categoria not in [choice[0] for choice in Juego.CATEGORIA_CHOICES]:
         errors.append('Categoría inválida')
     
-    if not dimensiones:
-        errors.append('Las dimensiones son obligatorias')
-    elif len(dimensiones) > 50:
-        errors.append('Las dimensiones no pueden exceder 50 caracteres')
+    # Obtener límites según categoría
+    limites = obtener_limites_categoria(categoria) if categoria else {}
+    
+    # Validar edades
+    edad_min = None
+    edad_max = None
+    if not edad_minima:
+        if limites:
+            edad_min = limites.get('edad_minima', 3)
+        else:
+            errors.append('La edad mínima es obligatoria')
+    else:
+        try:
+            edad_min = int(edad_minima)
+            if edad_min < 1:
+                errors.append('La edad mínima debe ser mayor a 0')
+            elif limites and edad_min != limites.get('edad_minima'):
+                errors.append(f'Para la categoría {categoria}, la edad mínima debe ser {limites.get("edad_minima")} años')
+        except (ValueError, TypeError):
+            errors.append('La edad mínima debe ser un número válido')
+    
+    if not edad_maxima:
+        if limites:
+            edad_max = limites.get('edad_maxima', 12)
+        else:
+            errors.append('La edad máxima es obligatoria')
+    else:
+        try:
+            edad_max = int(edad_maxima)
+            if edad_max < 1:
+                errors.append('La edad máxima debe ser mayor a 0')
+            elif edad_min and edad_max < edad_min:
+                errors.append('La edad máxima debe ser mayor o igual a la edad mínima')
+            elif limites and edad_max != limites.get('edad_maxima'):
+                errors.append(f'Para la categoría {categoria}, la edad máxima debe ser {limites.get("edad_maxima")} años')
+        except (ValueError, TypeError):
+            errors.append('La edad máxima debe ser un número válido')
+    
+    # Validar dimensiones
+    if not dimension_largo:
+        errors.append('El largo es obligatorio')
+    else:
+        try:
+            largo = float(dimension_largo)
+            if largo <= 0:
+                errors.append('El largo debe ser mayor a 0')
+        except (ValueError, TypeError):
+            errors.append('El largo debe ser un número válido')
+    
+    if not dimension_ancho:
+        errors.append('El ancho es obligatorio')
+    else:
+        try:
+            ancho = float(dimension_ancho)
+            if ancho <= 0:
+                errors.append('El ancho debe ser mayor a 0')
+        except (ValueError, TypeError):
+            errors.append('El ancho debe ser un número válido')
+    
+    if not dimension_alto:
+        errors.append('El alto es obligatorio')
+    else:
+        try:
+            alto = float(dimension_alto)
+            if alto <= 0:
+                errors.append('El alto debe ser mayor a 0')
+        except (ValueError, TypeError):
+            errors.append('El alto debe ser un número válido')
     
     try:
         capacidad = int(capacidad_personas)
         if capacidad <= 0:
             errors.append('La capacidad debe ser mayor a 0')
+        elif capacidad > 100:
+            errors.append('La capacidad de personas no puede exceder 100')
+        elif limites and capacidad != limites.get('capacidad_maxima'):
+            errors.append(f'Para la categoría {categoria}, la capacidad máxima debe ser {limites.get("capacidad_maxima")} personas')
     except (ValueError, TypeError):
         errors.append('La capacidad debe ser un número válido')
     
+    peso_excedido = False
     try:
         peso = int(peso_maximo)
         if peso <= 0:
             errors.append('El peso máximo debe ser mayor a 0')
+        elif limites:
+            peso_max_categoria = limites.get('peso_maximo', 0)
+            if peso > peso_max_categoria:
+                peso_excedido = True
+                if not peso_excedido_confirmado:
+                    errors.append(f'El peso máximo ({peso} kg) excede el límite de la categoría {categoria} ({peso_max_categoria} kg). Debe confirmar que está seguro de este valor.')
     except (ValueError, TypeError):
         errors.append('El peso máximo debe ser un número válido')
     
@@ -1379,11 +2959,21 @@ def juego_update_json(request, juego_id: int):
         precio = int(precio_base)
         if precio < 1:
             errors.append('El precio base debe ser un número entero mayor a 0')
+        elif precio > 1000000:
+            errors.append('El precio base no puede exceder 1.000.000 pesos')
     except (ValueError, TypeError):
         errors.append('El precio base debe ser un número entero válido')
     
-    if len(foto) > 200:
-        errors.append('La URL de la foto no puede exceder 200 caracteres')
+    # Validar foto si se proporciona una nueva
+    if foto:
+        # Validar tamaño (máximo 5MB)
+        if foto.size > 5 * 1024 * 1024:
+            errors.append('La imagen no puede exceder 5MB')
+        
+        # Validar tipo de archivo
+        allowed_types = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp']
+        if foto.content_type not in allowed_types:
+            errors.append('Formato de imagen no válido. Use JPG, PNG, GIF o WEBP')
     
     if not estado:
         errors.append('El estado es obligatorio')
@@ -1397,14 +2987,41 @@ def juego_update_json(request, juego_id: int):
         return JsonResponse({'success': False, 'errors': errors}, status=400)
 
     try:
+        from django.utils import timezone
         juego.nombre = nombre
         juego.descripcion = descripcion or None
         juego.categoria = categoria
-        juego.dimensiones = dimensiones
+        juego.edad_minima = edad_min
+        juego.edad_maxima = edad_max
+        juego.dimension_largo = largo
+        juego.dimension_ancho = ancho
+        juego.dimension_alto = alto
         juego.capacidad_personas = capacidad
         juego.peso_maximo = peso
         juego.precio_base = precio
-        juego.foto = foto or None
+        juego.peso_excedido = peso_excedido
+        if peso_excedido:
+            juego.peso_excedido_por = request.user
+            juego.peso_excedido_fecha = timezone.now()
+        elif not peso_excedido and juego.peso_excedido:
+            # Si ya no excede, limpiar los campos
+            juego.peso_excedido = False
+            juego.peso_excedido_por = None
+            juego.peso_excedido_fecha = None
+        
+        # Manejar la foto
+        if foto:
+            # Si hay una foto anterior, eliminarla
+            if juego.foto:
+                juego.foto.delete(save=False)
+            juego.foto = foto
+        elif eliminar_foto:
+            # Eliminar la foto si se solicitó
+            if juego.foto:
+                juego.foto.delete(save=False)
+            juego.foto = None
+        # Si no hay foto nueva ni se solicita eliminar, mantener la existente
+        
         juego.estado = estado
         juego.save()
         
@@ -1454,41 +3071,112 @@ def estadisticas(request):
     if not request.user.tipo_usuario == 'administrador':
         raise PermissionDenied("Solo los administradores pueden acceder a este recurso.")
     
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, date
     from collections import defaultdict
     import json
+    from calendar import monthrange
     from django.db.models import Sum, Count, Q
     
-    # Obtener reservas confirmadas y completadas (no canceladas)
-    reservas = Reserva.objects.filter(
-        Q(estado='Confirmada') | Q(estado='confirmada') | Q(estado='completada')
-    ).select_related('cliente__usuario').prefetch_related('detalles__juego')
-    
+    # Obtener fecha actual
     hoy = datetime.now().date()
     
-    # ========== VENTAS SEMANALES ==========
+    # Obtener parámetros de mes y año (si existen) para el período a analizar
+    año_seleccionado = request.GET.get('year', hoy.year)
+    mes_seleccionado = request.GET.get('month', hoy.month)
+    
+    try:
+        año_seleccionado = int(año_seleccionado)
+        mes_seleccionado = int(mes_seleccionado)
+        # Validar rango
+        if mes_seleccionado < 1 or mes_seleccionado > 12:
+            mes_seleccionado = hoy.month
+        if año_seleccionado < 2000 or año_seleccionado > 2100:
+            año_seleccionado = hoy.year
+    except (ValueError, TypeError):
+        año_seleccionado = hoy.year
+        mes_seleccionado = hoy.month
+    
+    # Mapeo de meses en español
+    meses_espanol = {
+        1: 'Enero', 2: 'Febrero', 3: 'Marzo', 4: 'Abril', 5: 'Mayo', 6: 'Junio',
+        7: 'Julio', 8: 'Agosto', 9: 'Septiembre', 10: 'Octubre', 11: 'Noviembre', 12: 'Diciembre'
+    }
+    
+    # Obtener reservas confirmadas y completadas (no canceladas)
+    # Usar __iexact para hacer búsqueda case-insensitive
+    reservas = Reserva.objects.filter(
+        Q(estado__iexact='Confirmada') | Q(estado__iexact='completada')
+    ).select_related('cliente__usuario').prefetch_related('detalles__juego')
+    
+    # ========== VENTAS ==========
+    # Obtener parámetros para ventas
+    ventas_periodo = request.GET.get('ventas_periodo', 'weekly').strip()
+    ventas_semana = request.GET.get('ventas_semana', '').strip()
+    ventas_mes = request.GET.get('ventas_mes', '').strip()
+    ventas_año = request.GET.get('ventas_año', '').strip()
+    
+    # Si el período es mensual o anual pero no hay parámetros específicos, usar valores del dashboard
+    if ventas_periodo == 'monthly' and not ventas_mes:
+        ventas_mes = str(mes_seleccionado)
+    if ventas_periodo == 'yearly' and not ventas_año:
+        ventas_año = str(año_seleccionado)
+        # Para el período yearly, limpiar ventas_mes para que no interfiera
+        ventas_mes = ''
+    elif ventas_periodo == 'monthly' and not ventas_año:
+        ventas_año = str(año_seleccionado)
+    
+    # Ventas semanales - Últimas 8 semanas o semana específica
     ventas_semanales = defaultdict(float)
     ventas_semanales_labels = []
     
-    # Últimas 8 semanas
-    for i in range(7, -1, -1):
-        semana_inicio = hoy - timedelta(days=hoy.weekday() + (i * 7))
-        semana_fin = semana_inicio + timedelta(days=6)
-        semana_key = semana_inicio.strftime('%d/%m')
+    if ventas_semana:
+        try:
+            if 'W' in ventas_semana:
+                año_semana, semana_num = ventas_semana.split('-W')
+                año_semana = int(año_semana)
+                semana_num = int(semana_num)
+                fecha_base = date(año_semana, 1, 4)
+                lunes_semana1 = fecha_base - timedelta(days=fecha_base.weekday())
+                semana_inicio = lunes_semana1 + timedelta(weeks=semana_num - 1)
+                semana_fin = semana_inicio + timedelta(days=6)
+            else:
+                fecha_semana = datetime.strptime(ventas_semana, '%Y-%m-%d').date()
+                semana_inicio = fecha_semana - timedelta(days=fecha_semana.weekday())
+                semana_fin = semana_inicio + timedelta(days=6)
+            semana_inicio_str = semana_inicio.strftime('%d/%m/%Y')
+            semana_fin_str = semana_fin.strftime('%d/%m/%Y')
+            semanas_a_mostrar = [(semana_inicio + timedelta(days=i)) for i in range(7)]
+        except:
+            semana_inicio = hoy - timedelta(days=hoy.weekday())
+            semana_fin = semana_inicio + timedelta(days=6)
+            semana_inicio_str = semana_inicio.strftime('%d/%m/%Y')
+            semana_fin_str = semana_fin.strftime('%d/%m/%Y')
+            semanas_a_mostrar = [(hoy - timedelta(days=hoy.weekday() + (i * 7))) for i in range(7, -1, -1)]
+    else:
+        # Últimas 8 semanas
+        semana_inicio = hoy - timedelta(days=hoy.weekday() + (7 * 7))
+        semana_fin = hoy
+        semana_inicio_str = semana_inicio.strftime('%d/%m/%Y')
+        semana_fin_str = semana_fin.strftime('%d/%m/%Y')
+        semanas_a_mostrar = [(hoy - timedelta(days=hoy.weekday() + (i * 7))) for i in range(7, -1, -1)]
+    
+    for semana_inicio_item in semanas_a_mostrar:
+        semana_fin_item = semana_inicio_item + timedelta(days=6)
+        semana_key = semana_inicio_item.strftime('%d/%m')
         
         total_semana = reservas.filter(
-            fecha_evento__gte=semana_inicio,
-            fecha_evento__lte=semana_fin
+            fecha_evento__gte=semana_inicio_item,
+            fecha_evento__lte=semana_fin_item
         ).aggregate(total=Sum('total_reserva'))['total'] or 0
         
         ventas_semanales[semana_key] = float(total_semana)
         ventas_semanales_labels.append(semana_key)
     
     ventas_semanales_data = [ventas_semanales[label] for label in ventas_semanales_labels]
+    ventas_semanales_rango = f"{semana_inicio_str} - {semana_fin_str}"
     
-    # ========== VENTAS MENSUALES ==========
-    # Mapeo de meses en español
-    meses_espanol = {
+    # Ventas mensuales - Últimos 12 meses o mes específico
+    meses_espanol_short = {
         1: 'Ene', 2: 'Feb', 3: 'Mar', 4: 'Abr', 5: 'May', 6: 'Jun',
         7: 'Jul', 8: 'Ago', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dic'
     }
@@ -1496,41 +3184,124 @@ def estadisticas(request):
     ventas_mensuales = defaultdict(float)
     ventas_mensuales_labels = []
     
-    # Últimos 12 meses
-    for i in range(11, -1, -1):
-        fecha = hoy - timedelta(days=i * 30)
-        mes_nombre = meses_espanol[fecha.month]
-        mes_key = f'{mes_nombre} {fecha.year}'
+    # Determinar mes y año a analizar
+    mes_a_analizar = None
+    año_a_analizar = None
+    
+    if ventas_mes and ventas_año:
+        try:
+            mes_a_analizar = int(ventas_mes)
+            año_a_analizar = int(ventas_año)
+            if not (1 <= mes_a_analizar <= 12):
+                raise ValueError
+        except:
+            mes_a_analizar = None
+            año_a_analizar = None
+    elif ventas_periodo == 'monthly':
+        # Si el período es mensual pero no hay parámetros específicos, usar mes y año del dashboard
+        mes_a_analizar = mes_seleccionado
+        año_a_analizar = año_seleccionado
+    
+    if mes_a_analizar and año_a_analizar:
+        # Mostrar días del mes seleccionado
+        fecha_inicio = date(año_a_analizar, mes_a_analizar, 1)
+        ultimo_dia_num = monthrange(año_a_analizar, mes_a_analizar)[1]
+        fecha_fin = date(año_a_analizar, mes_a_analizar, ultimo_dia_num)
+        fecha_inicio_str = fecha_inicio.strftime('%d/%m/%Y')
+        fecha_fin_str = fecha_fin.strftime('%d/%m/%Y')
         
-        # Filtrar reservas del mes
-        total_mes = reservas.filter(
-            fecha_evento__year=fecha.year,
-            fecha_evento__month=fecha.month
-        ).aggregate(total=Sum('total_reserva'))['total'] or 0
+        # Generar lista de todos los días del mes
+        dias_del_mes = []
+        for dia in range(1, ultimo_dia_num + 1):
+            dias_del_mes.append(date(año_a_analizar, mes_a_analizar, dia))
         
-        ventas_mensuales[mes_key] = float(total_mes)
-        ventas_mensuales_labels.append(mes_key)
+        # Calcular ventas por día
+        for fecha_dia in dias_del_mes:
+            dia_key = str(fecha_dia.day)
+            total_dia = reservas.filter(
+                fecha_evento=fecha_dia
+            ).aggregate(total=Sum('total_reserva'))['total'] or 0
+            ventas_mensuales[dia_key] = float(total_dia)
+            ventas_mensuales_labels.append(dia_key)
+    else:
+        # Últimos 12 meses (cuando no hay mes específico)
+        fecha_inicio = hoy - timedelta(days=330)
+        fecha_fin = hoy
+        fecha_inicio_str = fecha_inicio.strftime('%d/%m/%Y')
+        fecha_fin_str = fecha_fin.strftime('%d/%m/%Y')
+        meses_a_mostrar = [(hoy - timedelta(days=i * 30)) for i in range(11, -1, -1)]
+        
+        for fecha in meses_a_mostrar:
+            mes_nombre = meses_espanol_short[fecha.month]
+            mes_key = f'{mes_nombre} {fecha.year}'
+            
+            total_mes = reservas.filter(
+                fecha_evento__year=fecha.year,
+                fecha_evento__month=fecha.month
+            ).aggregate(total=Sum('total_reserva'))['total'] or 0
+            
+            ventas_mensuales[mes_key] = float(total_mes)
+            ventas_mensuales_labels.append(mes_key)
     
     ventas_mensuales_data = [ventas_mensuales[label] for label in ventas_mensuales_labels]
+    ventas_mensuales_rango = f"{fecha_inicio_str} - {fecha_fin_str}"
     
-    # ========== VENTAS ANUALES ==========
+    # Ventas anuales - Últimos 5 años o año específico
     ventas_anuales = defaultdict(float)
     ventas_anuales_labels = []
     
-    # Últimos 5 años
-    año_actual = hoy.year
-    for i in range(4, -1, -1):
-        año = año_actual - i
-        año_key = str(año)
+    # Determinar año a analizar
+    año_a_analizar = None
+    
+    if ventas_año and not ventas_mes:
+        try:
+            año_a_analizar = int(ventas_año)
+        except:
+            año_a_analizar = None
+    elif ventas_periodo == 'yearly':
+        # Si el período es anual pero no hay parámetro específico, usar año del dashboard
+        año_a_analizar = año_seleccionado
+    
+    if año_a_analizar:
+        # Mostrar meses del año seleccionado
+        año_inicio = date(año_a_analizar, 1, 1)
+        año_fin = date(año_a_analizar, 12, 31)
+        año_inicio_str = año_inicio.strftime('%d/%m/%Y')
+        año_fin_str = año_fin.strftime('%d/%m/%Y')
         
-        total_año = reservas.filter(
-            fecha_evento__year=año
-        ).aggregate(total=Sum('total_reserva'))['total'] or 0
+        # Calcular ventas por mes del año
+        for mes_num in range(1, 13):
+            mes_nombre = meses_espanol_short[mes_num]
+            mes_key = mes_nombre
+            
+            total_mes = reservas.filter(
+                fecha_evento__year=año_a_analizar,
+                fecha_evento__month=mes_num
+            ).aggregate(total=Sum('total_reserva'))['total'] or 0
+            
+            ventas_anuales[mes_key] = float(total_mes)
+            ventas_anuales_labels.append(mes_key)
+    else:
+        # Últimos 5 años (cuando no hay año específico)
+        año_actual = hoy.year
+        años_a_mostrar = [(año_actual - i) for i in range(4, -1, -1)]
+        año_inicio = date(años_a_mostrar[0], 1, 1)
+        año_fin = date(años_a_mostrar[-1], 12, 31)
+        año_inicio_str = año_inicio.strftime('%d/%m/%Y')
+        año_fin_str = año_fin.strftime('%d/%m/%Y')
         
-        ventas_anuales[año_key] = float(total_año)
-        ventas_anuales_labels.append(año_key)
+        for año in años_a_mostrar:
+            año_key = str(año)
+            
+            total_año = reservas.filter(
+                fecha_evento__year=año
+            ).aggregate(total=Sum('total_reserva'))['total'] or 0
+            
+            ventas_anuales[año_key] = float(total_año)
+            ventas_anuales_labels.append(año_key)
     
     ventas_anuales_data = [ventas_anuales[label] for label in ventas_anuales_labels]
+    ventas_anuales_rango = f"{año_inicio_str} - {año_fin_str}"
     
     # ========== VENTAS POR CATEGORÍA ==========
     # Obtener categorías ordenadas según el modelo
@@ -1545,6 +3316,13 @@ def estadisticas(request):
     for cat in categorias_db:
         if cat not in categorias_unicas:
             categorias_unicas.append(cat)
+    
+    # ========== VENTAS POR CATEGORÍA ==========
+    # Obtener parámetros para ventas por categoría
+    categoria_periodo = request.GET.get('categoria_periodo', 'weekly').strip()
+    categoria_semana = request.GET.get('categoria_semana', '').strip()
+    categoria_mes = request.GET.get('categoria_mes', '').strip()
+    categoria_año = request.GET.get('categoria_año', '').strip()
     
     # Ventas por categoría - DIARIAS (últimos 7 días)
     ventas_categoria_diarias = defaultdict(lambda: defaultdict(float))
@@ -1565,13 +3343,39 @@ def estadisticas(request):
         else:
             ventas_categoria_diarias_data.append(0)
     
-    # Ventas por categoría - SEMANALES (últimas 4 semanas)
+    # Ventas por categoría - SEMANALES (últimas 4 semanas o semana específica)
     ventas_categoria_semanales = defaultdict(float)
-    semana_inicio = hoy - timedelta(days=hoy.weekday() + (3 * 7))
-    semana_fin = hoy
-    reservas_semana = reservas.filter(fecha_evento__gte=semana_inicio, fecha_evento__lte=semana_fin)
+    if categoria_semana:
+        try:
+            if 'W' in categoria_semana:
+                año_semana, semana_num = categoria_semana.split('-W')
+                año_semana = int(año_semana)
+                semana_num = int(semana_num)
+                fecha_base = date(año_semana, 1, 4)
+                lunes_semana1 = fecha_base - timedelta(days=fecha_base.weekday())
+                semana_inicio_cat = lunes_semana1 + timedelta(weeks=semana_num - 1)
+                semana_fin_cat = semana_inicio_cat + timedelta(days=6)
+            else:
+                fecha_semana = datetime.strptime(categoria_semana, '%Y-%m-%d').date()
+                semana_inicio_cat = fecha_semana - timedelta(days=fecha_semana.weekday())
+                semana_fin_cat = semana_inicio_cat + timedelta(days=6)
+            semana_inicio_cat_str = semana_inicio_cat.strftime('%d/%m/%Y')
+            semana_fin_cat_str = semana_fin_cat.strftime('%d/%m/%Y')
+        except:
+            semana_inicio_cat = hoy - timedelta(days=hoy.weekday() + (3 * 7))
+            semana_fin_cat = hoy
+            semana_inicio_cat_str = semana_inicio_cat.strftime('%d/%m/%Y')
+            semana_fin_cat_str = semana_fin_cat.strftime('%d/%m/%Y')
+    else:
+        # Últimas 4 semanas
+        semana_inicio_cat = hoy - timedelta(days=hoy.weekday() + (3 * 7))
+        semana_fin_cat = hoy
+        semana_inicio_cat_str = semana_inicio_cat.strftime('%d/%m/%Y')
+        semana_fin_cat_str = semana_fin_cat.strftime('%d/%m/%Y')
     
-    for reserva in reservas_semana:
+    reservas_semana_cat = reservas.filter(fecha_evento__gte=semana_inicio_cat, fecha_evento__lte=semana_fin_cat)
+    
+    for reserva in reservas_semana_cat:
         for detalle in reserva.detalles.all():
             categoria = detalle.juego.categoria
             ventas_categoria_semanales[categoria] += float(detalle.subtotal)
@@ -1579,13 +3383,37 @@ def estadisticas(request):
     ventas_categoria_semanales_data = [
         ventas_categoria_semanales.get(cat, 0) for cat in categorias_unicas
     ]
+    ventas_categoria_semanales_rango = f"{semana_inicio_cat_str} - {semana_fin_cat_str}"
     
-    # Ventas por categoría - MENSUALES (últimos 6 meses)
+    # Ventas por categoría - MENSUALES (últimos 6 meses o mes específico)
     ventas_categoria_mensuales = defaultdict(float)
-    fecha_inicio = hoy - timedelta(days=180)
-    reservas_mes = reservas.filter(fecha_evento__gte=fecha_inicio)
+    if categoria_mes and categoria_año:
+        try:
+            mes_num = int(categoria_mes)
+            año_num = int(categoria_año)
+            if 1 <= mes_num <= 12:
+                fecha_inicio_cat = date(año_num, mes_num, 1)
+                ultimo_dia_num = monthrange(año_num, mes_num)[1]
+                fecha_fin_cat = date(año_num, mes_num, ultimo_dia_num)
+                fecha_inicio_cat_str = fecha_inicio_cat.strftime('%d/%m/%Y')
+                fecha_fin_cat_str = fecha_fin_cat.strftime('%d/%m/%Y')
+            else:
+                raise ValueError
+        except:
+            fecha_inicio_cat = hoy - timedelta(days=180)
+            fecha_fin_cat = hoy
+            fecha_inicio_cat_str = fecha_inicio_cat.strftime('%d/%m/%Y')
+            fecha_fin_cat_str = fecha_fin_cat.strftime('%d/%m/%Y')
+    else:
+        # Últimos 6 meses
+        fecha_inicio_cat = hoy - timedelta(days=180)
+        fecha_fin_cat = hoy
+        fecha_inicio_cat_str = fecha_inicio_cat.strftime('%d/%m/%Y')
+        fecha_fin_cat_str = fecha_fin_cat.strftime('%d/%m/%Y')
     
-    for reserva in reservas_mes:
+    reservas_mes_cat = reservas.filter(fecha_evento__gte=fecha_inicio_cat, fecha_evento__lte=fecha_fin_cat)
+    
+    for reserva in reservas_mes_cat:
         for detalle in reserva.detalles.all():
             categoria = detalle.juego.categoria
             ventas_categoria_mensuales[categoria] += float(detalle.subtotal)
@@ -1593,13 +3421,32 @@ def estadisticas(request):
     ventas_categoria_mensuales_data = [
         ventas_categoria_mensuales.get(cat, 0) for cat in categorias_unicas
     ]
+    ventas_categoria_mensuales_rango = f"{fecha_inicio_cat_str} - {fecha_fin_cat_str}"
     
-    # Ventas por categoría - ANUALES (último año)
+    # Ventas por categoría - ANUALES (último año o año específico)
     ventas_categoria_anuales = defaultdict(float)
-    año_inicio = hoy - timedelta(days=365)
-    reservas_año = reservas.filter(fecha_evento__gte=año_inicio)
+    if categoria_año and not categoria_mes:
+        try:
+            año_num = int(categoria_año)
+            año_inicio_cat = date(año_num, 1, 1)
+            año_fin_cat = date(año_num, 12, 31)
+            año_inicio_cat_str = año_inicio_cat.strftime('%d/%m/%Y')
+            año_fin_cat_str = año_fin_cat.strftime('%d/%m/%Y')
+        except:
+            año_inicio_cat = hoy - timedelta(days=365)
+            año_fin_cat = hoy
+            año_inicio_cat_str = año_inicio_cat.strftime('%d/%m/%Y')
+            año_fin_cat_str = año_fin_cat.strftime('%d/%m/%Y')
+    else:
+        # Último año
+        año_inicio_cat = hoy - timedelta(days=365)
+        año_fin_cat = hoy
+        año_inicio_cat_str = año_inicio_cat.strftime('%d/%m/%Y')
+        año_fin_cat_str = año_fin_cat.strftime('%d/%m/%Y')
     
-    for reserva in reservas_año:
+    reservas_año_cat = reservas.filter(fecha_evento__gte=año_inicio_cat, fecha_evento__lte=año_fin_cat)
+    
+    for reserva in reservas_año_cat:
         for detalle in reserva.detalles.all():
             categoria = detalle.juego.categoria
             ventas_categoria_anuales[categoria] += float(detalle.subtotal)
@@ -1607,14 +3454,55 @@ def estadisticas(request):
     ventas_categoria_anuales_data = [
         ventas_categoria_anuales.get(cat, 0) for cat in categorias_unicas
     ]
+    ventas_categoria_anuales_rango = f"{año_inicio_cat_str} - {año_fin_cat_str}"
     
     # ========== DÍAS CON MAYOR DEMANDA ==========
     dias_semana_nombres = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
     
-    # Semanal - Últimas 4 semanas
+    # Obtener parámetros para días con mayor demanda
+    demanda_periodo = request.GET.get('demanda_periodo', 'weekly').strip()
+    demanda_semana = request.GET.get('demanda_semana', '').strip()
+    demanda_mes = request.GET.get('demanda_mes', '').strip()
+    demanda_año = request.GET.get('demanda_año', '').strip()
+    
+    # Semanal - Últimas 4 semanas o semana específica
     demanda_semanal = defaultdict(int)
-    semana_inicio = hoy - timedelta(days=hoy.weekday() + (3 * 7))
-    reservas_semana_dias = reservas.filter(fecha_evento__gte=semana_inicio, fecha_evento__lte=hoy)
+    if demanda_semana:
+        try:
+            # Formato input type="week" es "YYYY-Www" (ej: "2024-W15")
+            if 'W' in demanda_semana:
+                año_semana, semana_num = demanda_semana.split('-W')
+                año_semana = int(año_semana)
+                semana_num = int(semana_num)
+                # Calcular el primer día de la semana ISO (lunes)
+                # 4 de enero siempre está en la semana 1
+                fecha_base = date(año_semana, 1, 4)
+                # Obtener el lunes de la semana 1
+                lunes_semana1 = fecha_base - timedelta(days=fecha_base.weekday())
+                # Calcular el lunes de la semana solicitada
+                semana_inicio = lunes_semana1 + timedelta(weeks=semana_num - 1)
+                semana_fin = semana_inicio + timedelta(days=6)
+            else:
+                # Si no es formato semana, usar fecha directa
+                fecha_semana = datetime.strptime(demanda_semana, '%Y-%m-%d').date()
+                semana_inicio = fecha_semana - timedelta(days=fecha_semana.weekday())
+                semana_fin = semana_inicio + timedelta(days=6)
+            semana_inicio_str = semana_inicio.strftime('%d/%m/%Y')
+            semana_fin_str = semana_fin.strftime('%d/%m/%Y')
+        except Exception as e:
+            # Si hay error, usar última semana
+            semana_inicio = hoy - timedelta(days=hoy.weekday())
+            semana_fin = semana_inicio + timedelta(days=6)
+            semana_inicio_str = semana_inicio.strftime('%d/%m/%Y')
+            semana_fin_str = semana_fin.strftime('%d/%m/%Y')
+    else:
+        # Últimas 4 semanas desde hoy (rango acumulado)
+        semana_inicio = hoy - timedelta(days=hoy.weekday() + (3 * 7))
+        semana_fin = hoy
+        semana_inicio_str = semana_inicio.strftime('%d/%m/%Y')
+        semana_fin_str = semana_fin.strftime('%d/%m/%Y')
+    
+    reservas_semana_dias = reservas.filter(fecha_evento__gte=semana_inicio, fecha_evento__lte=semana_fin)
     
     for reserva in reservas_semana_dias:
         dia_semana = reserva.fecha_evento.weekday()
@@ -1622,11 +3510,35 @@ def estadisticas(request):
     
     dias_semana_semanales_labels = dias_semana_nombres
     dias_semana_semanales_data = [demanda_semanal.get(dia, 0) for dia in dias_semana_nombres]
+    dias_semana_semanales_rango = f"{semana_inicio_str} - {semana_fin_str}"
     
-    # Mensual - Últimos 3 meses
+    # Mensual - Mes específico o últimos 3 meses
     demanda_mensual = defaultdict(int)
-    fecha_inicio = hoy - timedelta(days=90)
-    reservas_mes_dias = reservas.filter(fecha_evento__gte=fecha_inicio)
+    if demanda_mes and demanda_año:
+        try:
+            mes_num = int(demanda_mes)
+            año_num = int(demanda_año)
+            if 1 <= mes_num <= 12:
+                fecha_inicio = date(año_num, mes_num, 1)
+                ultimo_dia_num = monthrange(año_num, mes_num)[1]
+                fecha_fin = date(año_num, mes_num, ultimo_dia_num)
+                fecha_inicio_str = fecha_inicio.strftime('%d/%m/%Y')
+                fecha_fin_str = fecha_fin.strftime('%d/%m/%Y')
+            else:
+                raise ValueError
+        except:
+            fecha_inicio = hoy - timedelta(days=90)
+            fecha_fin = hoy
+            fecha_inicio_str = fecha_inicio.strftime('%d/%m/%Y')
+            fecha_fin_str = fecha_fin.strftime('%d/%m/%Y')
+    else:
+        # Últimos 3 meses
+        fecha_inicio = hoy - timedelta(days=90)
+        fecha_fin = hoy
+        fecha_inicio_str = fecha_inicio.strftime('%d/%m/%Y')
+        fecha_fin_str = fecha_fin.strftime('%d/%m/%Y')
+    
+    reservas_mes_dias = reservas.filter(fecha_evento__gte=fecha_inicio, fecha_evento__lte=fecha_fin)
     
     for reserva in reservas_mes_dias:
         dia_semana = reserva.fecha_evento.weekday()
@@ -1634,11 +3546,30 @@ def estadisticas(request):
     
     dias_semana_mensuales_labels = dias_semana_nombres
     dias_semana_mensuales_data = [demanda_mensual.get(dia, 0) for dia in dias_semana_nombres]
+    dias_semana_mensuales_rango = f"{fecha_inicio_str} - {fecha_fin_str}"
     
-    # Anual - Último año
+    # Anual - Año específico o último año
     demanda_anual = defaultdict(int)
-    año_inicio = hoy - timedelta(days=365)
-    reservas_año_dias = reservas.filter(fecha_evento__gte=año_inicio)
+    if demanda_año and not demanda_mes:
+        try:
+            año_num = int(demanda_año)
+            año_inicio = date(año_num, 1, 1)
+            año_fin = date(año_num, 12, 31)
+            año_inicio_str = año_inicio.strftime('%d/%m/%Y')
+            año_fin_str = año_fin.strftime('%d/%m/%Y')
+        except:
+            año_inicio = hoy - timedelta(days=365)
+            año_fin = hoy
+            año_inicio_str = año_inicio.strftime('%d/%m/%Y')
+            año_fin_str = año_fin.strftime('%d/%m/%Y')
+    else:
+        # Último año
+        año_inicio = hoy - timedelta(days=365)
+        año_fin = hoy
+        año_inicio_str = año_inicio.strftime('%d/%m/%Y')
+        año_fin_str = año_fin.strftime('%d/%m/%Y')
+    
+    reservas_año_dias = reservas.filter(fecha_evento__gte=año_inicio, fecha_evento__lte=año_fin)
     
     for reserva in reservas_año_dias:
         dia_semana = reserva.fecha_evento.weekday()
@@ -1646,29 +3577,374 @@ def estadisticas(request):
     
     dias_semana_anuales_labels = dias_semana_nombres
     dias_semana_anuales_data = [demanda_anual.get(dia, 0) for dia in dias_semana_nombres]
+    dias_semana_anuales_rango = f"{año_inicio_str} - {año_fin_str}"
+    
+    # ========== KPIs Y MÉTRICAS CLAVE ==========
+    from jio_app.models import Pago
+    
+    # Total de reservas del mes seleccionado
+    reservas_mes_seleccionado = reservas.filter(
+        fecha_evento__year=año_seleccionado,
+        fecha_evento__month=mes_seleccionado
+    )
+    total_reservas_mes = reservas_mes_seleccionado.count()
+    
+    # Total de reservas del mes anterior al seleccionado
+    if mes_seleccionado == 1:
+        mes_anterior_num = 12
+        año_anterior_num = año_seleccionado - 1
+    else:
+        mes_anterior_num = mes_seleccionado - 1
+        año_anterior_num = año_seleccionado
+    
+    reservas_mes_anterior = reservas.filter(
+        fecha_evento__year=año_anterior_num,
+        fecha_evento__month=mes_anterior_num
+    )
+    total_reservas_mes_anterior = reservas_mes_anterior.count()
+    
+    # Cálculo de crecimiento de reservas (mes vs mes anterior)
+    if total_reservas_mes_anterior > 0:
+        crecimiento_reservas = ((total_reservas_mes - total_reservas_mes_anterior) / total_reservas_mes_anterior) * 100
+    else:
+        crecimiento_reservas = 100.0 if total_reservas_mes > 0 else 0.0
+    
+    # Ventas del mes seleccionado
+    ventas_mes_seleccionado = reservas_mes_seleccionado.aggregate(total=Sum('total_reserva'))['total'] or 0
+    ventas_mes_seleccionado = float(ventas_mes_seleccionado)
+    
+    # Ventas del mes anterior
+    ventas_mes_anterior = reservas_mes_anterior.aggregate(total=Sum('total_reserva'))['total'] or 0
+    ventas_mes_anterior = float(ventas_mes_anterior)
+    
+    # Crecimiento de ventas
+    if ventas_mes_anterior > 0:
+        crecimiento_ventas = ((ventas_mes_seleccionado - ventas_mes_anterior) / ventas_mes_anterior) * 100
+    else:
+        crecimiento_ventas = 100.0 if ventas_mes_seleccionado > 0 else 0.0
+    
+    # Clientes nuevos vs recurrentes (mes seleccionado)
+    clientes_mes_seleccionado = Cliente.objects.filter(
+        reservas__fecha_evento__year=año_seleccionado,
+        reservas__fecha_evento__month=mes_seleccionado
+    ).distinct()
+    
+    clientes_nuevos = 0
+    clientes_recurrentes = 0
+    
+    fecha_inicio_mes_seleccionado = datetime(año_seleccionado, mes_seleccionado, 1).date()
+    
+    for cliente in clientes_mes_seleccionado:
+        reservas_anteriores = Reserva.objects.filter(
+            cliente=cliente,
+            fecha_evento__lt=fecha_inicio_mes_seleccionado
+        ).exists()
+        if reservas_anteriores:
+            clientes_recurrentes += 1
+        else:
+            clientes_nuevos += 1
+    
+    total_clientes_mes = clientes_mes_seleccionado.count()
+    
+    # ========== COMPARACIONES AÑO A AÑO ==========
+    # Ventas del año seleccionado
+    ventas_año_seleccionado = reservas.filter(
+        fecha_evento__year=año_seleccionado
+    ).aggregate(total=Sum('total_reserva'))['total'] or 0
+    ventas_año_seleccionado = float(ventas_año_seleccionado)
+    
+    # Ventas del año anterior
+    ventas_año_anterior = reservas.filter(
+        fecha_evento__year=año_seleccionado - 1
+    ).aggregate(total=Sum('total_reserva'))['total'] or 0
+    ventas_año_anterior = float(ventas_año_anterior)
+    
+    # Crecimiento año a año
+    if ventas_año_anterior > 0:
+        crecimiento_año = ((ventas_año_seleccionado - ventas_año_anterior) / ventas_año_anterior) * 100
+    else:
+        crecimiento_año = 100.0 if ventas_año_seleccionado > 0 else 0.0
+    
+    # Reservas del año seleccionado
+    reservas_año_seleccionado = reservas.filter(fecha_evento__year=año_seleccionado).count()
+    
+    # Reservas del año anterior
+    reservas_año_anterior = reservas.filter(fecha_evento__year=año_seleccionado - 1).count()
+    
+    # Crecimiento de reservas año a año
+    if reservas_año_anterior > 0:
+        crecimiento_reservas_año = ((reservas_año_seleccionado - reservas_año_anterior) / reservas_año_anterior) * 100
+    else:
+        crecimiento_reservas_año = 100.0 if reservas_año_seleccionado > 0 else 0.0
+    
+    # Generar lista de años disponibles (desde 2020 hasta el año actual)
+    años_disponibles = list(range(2020, hoy.year + 1))
+    
+    # Meses anteriores y siguientes para navegación
+    if mes_seleccionado == 1:
+        mes_anterior_nav = 12
+        año_anterior_nav = año_seleccionado - 1
+    else:
+        mes_anterior_nav = mes_seleccionado - 1
+        año_anterior_nav = año_seleccionado
+    
+    if mes_seleccionado == 12:
+        mes_siguiente_nav = 1
+        año_siguiente_nav = año_seleccionado + 1
+    else:
+        mes_siguiente_nav = mes_seleccionado + 1
+        año_siguiente_nav = año_seleccionado
+    
+    # Verificar si hay meses futuros (no permitir ir más allá del mes actual)
+    puede_avanzar = (año_siguiente_nav < hoy.year) or (año_siguiente_nav == hoy.year and mes_siguiente_nav <= hoy.month)
     
     # Preparar contexto con datos JSON
     context = {
+        # Parámetros de selección
+        'mes_seleccionado': mes_seleccionado,
+        'año_seleccionado': año_seleccionado,
+        'mes_nombre': meses_espanol[mes_seleccionado],
+        'mes_anterior_nav': mes_anterior_nav,
+        'año_anterior_nav': año_anterior_nav,
+        'mes_siguiente_nav': mes_siguiente_nav,
+        'año_siguiente_nav': año_siguiente_nav,
+        'puede_avanzar': puede_avanzar,
+        'meses_espanol': meses_espanol,
+        'años_disponibles': años_disponibles,
+        # Comparaciones mes a mes
+        'mes_anterior_nombre': meses_espanol[mes_anterior_num],
+        'año_anterior_num': año_anterior_num,
+        # KPIs
+        'total_reservas_mes': total_reservas_mes,
+        'total_reservas_mes_anterior': total_reservas_mes_anterior,
+        'crecimiento_reservas': crecimiento_reservas,
+        'ventas_mes_actual': ventas_mes_seleccionado,
+        'ventas_mes_anterior': ventas_mes_anterior,
+        'crecimiento_ventas': crecimiento_ventas,
+        'clientes_nuevos': clientes_nuevos,
+        'clientes_recurrentes': clientes_recurrentes,
+        'total_clientes_mes': total_clientes_mes,
+        # Comparaciones año a año
+        'ventas_año_actual': ventas_año_seleccionado,
+        'ventas_año_anterior': ventas_año_anterior,
+        'crecimiento_año': crecimiento_año,
+        'reservas_año_actual': reservas_año_seleccionado,
+        'reservas_año_anterior': reservas_año_anterior,
+        'crecimiento_reservas_año': crecimiento_reservas_año,
+        # Datos de gráficos
         'ventas_semanales_labels': json.dumps(ventas_semanales_labels),
         'ventas_semanales_data': json.dumps(ventas_semanales_data),
+        'ventas_semanales_rango': ventas_semanales_rango,
         'ventas_mensuales_labels': json.dumps(ventas_mensuales_labels),
         'ventas_mensuales_data': json.dumps(ventas_mensuales_data),
+        'ventas_mensuales_rango': ventas_mensuales_rango,
         'ventas_anuales_labels': json.dumps(ventas_anuales_labels),
         'ventas_anuales_data': json.dumps(ventas_anuales_data),
+        'ventas_anuales_rango': ventas_anuales_rango,
+        'ventas_periodo': ventas_periodo,
+        'ventas_semana': ventas_semana,
+        'ventas_mes': ventas_mes if ventas_mes else '',
+        'ventas_año': ventas_año if ventas_año else '',
         'ventas_categoria_diarias_data': json.dumps(ventas_categoria_diarias_data),
         'ventas_categoria_semanales_data': json.dumps(ventas_categoria_semanales_data),
+        'ventas_categoria_semanales_rango': ventas_categoria_semanales_rango,
         'ventas_categoria_mensuales_data': json.dumps(ventas_categoria_mensuales_data),
+        'ventas_categoria_mensuales_rango': ventas_categoria_mensuales_rango,
         'ventas_categoria_anuales_data': json.dumps(ventas_categoria_anuales_data),
+        'ventas_categoria_anuales_rango': ventas_categoria_anuales_rango,
+        'categoria_periodo': categoria_periodo,
+        'categoria_semana': categoria_semana,
+        'categoria_mes': categoria_mes if categoria_mes else '',
+        'categoria_año': categoria_año if categoria_año else '',
         'categorias_unicas': json.dumps(categorias_unicas),
         'dias_semana_semanales_labels': json.dumps(dias_semana_semanales_labels),
         'dias_semana_semanales_data': json.dumps(dias_semana_semanales_data),
+        'dias_semana_semanales_rango': dias_semana_semanales_rango,
         'dias_semana_mensuales_labels': json.dumps(dias_semana_mensuales_labels),
         'dias_semana_mensuales_data': json.dumps(dias_semana_mensuales_data),
+        'dias_semana_mensuales_rango': dias_semana_mensuales_rango,
         'dias_semana_anuales_labels': json.dumps(dias_semana_anuales_labels),
         'dias_semana_anuales_data': json.dumps(dias_semana_anuales_data),
+        'dias_semana_anuales_rango': dias_semana_anuales_rango,
+        'demanda_periodo': demanda_periodo,
+        'demanda_semana': demanda_semana,
+        'demanda_mes': demanda_mes if demanda_mes else '',
+        'demanda_año': demanda_año if demanda_año else '',
     }
     
     return render(request, 'jio_app/estadisticas.html', context)
+
+
+@login_required
+def contabilidad(request):
+    """
+    Vista de contabilidad con ingresos, egresos y calendario mensual
+    """
+    if not request.user.tipo_usuario == 'administrador':
+        raise PermissionDenied("Solo los administradores pueden acceder a este recurso.")
+    
+    from datetime import datetime, timedelta
+    from collections import defaultdict
+    from calendar import monthrange
+    from django.db.models import Sum, Q
+    
+    # Obtener parámetros de mes y año (si existen)
+    hoy = datetime.now().date()
+    año_seleccionado = request.GET.get('year', hoy.year)
+    mes_seleccionado = request.GET.get('month', hoy.month)
+    
+    try:
+        año_seleccionado = int(año_seleccionado)
+        mes_seleccionado = int(mes_seleccionado)
+        # Validar rango
+        if mes_seleccionado < 1 or mes_seleccionado > 12:
+            mes_seleccionado = hoy.month
+        if año_seleccionado < 2000 or año_seleccionado > 2100:
+            año_seleccionado = hoy.year
+    except (ValueError, TypeError):
+        año_seleccionado = hoy.year
+        mes_seleccionado = hoy.month
+    
+    # ========== CALENDARIO MENSUAL CON ESTADÍSTICAS ==========
+    meses_espanol = {
+        1: 'Enero', 2: 'Febrero', 3: 'Marzo', 4: 'Abril', 5: 'Mayo', 6: 'Junio',
+        7: 'Julio', 8: 'Agosto', 9: 'Septiembre', 10: 'Octubre', 11: 'Noviembre', 12: 'Diciembre'
+    }
+    
+    # Calcular primer y último día del mes seleccionado
+    primer_dia_mes = datetime(año_seleccionado, mes_seleccionado, 1).date()
+    ultimo_dia_mes = datetime(año_seleccionado, mes_seleccionado, monthrange(año_seleccionado, mes_seleccionado)[1]).date()
+    
+    # ========== INGRESOS (Pagos recibidos) ==========
+    from jio_app.models import Pago, Reserva
+    
+    # Obtener pagos pagados del mes seleccionado
+    pagos_mes = Pago.objects.filter(
+        estado='pagado',
+        fecha_pago__year=año_seleccionado,
+        fecha_pago__month=mes_seleccionado
+    )
+    
+    # También incluir pagos sin fecha_pago pero de reservas del mes
+    reservas_mes = Reserva.objects.filter(
+        fecha_evento__year=año_seleccionado,
+        fecha_evento__month=mes_seleccionado
+    )
+    
+    pagos_sin_fecha = Pago.objects.filter(
+        estado='pagado',
+        reserva__in=reservas_mes,
+        fecha_pago__isnull=True
+    )
+    
+    # Calcular ingresos por día del mes
+    ingresos_por_dia = defaultdict(float)
+    pagos_por_dia = defaultdict(int)
+    
+    # Ingresos de pagos con fecha_pago
+    for pago in pagos_mes:
+        if pago.fecha_pago:
+            dia = pago.fecha_pago.day
+            ingresos_por_dia[dia] += float(pago.monto)
+            pagos_por_dia[dia] += 1
+    
+    # Ingresos de pagos sin fecha_pago pero de reservas del mes
+    for pago in pagos_sin_fecha:
+        dia = pago.reserva.fecha_evento.day
+        ingresos_por_dia[dia] += float(pago.monto)
+        pagos_por_dia[dia] += 1
+    
+    # Total de ingresos del mes
+    total_ingresos_mes = sum(ingresos_por_dia.values())
+    total_pagos_mes = sum(pagos_por_dia.values())
+    
+    # ========== EGRESOS (Por ahora vacío, se puede expandir después) ==========
+    egresos_por_dia = defaultdict(float)
+    total_egresos_mes = 0.0
+    
+    # ========== CALENDARIO ==========
+    # Crear estructura de calendario
+    calendario_datos = []
+    primer_dia_semana = primer_dia_mes.weekday()  # 0 = Lunes, 6 = Domingo
+    
+    # Días de la semana en español
+    dias_semana = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
+    
+    # Llenar días vacíos al inicio del mes
+    for i in range(primer_dia_semana):
+        calendario_datos.append({
+            'dia': None,
+            'ingresos': 0,
+            'egresos': 0,
+            'saldo': 0,
+            'pagos': 0,
+            'es_hoy': False
+        })
+    
+    # Llenar días del mes
+    for dia in range(1, ultimo_dia_mes.day + 1):
+        fecha_dia = datetime(año_seleccionado, mes_seleccionado, dia).date()
+        es_hoy = (fecha_dia == hoy and mes_seleccionado == hoy.month and año_seleccionado == hoy.year)
+        
+        ingresos_dia = ingresos_por_dia.get(dia, 0)
+        egresos_dia = egresos_por_dia.get(dia, 0)
+        saldo_dia = ingresos_dia - egresos_dia
+        
+        calendario_datos.append({
+            'dia': dia,
+            'ingresos': ingresos_dia,
+            'egresos': egresos_dia,
+            'saldo': saldo_dia,
+            'pagos': pagos_por_dia.get(dia, 0),
+            'es_hoy': es_hoy,
+            'fecha': fecha_dia.strftime('%Y-%m-%d')
+        })
+    
+    # Meses anteriores y siguientes para navegación
+    if mes_seleccionado == 1:
+        mes_anterior = 12
+        año_anterior = año_seleccionado - 1
+    else:
+        mes_anterior = mes_seleccionado - 1
+        año_anterior = año_seleccionado
+    
+    if mes_seleccionado == 12:
+        mes_siguiente = 1
+        año_siguiente = año_seleccionado + 1
+    else:
+        mes_siguiente = mes_seleccionado + 1
+        año_siguiente = año_seleccionado
+    
+    # Verificar si hay meses futuros (no permitir ir más allá del mes actual)
+    puede_avanzar = (año_siguiente < hoy.year) or (año_siguiente == hoy.year and mes_siguiente <= hoy.month)
+    
+    # Generar lista de años disponibles (desde 2020 hasta el año actual)
+    años_disponibles = list(range(2020, hoy.year + 1))
+    
+    # Calcular saldo neto del mes
+    saldo_neto_mes = total_ingresos_mes - total_egresos_mes
+    
+    context = {
+        # Datos del calendario mensual
+        'mes_seleccionado': mes_seleccionado,
+        'año_seleccionado': año_seleccionado,
+        'mes_nombre': meses_espanol[mes_seleccionado],
+        'calendario_datos': calendario_datos,
+        'dias_semana': dias_semana,
+        'total_ingresos_mes': total_ingresos_mes,
+        'total_egresos_mes': total_egresos_mes,
+        'saldo_neto_mes': saldo_neto_mes,
+        'total_pagos_mes': total_pagos_mes,
+        'mes_anterior': mes_anterior,
+        'año_anterior': año_anterior,
+        'mes_siguiente': mes_siguiente,
+        'año_siguiente': año_siguiente,
+        'puede_avanzar': puede_avanzar,
+        'meses_espanol': meses_espanol,
+        'años_disponibles': años_disponibles,
+    }
+    
+    return render(request, 'jio_app/contabilidad.html', context)
 
 
 # --------- CRUD de Arriendos (solo administrador) ---------
@@ -1936,62 +4212,115 @@ def arriendo_create_json(request):
     cliente = None
     if not errors:
         try:
-            # Buscar por RUT (único)
+            # Buscar por RUT (único) - Si existe, usar ese cliente directamente
             cliente = Cliente.objects.get(rut=cliente_rut)
-            # Actualizar datos si es necesario
-            if cliente.usuario.email != cliente_email:
-                cliente.usuario.email = cliente_email
-            if cliente_first_name and cliente.usuario.first_name != cliente_first_name:
-                cliente.usuario.first_name = cliente_first_name
-            if cliente_last_name and cliente.usuario.last_name != cliente_last_name:
-                cliente.usuario.last_name = cliente_last_name
-            if cliente_telefono:
-                cliente.usuario.telefono = cliente_telefono
-            cliente.usuario.save()
-        except Cliente.DoesNotExist:
-            # Crear nuevo cliente
-            try:
-                # Verificar si el email ya existe
-                if Usuario.objects.filter(email=cliente_email).exists():
-                    errors.append('Ya existe un usuario con ese email')
-                else:
-                    # Generar username único
-                    base_username = slugify(f"{cliente_first_name}_{cliente_last_name}")
-                    username = base_username
-                    counter = 1
-                    while Usuario.objects.filter(username=username).exists():
-                        username = f"{base_username}_{counter}"
-                        counter += 1
-                    
-                    # Crear usuario con password aleatorio
-                    random_password = secrets.token_urlsafe(12)
-                    usuario = Usuario.objects.create_user(
-                        username=username,
-                        email=cliente_email,
-                        password=random_password,
-                        first_name=cliente_first_name,
-                        last_name=cliente_last_name,
-                        tipo_usuario='cliente',
-                        is_active=True,
-                    )
+            # Actualizar solo datos que no causen conflictos (no el email si ya existe en otro usuario)
+            # Solo actualizar si el email proporcionado es el mismo que tiene el cliente actual
+            if cliente.usuario.email == cliente_email:
+                # Si el email coincide, podemos actualizar otros campos
+                if cliente_first_name and cliente.usuario.first_name != cliente_first_name:
+                    cliente.usuario.first_name = cliente_first_name
+                if cliente_last_name and cliente.usuario.last_name != cliente_last_name:
+                    cliente.usuario.last_name = cliente_last_name
+                if cliente_telefono:
+                    cliente.usuario.telefono = cliente_telefono
+                cliente.usuario.save()
+            else:
+                # Si el email es diferente, verificar si podemos actualizarlo
+                # Solo actualizar si no existe otro usuario con ese email
+                if not Usuario.objects.filter(email=cliente_email).exclude(id=cliente.usuario.id).exists():
+                    # El email no existe en otro usuario, podemos actualizarlo
+                    cliente.usuario.email = cliente_email
+                    if cliente_first_name:
+                        cliente.usuario.first_name = cliente_first_name
+                    if cliente_last_name:
+                        cliente.usuario.last_name = cliente_last_name
                     if cliente_telefono:
-                        usuario.telefono = cliente_telefono
-                        usuario.save(update_fields=['telefono'])
-                    
-                    cliente = Cliente.objects.create(
-                        usuario=usuario,
-                        rut=cliente_rut,
-                        tipo_cliente=cliente_tipo,
-                    )
-            except Exception as e:
-                errors.append(f'Error al crear cliente: {str(e)}')
+                        cliente.usuario.telefono = cliente_telefono
+                    cliente.usuario.save()
+                else:
+                    # El email existe en otro usuario, solo actualizar otros campos
+                    if cliente_first_name:
+                        cliente.usuario.first_name = cliente_first_name
+                    if cliente_last_name:
+                        cliente.usuario.last_name = cliente_last_name
+                    if cliente_telefono:
+                        cliente.usuario.telefono = cliente_telefono
+                    cliente.usuario.save()
+        except Cliente.DoesNotExist:
+            # No existe cliente con ese RUT, verificar si el email ya existe
+            if Usuario.objects.filter(email=cliente_email).exists():
+                # El email ya existe, buscar si ese usuario tiene un cliente asociado
+                usuario_existente = Usuario.objects.get(email=cliente_email)
+                if hasattr(usuario_existente, 'cliente'):
+                    # Si el usuario tiene cliente, usar ese cliente directamente
+                    # No intentar cambiar el RUT ya que es único y podría causar conflictos
+                    cliente = usuario_existente.cliente
+                    # Actualizar solo datos no conflictivos
+                    if cliente_first_name:
+                        cliente.usuario.first_name = cliente_first_name
+                    if cliente_last_name:
+                        cliente.usuario.last_name = cliente_last_name
+                    if cliente_telefono:
+                        cliente.usuario.telefono = cliente_telefono
+                    cliente.usuario.save()
+                    # No actualizar el RUT ni el tipo_cliente para evitar conflictos
+                else:
+                    # El usuario existe pero no tiene cliente asociado
+                    # No crear cliente automáticamente, solo devolver error
+                    errors.append('Ya existe un usuario con ese email. Use el RUT correcto para ese cliente.')
+            else:
+                # El email no existe, crear nuevo cliente
+                try:
+                    # Verificar que el RUT no esté ya en uso
+                    if Cliente.objects.filter(rut=cliente_rut).exists():
+                        errors.append(f'Ya existe un cliente con el RUT {cliente_rut}')
+                    else:
+                        # Generar username único
+                        base_username = slugify(f"{cliente_first_name}_{cliente_last_name}")
+                        username = base_username
+                        counter = 1
+                        while Usuario.objects.filter(username=username).exists():
+                            username = f"{base_username}_{counter}"
+                            counter += 1
+                        
+                        # Crear usuario con password aleatorio
+                        random_password = secrets.token_urlsafe(12)
+                        usuario = Usuario.objects.create_user(
+                            username=username,
+                            email=cliente_email,
+                            password=random_password,
+                            first_name=cliente_first_name,
+                            last_name=cliente_last_name,
+                            tipo_usuario='cliente',
+                            is_active=True,
+                        )
+                        if cliente_telefono:
+                            usuario.telefono = cliente_telefono
+                            usuario.save(update_fields=['telefono'])
+                        
+                        cliente = Cliente.objects.create(
+                            usuario=usuario,
+                            rut=cliente_rut,
+                            tipo_cliente=cliente_tipo,
+                        )
+                except Exception as e:
+                    errors.append(f'Error al crear cliente: {str(e)}')
     
     if not fecha_evento:
         errors.append('La fecha del evento es obligatoria')
     else:
         try:
-            from datetime import datetime
+            from datetime import datetime, date, timedelta
             fecha_obj = datetime.strptime(fecha_evento, '%Y-%m-%d').date()
+            hoy = date.today()
+            # Permitir el día actual y días futuros, solo rechazar días pasados
+            if fecha_obj < hoy:
+                errors.append('La fecha del evento no puede ser anterior al día actual')
+            # Validar que la fecha no sea más de 1 año en el futuro
+            fecha_maxima = hoy + timedelta(days=365)
+            if fecha_obj > fecha_maxima:
+                errors.append('La fecha del evento no puede ser más de 1 año desde la fecha actual')
         except ValueError:
             errors.append('Formato de fecha inválido (use YYYY-MM-DD)')
     
@@ -2000,6 +4329,10 @@ def arriendo_create_json(request):
     else:
         try:
             hora_inst_obj = datetime.strptime(hora_instalacion, '%H:%M').time()
+            # Validar que la hora de instalación sea desde las 9:00 AM
+            hora_minima = datetime.strptime('09:00', '%H:%M').time()
+            if hora_inst_obj < hora_minima:
+                errors.append('Las instalaciones solo están disponibles desde las 9:00 AM')
         except ValueError:
             errors.append('Formato de hora inválido (use HH:MM)')
     
@@ -2008,6 +4341,10 @@ def arriendo_create_json(request):
     else:
         try:
             hora_ret_obj = datetime.strptime(hora_retiro, '%H:%M').time()
+            # Validar que la hora de retiro sea antes de las 00:00 (23:59 máximo)
+            hora_maxima = datetime.strptime('23:59', '%H:%M').time()
+            if hora_ret_obj > hora_maxima:
+                errors.append('La hora de retiro debe ser antes de las 00:00')
         except ValueError:
             errors.append('Formato de hora inválido (use HH:MM)')
     
@@ -2029,6 +4366,37 @@ def arriendo_create_json(request):
     # Calcular precio por distancia ($1.000 por km)
     PRECIO_POR_KM = 1000
     precio_distancia = distancia_km_int * PRECIO_POR_KM
+    
+    # Calcular horas extra y su precio
+    horas_extra = 0
+    precio_horas_extra = 0
+    if hora_inst_obj and hora_ret_obj:
+        from datetime import timedelta
+        # Convertir horas a datetime para calcular diferencia
+        fecha_base = datetime(2000, 1, 1).date()
+        datetime_inst = datetime.combine(fecha_base, hora_inst_obj)
+        datetime_ret = datetime.combine(fecha_base, hora_ret_obj)
+        
+        # Si la hora de retiro es menor que la de instalación, asumir que es al día siguiente
+        if datetime_ret < datetime_inst:
+            datetime_ret += timedelta(days=1)
+        
+        # Calcular diferencia en minutos
+        diferencia = datetime_ret - datetime_inst
+        diferencia_minutos = diferencia.total_seconds() / 60
+        
+        # Calcular horas base (6 horas = 360 minutos)
+        minutos_base = 6 * 60
+        
+        # Calcular horas extra (solo si excede las 6 horas base)
+        if diferencia_minutos > minutos_base:
+            minutos_extra = diferencia_minutos - minutos_base
+            # Redondear hacia arriba (si hay al menos 1 minuto extra, cuenta como 1 hora)
+            horas_extra = int((minutos_extra + 59) // 60)  # Redondear hacia arriba
+        
+        # Calcular precio (10.000 pesos por hora extra)
+        PRECIO_POR_HORA_EXTRA = 10000
+        precio_horas_extra = horas_extra * PRECIO_POR_HORA_EXTRA
     
     if estado not in [choice[0] for choice in Reserva.ESTADO_CHOICES]:
         errors.append('Estado inválido')
@@ -2054,7 +4422,12 @@ def arriendo_create_json(request):
                 continue
             
             try:
-                juego = Juego.objects.get(id=int(juego_id), estado='disponible')
+                juego = Juego.objects.get(id=int(juego_id))
+                # Verificar que el juego esté habilitado
+                if juego.estado != 'Habilitado':
+                    errors.append(f'Juego con ID {juego_id} no está habilitado (estado: {juego.estado})')
+                    continue
+                
                 # Cantidad siempre es 1
                 cantidad_int = 1
                 precio_unitario = juego.precio_base
@@ -2068,15 +4441,15 @@ def arriendo_create_json(request):
                     'subtotal': subtotal,
                 })
             except (ValueError, Juego.DoesNotExist):
-                errors.append(f'Juego con ID {juego_id} no encontrado o no disponible')
+                errors.append(f'Juego con ID {juego_id} no encontrado')
     except json.JSONDecodeError:
         errors.append('Formato de juegos inválido')
     
     if errors:
         return JsonResponse({'success': False, 'errors': errors}, status=400)
     
-    # Total incluye juegos + distancia
-    total_final = total + precio_distancia
+    # Total incluye juegos + distancia + horas extra
+    total_final = total + precio_distancia + precio_horas_extra
     
     try:
         reserva = Reserva.objects.create(
@@ -2087,6 +4460,8 @@ def arriendo_create_json(request):
             direccion_evento=direccion_evento,
             distancia_km=distancia_km_int,
             precio_distancia=precio_distancia,
+            horas_extra=horas_extra,
+            precio_horas_extra=precio_horas_extra,
             estado=estado,
             observaciones=observaciones or None,
             total_reserva=total_final,
@@ -2100,6 +4475,47 @@ def arriendo_create_json(request):
                 cantidad=juego_item['cantidad'],
                 precio_unitario=juego_item['precio_unitario'],
                 subtotal=juego_item['subtotal'],
+            )
+        
+        # Crear instalación automáticamente si no existe
+        try:
+            instalacion = Instalacion.objects.get(reserva=reserva)
+            # Actualizar si ya existe
+            instalacion.fecha_instalacion = fecha_obj
+            instalacion.hora_instalacion = hora_inst_obj
+            instalacion.direccion_instalacion = direccion_evento
+            if cliente.usuario.telefono:
+                instalacion.telefono_cliente = cliente.usuario.telefono
+            if observaciones:
+                instalacion.observaciones_instalacion = observaciones
+            instalacion.save()
+        except Instalacion.DoesNotExist:
+            Instalacion.objects.create(
+                reserva=reserva,
+                fecha_instalacion=fecha_obj,
+                hora_instalacion=hora_inst_obj,
+                direccion_instalacion=direccion_evento,
+                telefono_cliente=cliente.usuario.telefono or '',
+                estado_instalacion='programada',
+                observaciones_instalacion=observaciones or None,
+            )
+        
+        # Crear retiro automáticamente si no existe
+        try:
+            retiro = Retiro.objects.get(reserva=reserva)
+            # Actualizar si ya existe
+            retiro.fecha_retiro = fecha_obj
+            retiro.hora_retiro = hora_ret_obj
+            if observaciones:
+                retiro.observaciones_retiro = observaciones
+            retiro.save()
+        except Retiro.DoesNotExist:
+            Retiro.objects.create(
+                reserva=reserva,
+                fecha_retiro=fecha_obj,
+                hora_retiro=hora_ret_obj,
+                estado_retiro='programado',
+                observaciones_retiro=observaciones or None,
             )
         
         return JsonResponse({
@@ -2129,6 +4545,12 @@ def arriendo_update_json(request, arriendo_id: int):
         return JsonResponse({'error': 'Arriendo no encontrado'}, status=404)
     
     cliente_id = request.POST.get('cliente_id', '').strip()
+    cliente_nombre = request.POST.get('cliente_nombre', '').strip()
+    cliente_apellido = request.POST.get('cliente_apellido', '').strip()
+    cliente_rut = request.POST.get('cliente_rut', '').strip()
+    cliente_email = request.POST.get('cliente_email', '').strip()
+    cliente_telefono = request.POST.get('cliente_telefono', '').strip()
+    cliente_tipo = request.POST.get('cliente_tipo', '').strip()
     fecha_evento = request.POST.get('fecha_evento', '').strip()
     hora_instalacion = request.POST.get('hora_instalacion', '').strip()
     hora_retiro = request.POST.get('hora_retiro', '').strip()
@@ -2142,34 +4564,109 @@ def arriendo_update_json(request, arriendo_id: int):
     
     errors = []
     
-    # Validaciones
+    # Actualizar datos del cliente
     if cliente_id:
         try:
             cliente = Cliente.objects.get(id=int(cliente_id))
             reserva.cliente = cliente
+            
+            # Actualizar datos del cliente si se proporcionan
+            if cliente_nombre:
+                cliente.usuario.first_name = cliente_nombre
+            if cliente_apellido:
+                cliente.usuario.last_name = cliente_apellido
+            if cliente_email:
+                cliente.usuario.email = cliente_email
+            if cliente_telefono:
+                cliente.usuario.telefono = cliente_telefono
+            if cliente_rut:
+                cliente.rut = cliente_rut
+            if cliente_tipo:
+                cliente.tipo_cliente = cliente_tipo
+            
+            # Guardar cambios del usuario y cliente
+            cliente.usuario.save()
+            cliente.save()
+            
         except (ValueError, Cliente.DoesNotExist):
             errors.append('Cliente no válido')
     
     if fecha_evento:
         try:
-            from datetime import datetime
-            reserva.fecha_evento = datetime.strptime(fecha_evento, '%Y-%m-%d').date()
+            from datetime import datetime, date, timedelta
+            fecha_obj = datetime.strptime(fecha_evento, '%Y-%m-%d').date()
+            hoy = date.today()
+            # Permitir el día actual y días futuros, solo rechazar días pasados
+            if fecha_obj < hoy:
+                errors.append('La fecha del evento no puede ser anterior al día actual')
+            # Validar que la fecha no sea más de 1 año en el futuro
+            fecha_maxima = hoy + timedelta(days=365)
+            if fecha_obj > fecha_maxima:
+                errors.append('La fecha del evento no puede ser más de 1 año desde la fecha actual')
+            else:
+                reserva.fecha_evento = fecha_obj
         except ValueError:
             errors.append('Formato de fecha inválido (use YYYY-MM-DD)')
     
     if hora_instalacion:
         try:
             from datetime import datetime
-            reserva.hora_instalacion = datetime.strptime(hora_instalacion, '%H:%M').time()
+            hora_inst_obj = datetime.strptime(hora_instalacion, '%H:%M').time()
+            # Validar que la hora de instalación sea desde las 9:00 AM
+            hora_minima = datetime.strptime('09:00', '%H:%M').time()
+            if hora_inst_obj < hora_minima:
+                errors.append('Las instalaciones solo están disponibles desde las 9:00 AM')
+            else:
+                reserva.hora_instalacion = hora_inst_obj
         except ValueError:
             errors.append('Formato de hora inválido (use HH:MM)')
     
     if hora_retiro:
         try:
             from datetime import datetime
-            reserva.hora_retiro = datetime.strptime(hora_retiro, '%H:%M').time()
+            hora_ret_obj = datetime.strptime(hora_retiro, '%H:%M').time()
+            # Validar que la hora de retiro sea antes de las 00:00 (23:59 máximo)
+            hora_maxima = datetime.strptime('23:59', '%H:%M').time()
+            if hora_ret_obj > hora_maxima:
+                errors.append('La hora de retiro debe ser antes de las 00:00')
+            else:
+                reserva.hora_retiro = hora_ret_obj
         except ValueError:
             errors.append('Formato de hora inválido (use HH:MM)')
+    
+    # Calcular horas extra y su precio después de actualizar las horas
+    horas_extra = 0
+    precio_horas_extra = 0
+    if reserva.hora_instalacion and reserva.hora_retiro:
+        from datetime import timedelta
+        # Convertir horas a datetime para calcular diferencia
+        fecha_base = datetime(2000, 1, 1).date()
+        datetime_inst = datetime.combine(fecha_base, reserva.hora_instalacion)
+        datetime_ret = datetime.combine(fecha_base, reserva.hora_retiro)
+        
+        # Si la hora de retiro es menor que la de instalación, asumir que es al día siguiente
+        if datetime_ret < datetime_inst:
+            datetime_ret += timedelta(days=1)
+        
+        # Calcular diferencia en minutos
+        diferencia = datetime_ret - datetime_inst
+        diferencia_minutos = diferencia.total_seconds() / 60
+        
+        # Calcular horas base (6 horas = 360 minutos)
+        minutos_base = 6 * 60
+        
+        # Calcular horas extra (solo si excede las 6 horas base)
+        if diferencia_minutos > minutos_base:
+            minutos_extra = diferencia_minutos - minutos_base
+            # Redondear hacia arriba (si hay al menos 1 minuto extra, cuenta como 1 hora)
+            horas_extra = int((minutos_extra + 59) // 60)  # Redondear hacia arriba
+        
+        # Calcular precio (10.000 pesos por hora extra)
+        PRECIO_POR_HORA_EXTRA = 10000
+        precio_horas_extra = horas_extra * PRECIO_POR_HORA_EXTRA
+    
+    reserva.horas_extra = horas_extra
+    reserva.precio_horas_extra = precio_horas_extra
     
     if direccion_evento:
         if len(direccion_evento) > 300:
@@ -2219,7 +4716,12 @@ def arriendo_update_json(request, arriendo_id: int):
                     continue
                 
                 try:
-                    juego = Juego.objects.get(id=int(juego_id), estado='disponible')
+                    juego = Juego.objects.get(id=int(juego_id))
+                    # Verificar que el juego esté habilitado
+                    if juego.estado != 'Habilitado':
+                        errors.append(f'Juego con ID {juego_id} no está habilitado (estado: {juego.estado})')
+                        continue
+                    
                     # Cantidad siempre es 1
                     cantidad_int = 1
                     precio_unitario = juego.precio_base
@@ -2233,13 +4735,13 @@ def arriendo_update_json(request, arriendo_id: int):
                         'subtotal': subtotal,
                     })
                 except (ValueError, Juego.DoesNotExist):
-                    errors.append(f'Juego con ID {juego_id} no encontrado o no disponible')
+                    errors.append(f'Juego con ID {juego_id} no encontrado')
             
             if not errors:
                 # Eliminar detalles antiguos y crear nuevos
                 reserva.detalles.all().delete()
-                # Total incluye juegos + distancia
-                total_final = total + reserva.precio_distancia
+                # Total incluye juegos + distancia + horas extra
+                total_final = total + reserva.precio_distancia + reserva.precio_horas_extra
                 reserva.total_reserva = total_final
                 
                 for juego_item in juegos_validos:
@@ -2258,6 +4760,73 @@ def arriendo_update_json(request, arriendo_id: int):
     
     try:
         reserva.save()
+        
+        # Actualizar o crear instalación
+        try:
+            instalacion = Instalacion.objects.get(reserva=reserva)
+            # Actualizar si ya existe
+            if fecha_evento:
+                from datetime import datetime
+                fecha_obj = datetime.strptime(fecha_evento, '%Y-%m-%d').date()
+                instalacion.fecha_instalacion = fecha_obj
+            if hora_instalacion:
+                from datetime import datetime
+                hora_inst_obj = datetime.strptime(hora_instalacion, '%H:%M').time()
+                instalacion.hora_instalacion = hora_inst_obj
+            if direccion_evento:
+                instalacion.direccion_instalacion = direccion_evento
+            if cliente_telefono:
+                instalacion.telefono_cliente = cliente_telefono
+            if observaciones is not None:
+                instalacion.observaciones_instalacion = observaciones.strip() or None
+            instalacion.save()
+        except Instalacion.DoesNotExist:
+            # Crear instalación si no existe
+            from datetime import datetime
+            fecha_obj_inst = datetime.strptime(fecha_evento, '%Y-%m-%d').date() if fecha_evento else reserva.fecha_evento
+            hora_inst_obj_inst = datetime.strptime(hora_instalacion, '%H:%M').time() if hora_instalacion else reserva.hora_instalacion
+            direccion_inst = direccion_evento if direccion_evento else reserva.direccion_evento
+            telefono_inst = cliente_telefono if cliente_telefono else (reserva.cliente.usuario.telefono or '')
+            
+            Instalacion.objects.create(
+                reserva=reserva,
+                fecha_instalacion=fecha_obj_inst,
+                hora_instalacion=hora_inst_obj_inst,
+                direccion_instalacion=direccion_inst,
+                telefono_cliente=telefono_inst,
+                estado_instalacion='programada',
+                observaciones_instalacion=observaciones.strip() if observaciones else None,
+            )
+        
+        # Actualizar o crear retiro
+        try:
+            retiro = Retiro.objects.get(reserva=reserva)
+            # Actualizar si ya existe
+            if fecha_evento:
+                from datetime import datetime
+                fecha_obj = datetime.strptime(fecha_evento, '%Y-%m-%d').date()
+                retiro.fecha_retiro = fecha_obj
+            if hora_retiro:
+                from datetime import datetime
+                hora_ret_obj = datetime.strptime(hora_retiro, '%H:%M').time()
+                retiro.hora_retiro = hora_ret_obj
+            if observaciones is not None:
+                retiro.observaciones_retiro = observaciones.strip() or None
+            retiro.save()
+        except Retiro.DoesNotExist:
+            # Crear retiro si no existe
+            from datetime import datetime
+            fecha_obj_ret = datetime.strptime(fecha_evento, '%Y-%m-%d').date() if fecha_evento else reserva.fecha_evento
+            hora_ret_obj_ret = datetime.strptime(hora_retiro, '%H:%M').time() if hora_retiro else reserva.hora_retiro
+            
+            Retiro.objects.create(
+                reserva=reserva,
+                fecha_retiro=fecha_obj_ret,
+                hora_retiro=hora_ret_obj_ret,
+                estado_retiro='programado',
+                observaciones_retiro=observaciones.strip() if observaciones else None,
+            )
+        
         return JsonResponse({
             'success': True, 
             'message': f'Arriendo #{reserva.id} actualizado correctamente.',

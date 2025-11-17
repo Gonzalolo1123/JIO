@@ -1,0 +1,218 @@
+@startuml Caso_de_Uso_Repartos
+!theme plain
+skinparam packageStyle rectangle
+skinparam usecase {
+  BackgroundColor #E3F2FD
+  BorderColor #1976D2
+}
+
+left to right direction
+
+actor "Administrador" as Admin
+actor "Repartidor" as Repartidor
+
+package "Gestión de Repartos (Administrador)" {
+  usecase "Visualizar agenda completa\nde repartos" as UC1
+  usecase "Cambiar vista de agenda\n(diaria/semanal/mensual)" as UC2
+  usecase "Navegar entre períodos\n(anterior/siguiente/hoy)" as UC3
+  usecase "Asignar repartidor a instalación" as UC4
+  usecase "Asignar repartidor a retiro" as UC5
+  usecase "Cambiar estado de instalación" as UC6
+  usecase "Cambiar estado de retiro" as UC7
+  usecase "Registrar incidente en instalación" as UC8
+  usecase "Registrar incidente en retiro" as UC9
+  usecase "Ver detalles de instalación" as UC10
+  usecase "Ver detalles de retiro" as UC11
+  usecase "Filtrar y buscar repartos" as UC12
+  usecase "Colapsar/expandir secciones\n(instalaciones/retiros)" as UC13
+}
+
+package "Panel de Repartidor" {
+  usecase "Ver mis repartos asignados\ndel día" as UC14
+  usecase "Cambiar mi estado\n(Habilitado/Deshabilitado)" as UC15
+  usecase "Ver detalles de mi instalación" as UC16
+  usecase "Ver detalles de mi retiro" as UC17
+  usecase "Marcar instalación como realizada\n(con método de pago)" as UC18
+  usecase "Marcar retiro como realizado" as UC19
+}
+
+Admin --> UC1
+Admin --> UC2
+Admin --> UC3
+Admin --> UC4
+Admin --> UC5
+Admin --> UC6
+Admin --> UC7
+Admin --> UC8
+Admin --> UC9
+Admin --> UC10
+Admin --> UC11
+Admin --> UC12
+Admin --> UC13
+
+Repartidor --> UC14
+Repartidor --> UC15
+Repartidor --> UC16
+Repartidor --> UC17
+Repartidor --> UC18
+Repartidor --> UC19
+
+UC1 ..> UC2 : <<include>>
+UC1 ..> UC3 : <<include>>
+
+UC4 ..> UC14 : <<provides>>
+UC5 ..> UC14 : <<provides>>
+
+UC10 ..> UC16 : <<similar>>
+UC11 ..> UC17 : <<similar>>
+
+note right of UC1
+  Muestra agenda con:
+  - Instalaciones programadas
+  - Retiros programados
+  - Información de cliente, dirección, hora
+  - Estado de asignación de repartidor
+  - Solo muestra fechas actuales o futuras
+end note
+
+note right of UC2
+  Vistas disponibles:
+  - Diaria (un solo día)
+  - Semanal (7 días)
+  - Mensual (mes completo)
+end note
+
+note right of UC3
+  Navegación:
+  - Botón anterior/siguiente
+  - Selector de fecha directo
+  - Botón "Hoy" para volver a fecha actual
+  - Muestra rango de fechas visible
+end note
+
+note right of UC4
+  Asigna un repartidor
+  a una instalación específica
+  con observaciones opcionales
+end note
+
+note right of UC5
+  Asigna un repartidor
+  a un retiro específico
+  con observaciones opcionales
+end note
+
+note right of UC6
+  Estados disponibles:
+  - Programada
+  - En ruta
+  - Realizada
+  - Cancelada
+end note
+
+note right of UC7
+  Estados disponibles:
+  - Programado
+  - En ruta
+  - Realizado
+  - Cancelado
+end note
+
+note right of UC8
+  Permite registrar incidentes
+  durante la instalación
+  con descripción y observaciones
+end note
+
+note right of UC9
+  Permite registrar incidentes
+  durante el retiro
+  con descripción y observaciones
+end note
+
+note right of UC10
+  Muestra detalles completos:
+  - Cliente y contacto
+  - Dirección y coordenadas
+  - Fecha y hora
+  - Juegos a instalar
+  - Repartidor asignado
+  - Estado y observaciones
+end note
+
+note right of UC11
+  Muestra detalles completos:
+  - Cliente y contacto
+  - Dirección y coordenadas
+  - Fecha y hora
+  - Juegos a retirar
+  - Repartidor asignado
+  - Estado y observaciones
+end note
+
+note right of UC12
+  Filtros disponibles:
+  - Por cliente o dirección
+  - Por repartidor
+  - Por estado
+end note
+
+note right of UC13
+  Mejora la visualización
+  permitiendo ocultar/mostrar
+  las secciones de instalaciones
+  y retiros independientemente
+end note
+
+note right of UC14
+  El repartidor solo ve
+  los repartos que le fueron
+  asignados por el administrador.
+  Muestra instalaciones y retiros
+  del día actual.
+end note
+
+note right of UC15
+  El repartidor puede cambiar
+  su estado de disponibilidad:
+  - Habilitado (disponible)
+  - Deshabilitado (no disponible)
+end note
+
+note right of UC16
+  Muestra detalles completos
+  de una instalación asignada
+  al repartidor, incluyendo:
+  - Cliente y contacto
+  - Dirección y mapa
+  - Juegos a instalar
+  - Observaciones
+end note
+
+note right of UC17
+  Muestra detalles completos
+  de un retiro asignado
+  al repartidor, incluyendo:
+  - Cliente y contacto
+  - Dirección
+  - Juegos a retirar
+  - Observaciones
+end note
+
+note right of UC18
+  Al marcar instalación como realizada,
+  el repartidor debe registrar:
+  - Método de pago (efectivo/transferencia/otro)
+  - Comprobante si es transferencia
+  - Hora de retiro (opcional)
+  - Observaciones (opcional)
+end note
+
+note right of UC19
+  Al marcar retiro como realizado,
+  el repartidor puede agregar:
+  - Observaciones (opcional)
+end note
+
+@enduml
+

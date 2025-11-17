@@ -1,0 +1,579 @@
+{% extends 'jio_app/base_admin.html' %}
+{% load static %}
+
+{% block title %}Gestión de Repartos - JIO{% endblock %}
+
+{% block content %}
+<div class="panel-container">
+  <div class="panel-header">
+    <h1 class="panel-title">Gestión de repartos</h1>
+  </div>
+
+  <!-- Filtros y búsqueda -->
+  <div class="form-card">
+    <form method="get" class="form-grid" style="grid-template-columns: 1fr 1fr auto; align-items: end;">
+      <label>Buscar
+        <input type="text" name="q" value="{{ query }}" placeholder="Cliente, repartidor o dirección">
+      </label>
+      <label>Estado
+        <select name="estado">
+          <option value="">Todos</option>
+          <option value="programada" {% if estado_filter == 'programada' %}selected{% endif %}>Programada</option>
+          <option value="en_ruta" {% if estado_filter == 'en_ruta' %}selected{% endif %}>En ruta</option>
+          <option value="realizada" {% if estado_filter == 'realizada' %}selected{% endif %}>Realizada</option>
+          <option value="cancelada" {% if estado_filter == 'cancelada' %}selected{% endif %}>Cancelada</option>
+        </select>
+      </label>
+      <button class="btn btn-secondary" type="submit">Filtrar</button>
+    </form>
+  </div>
+
+  <!-- Agenda del día -->
+  <div class="form-card" style="margin-top: 1rem;">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:.75rem; flex-wrap:wrap; gap:0.5rem;">
+      <h2 class="panel-title" style="font-size:1.25rem; color:#2E7D32; margin:0;">
+        <i class="fas fa-calendar-day"></i> Agenda
+      </h2>
+      
+      <!-- Controles de vista -->
+      <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+        <!-- Selector de vista -->
+        <div style="display:flex; gap:0.25rem;">
+          <button type="button" class="btn btn-sm vista-btn" data-vista="diaria" 
+            style="{% if vista == 'diaria' %}background:#2E7D32;color:white;{% endif %}">
+            <i class="fas fa-calendar-day"></i> Día
+          </button>
+          <button type="button" class="btn btn-sm vista-btn" data-vista="semanal"
+            style="{% if vista == 'semanal' %}background:#2E7D32;color:white;{% endif %}">
+            <i class="fas fa-calendar-week"></i> Semana
+          </button>
+          <button type="button" class="btn btn-sm vista-btn" data-vista="mensual"
+            style="{% if vista == 'mensual' %}background:#2E7D32;color:white;{% endif %}">
+            <i class="fas fa-calendar-alt"></i> Mes
+          </button>
+        </div>
+        
+        <!-- Navegación -->
+        <div style="display:flex; gap:0.25rem; align-items:center;">
+          <button type="button" class="btn btn-sm btn-secondary" id="btnAnterior" title="Anterior">
+            <i class="fas fa-chevron-left"></i>
+          </button>
+          <input type="date" id="fechaSeleccionada" value="{{ fecha_base|date:'Y-m-d' }}" 
+            style="padding:0.25rem 0.5rem; border:1px solid #ddd; border-radius:4px; font-size:0.875rem;">
+          <button type="button" class="btn btn-sm btn-secondary" id="btnSiguiente" title="Siguiente">
+            <i class="fas fa-chevron-right"></i>
+          </button>
+          <button type="button" class="btn btn-sm btn-primary" id="btnHoy" title="Ir a hoy">
+            Hoy
+          </button>
+        </div>
+        
+        <!-- Rango de fechas -->
+        <span class="badge badge-info" id="rangoFechas">
+          {% if vista == 'diaria' %}
+            {{ fecha_base|date:"d/m/Y" }}
+          {% elif vista == 'semanal' %}
+            {{ fecha_inicio|date:"d/m" }} - {{ fecha_fin|date:"d/m/Y" }}
+          {% else %}
+            {{ fecha_base|date:"F Y" }}
+          {% endif %}
+        </span>
+      </div>
+    </div>
+    <div class="agenda-grid" id="agendaContainer">
+      <!-- Instalaciones -->
+      <div class="agenda-section">
+        <h3 class="agenda-title">
+          <i class="fas fa-truck-loading"></i> Instalaciones (<span id="countInstalaciones">{{ instalaciones_agenda|length }}</span>)
+        </h3>
+        <div id="instalacionesContainer">
+        {% for inst in instalaciones_agenda %}
+        <div class="agenda-card agenda-instalacion">
+          <div class="agenda-time">{{ inst.hora_instalacion|time:"H:i" }}</div>
+          <div class="agenda-info">
+            <strong>{{ inst.reserva.cliente.usuario.get_full_name }}</strong>
+            <p>{{ inst.direccion_instalacion }}</p>
+            <span class="agenda-repartidor">
+              {% if inst.repartidor %}
+                <i class="fas fa-user"></i> {{ inst.repartidor.usuario.get_full_name }}
+              {% else %}
+                <i class="fas fa-exclamation-triangle"></i> Sin asignar
+              {% endif %}
+            </span>
+          </div>
+          <div class="agenda-actions">
+            <button class="btn-icon btn-primary" data-asignar-instalacion="{{ inst.id }}" title="Asignar repartidor">
+              <i class="fas fa-user-plus"></i>
+            </button>
+            <button class="btn-icon btn-secondary" data-ver-detalle="{{ inst.id }}" data-tipo="instalacion" title="Ver detalle">
+              <i class="fas fa-eye"></i>
+            </button>
+          </div>
+        </div>
+        {% empty %}
+        <p style="color:#7f8c8d; text-align:center; padding:1rem;">No hay instalaciones programadas para este período</p>
+        {% endfor %}
+        </div>
+      </div>
+
+      <!-- Retiros -->
+      <div class="agenda-section">
+        <h3 class="agenda-title">
+          <i class="fas fa-truck-pickup"></i> Retiros (<span id="countRetiros">{{ retiros_agenda|length }}</span>)
+        </h3>
+        <div id="retirosContainer">
+        {% for ret in retiros_agenda %}
+        <div class="agenda-card agenda-retiro">
+          <div class="agenda-time">{{ ret.hora_retiro|time:"H:i" }}</div>
+          <div class="agenda-info">
+            <strong>{{ ret.reserva.cliente.usuario.get_full_name }}</strong>
+            <p>{{ ret.reserva.direccion_evento }}</p>
+            <span class="agenda-repartidor">
+              {% if ret.repartidor %}
+                <i class="fas fa-user"></i> {{ ret.repartidor.usuario.get_full_name }}
+              {% else %}
+                <i class="fas fa-exclamation-triangle"></i> Sin asignar
+              {% endif %}
+            </span>
+          </div>
+          <div class="agenda-actions">
+            <button class="btn-icon btn-primary" data-asignar-retiro="{{ ret.id }}" title="Asignar repartidor">
+              <i class="fas fa-user-plus"></i>
+            </button>
+            <button class="btn-icon btn-secondary" data-ver-detalle="{{ ret.id }}" data-tipo="retiro" title="Ver detalle">
+              <i class="fas fa-eye"></i>
+            </button>
+          </div>
+        </div>
+        {% empty %}
+        <p style="color:#7f8c8d; text-align:center; padding:1rem;">No hay retiros programados para este período</p>
+        {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tabla de Instalaciones -->
+  <div class="form-card" style="overflow:auto; margin-top:1rem;">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:.75rem; cursor:pointer;" 
+         onclick="toggleSection('instalacionesTable')" title="Hacer clic para expandir/colapsar">
+      <h2 class="panel-title" style="font-size:1.25rem; color:#2E7D32; margin:0;">
+        <i class="fas fa-truck-loading"></i> Instalaciones
+        <span id="instalacionesCount" style="font-size:0.875rem; color:#666; margin-left:0.5rem;">({{ instalaciones|length }})</span>
+      </h2>
+      <i class="fas fa-chevron-down" id="instalacionesIcon" style="transition:transform 0.3s;"></i>
+    </div>
+    <div id="instalacionesTable" style="display:block;">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>
+            <a href="?{% if query %}q={{ query }}&{% endif %}{% if estado_filter %}estado={{ estado_filter }}&{% endif %}order_by_inst=id&direction_inst={% if order_by_inst == 'id' and direction_inst == 'asc' %}desc{% else %}asc{% endif %}" 
+               class="sortable-header" style="text-decoration:none;color:inherit;display:flex;align-items:center;gap:0.5rem;">
+              ID
+              {% if order_by_inst == 'id' %}
+                <i class="fas fa-arrow-{% if direction_inst == 'asc' %}up{% else %}down{% endif %}" style="font-size:0.75rem;"></i>
+              {% else %}
+                <i class="fas fa-sort" style="font-size:0.75rem;color:#bbb;"></i>
+              {% endif %}
+            </a>
+          </th>
+          <th>
+            <a href="?{% if query %}q={{ query }}&{% endif %}{% if estado_filter %}estado={{ estado_filter }}&{% endif %}order_by_inst=fecha_instalacion&direction_inst={% if order_by_inst == 'fecha_instalacion' and direction_inst == 'asc' %}desc{% else %}asc{% endif %}" 
+               class="sortable-header" style="text-decoration:none;color:inherit;display:flex;align-items:center;gap:0.5rem;">
+              Fecha
+              {% if order_by_inst == 'fecha_instalacion' %}
+                <i class="fas fa-arrow-{% if direction_inst == 'asc' %}up{% else %}down{% endif %}" style="font-size:0.75rem;"></i>
+              {% else %}
+                <i class="fas fa-sort" style="font-size:0.75rem;color:#bbb;"></i>
+              {% endif %}
+            </a>
+          </th>
+          <th>
+            <a href="?{% if query %}q={{ query }}&{% endif %}{% if estado_filter %}estado={{ estado_filter }}&{% endif %}order_by_inst=hora_instalacion&direction_inst={% if order_by_inst == 'hora_instalacion' and direction_inst == 'asc' %}desc{% else %}asc{% endif %}" 
+               class="sortable-header" style="text-decoration:none;color:inherit;display:flex;align-items:center;gap:0.5rem;">
+              Hora
+              {% if order_by_inst == 'hora_instalacion' %}
+                <i class="fas fa-arrow-{% if direction_inst == 'asc' %}up{% else %}down{% endif %}" style="font-size:0.75rem;"></i>
+              {% else %}
+                <i class="fas fa-sort" style="font-size:0.75rem;color:#bbb;"></i>
+              {% endif %}
+            </a>
+          </th>
+          <th>
+            <a href="?{% if query %}q={{ query }}&{% endif %}{% if estado_filter %}estado={{ estado_filter }}&{% endif %}order_by_inst=cliente&direction_inst={% if order_by_inst == 'cliente' and direction_inst == 'asc' %}desc{% else %}asc{% endif %}" 
+               class="sortable-header" style="text-decoration:none;color:inherit;display:flex;align-items:center;gap:0.5rem;">
+              Cliente
+              {% if order_by_inst == 'cliente' %}
+                <i class="fas fa-arrow-{% if direction_inst == 'asc' %}up{% else %}down{% endif %}" style="font-size:0.75rem;"></i>
+              {% else %}
+                <i class="fas fa-sort" style="font-size:0.75rem;color:#bbb;"></i>
+              {% endif %}
+            </a>
+          </th>
+          <th>
+            <a href="?{% if query %}q={{ query }}&{% endif %}{% if estado_filter %}estado={{ estado_filter }}&{% endif %}order_by_inst=direccion&direction_inst={% if order_by_inst == 'direccion' and direction_inst == 'asc' %}desc{% else %}asc{% endif %}" 
+               class="sortable-header" style="text-decoration:none;color:inherit;display:flex;align-items:center;gap:0.5rem;">
+              Dirección
+              {% if order_by_inst == 'direccion' %}
+                <i class="fas fa-arrow-{% if direction_inst == 'asc' %}up{% else %}down{% endif %}" style="font-size:0.75rem;"></i>
+              {% else %}
+                <i class="fas fa-sort" style="font-size:0.75rem;color:#bbb;"></i>
+              {% endif %}
+            </a>
+          </th>
+          <th>Repartidor</th>
+          <th>
+            <a href="?{% if query %}q={{ query }}&{% endif %}{% if estado_filter %}estado={{ estado_filter }}&{% endif %}order_by_inst=estado&direction_inst={% if order_by_inst == 'estado' and direction_inst == 'asc' %}desc{% else %}asc{% endif %}" 
+               class="sortable-header" style="text-decoration:none;color:inherit;display:flex;align-items:center;gap:0.5rem;">
+              Estado
+              {% if order_by_inst == 'estado' %}
+                <i class="fas fa-arrow-{% if direction_inst == 'asc' %}up{% else %}down{% endif %}" style="font-size:0.75rem;"></i>
+              {% else %}
+                <i class="fas fa-sort" style="font-size:0.75rem;color:#bbb;"></i>
+              {% endif %}
+            </a>
+          </th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for inst in instalaciones %}
+        <tr>
+          <td>{{ inst.id }}</td>
+          <td>{{ inst.fecha_instalacion|date:"d/m/Y" }}</td>
+          <td>{{ inst.hora_instalacion|time:"H:i" }}</td>
+          <td>{{ inst.reserva.cliente.usuario.get_full_name }}</td>
+          <td>{{ inst.direccion_instalacion|truncatewords:5 }}</td>
+          <td>
+            {% if inst.repartidor %}
+              <span class="badge badge-success">{{ inst.repartidor.usuario.get_full_name }}</span>
+            {% else %}
+              <span class="badge badge-warning">Sin asignar</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if inst.estado_instalacion == 'programada' %}
+              <span class="badge badge-info">Programada</span>
+            {% elif inst.estado_instalacion == 'realizada' %}
+              <span class="badge badge-success">Realizada</span>
+            {% elif inst.estado_instalacion == 'cancelada' %}
+              <span class="badge badge-danger">Cancelada</span>
+            {% else %}
+              <span class="badge badge-warning">Pendiente</span>
+            {% endif %}
+          </td>
+          <td style="white-space:nowrap;">
+            <button class="btn btn-sm btn-primary" data-asignar-instalacion="{{ inst.id }}">
+              <i class="fas fa-user-plus"></i>
+            </button>
+            <button class="btn btn-sm btn-secondary" data-cambiar-estado-instalacion="{{ inst.id }}">
+              <i class="fas fa-sync"></i>
+            </button>
+            {% comment %}
+            <button class="btn btn-sm btn-warning" data-registrar-incidente="{{ inst.id }}" data-tipo="instalacion">
+              <i class="fas fa-exclamation-circle"></i>
+            </button>
+            {% endcomment %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="8">No hay instalaciones que coincidan.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+  <!-- Tabla de Retiros -->
+  <div class="form-card" style="overflow:auto; margin-top:1rem;">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:.75rem; cursor:pointer;" 
+         onclick="toggleSection('retirosTable')" title="Hacer clic para expandir/colapsar">
+      <h2 class="panel-title" style="font-size:1.25rem; color:#2E7D32; margin:0;">
+        <i class="fas fa-truck-pickup"></i> Retiros
+        <span id="retirosCount" style="font-size:0.875rem; color:#666; margin-left:0.5rem;">({{ retiros|length }})</span>
+      </h2>
+      <i class="fas fa-chevron-down" id="retirosIcon" style="transition:transform 0.3s;"></i>
+    </div>
+    <div id="retirosTable" style="display:block;">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>
+            <a href="?{% if query %}q={{ query }}&{% endif %}{% if estado_filter %}estado={{ estado_filter }}&{% endif %}order_by_ret=id&direction_ret={% if order_by_ret == 'id' and direction_ret == 'asc' %}desc{% else %}asc{% endif %}" 
+               class="sortable-header" style="text-decoration:none;color:inherit;display:flex;align-items:center;gap:0.5rem;">
+              ID
+              {% if order_by_ret == 'id' %}
+                <i class="fas fa-arrow-{% if direction_ret == 'asc' %}up{% else %}down{% endif %}" style="font-size:0.75rem;"></i>
+              {% else %}
+                <i class="fas fa-sort" style="font-size:0.75rem;color:#bbb;"></i>
+              {% endif %}
+            </a>
+          </th>
+          <th>
+            <a href="?{% if query %}q={{ query }}&{% endif %}{% if estado_filter %}estado={{ estado_filter }}&{% endif %}order_by_ret=fecha_retiro&direction_ret={% if order_by_ret == 'fecha_retiro' and direction_ret == 'asc' %}desc{% else %}asc{% endif %}" 
+               class="sortable-header" style="text-decoration:none;color:inherit;display:flex;align-items:center;gap:0.5rem;">
+              Fecha
+              {% if order_by_ret == 'fecha_retiro' %}
+                <i class="fas fa-arrow-{% if direction_ret == 'asc' %}up{% else %}down{% endif %}" style="font-size:0.75rem;"></i>
+              {% else %}
+                <i class="fas fa-sort" style="font-size:0.75rem;color:#bbb;"></i>
+              {% endif %}
+            </a>
+          </th>
+          <th>
+            <a href="?{% if query %}q={{ query }}&{% endif %}{% if estado_filter %}estado={{ estado_filter }}&{% endif %}order_by_ret=hora_retiro&direction_ret={% if order_by_ret == 'hora_retiro' and direction_ret == 'asc' %}desc{% else %}asc{% endif %}" 
+               class="sortable-header" style="text-decoration:none;color:inherit;display:flex;align-items:center;gap:0.5rem;">
+              Hora
+              {% if order_by_ret == 'hora_retiro' %}
+                <i class="fas fa-arrow-{% if direction_ret == 'asc' %}up{% else %}down{% endif %}" style="font-size:0.75rem;"></i>
+              {% else %}
+                <i class="fas fa-sort" style="font-size:0.75rem;color:#bbb;"></i>
+              {% endif %}
+            </a>
+          </th>
+          <th>
+            <a href="?{% if query %}q={{ query }}&{% endif %}{% if estado_filter %}estado={{ estado_filter }}&{% endif %}order_by_ret=cliente&direction_ret={% if order_by_ret == 'cliente' and direction_ret == 'asc' %}desc{% else %}asc{% endif %}" 
+               class="sortable-header" style="text-decoration:none;color:inherit;display:flex;align-items:center;gap:0.5rem;">
+              Cliente
+              {% if order_by_ret == 'cliente' %}
+                <i class="fas fa-arrow-{% if direction_ret == 'asc' %}up{% else %}down{% endif %}" style="font-size:0.75rem;"></i>
+              {% else %}
+                <i class="fas fa-sort" style="font-size:0.75rem;color:#bbb;"></i>
+              {% endif %}
+            </a>
+          </th>
+          <th>Dirección</th>
+          <th>Repartidor</th>
+          <th>
+            <a href="?{% if query %}q={{ query }}&{% endif %}{% if estado_filter %}estado={{ estado_filter }}&{% endif %}order_by_ret=estado&direction_ret={% if order_by_ret == 'estado' and direction_ret == 'asc' %}desc{% else %}asc{% endif %}" 
+               class="sortable-header" style="text-decoration:none;color:inherit;display:flex;align-items:center;gap:0.5rem;">
+              Estado
+              {% if order_by_ret == 'estado' %}
+                <i class="fas fa-arrow-{% if direction_ret == 'asc' %}up{% else %}down{% endif %}" style="font-size:0.75rem;"></i>
+              {% else %}
+                <i class="fas fa-sort" style="font-size:0.75rem;color:#bbb;"></i>
+              {% endif %}
+            </a>
+          </th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ret in retiros %}
+        <tr>
+          <td>{{ ret.id }}</td>
+          <td>{{ ret.fecha_retiro|date:"d/m/Y" }}</td>
+          <td>{{ ret.hora_retiro|time:"H:i" }}</td>
+          <td>{{ ret.reserva.cliente.usuario.get_full_name }}</td>
+          <td>{{ ret.reserva.direccion_evento|truncatewords:5 }}</td>
+          <td>
+            {% if ret.repartidor %}
+              <span class="badge badge-success">{{ ret.repartidor.usuario.get_full_name }}</span>
+            {% else %}
+              <span class="badge badge-warning">Sin asignar</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if ret.estado_retiro == 'programado' %}
+              <span class="badge badge-info">Programado</span>
+            {% elif ret.estado_retiro == 'realizado' %}
+              <span class="badge badge-success">Realizado</span>
+            {% elif ret.estado_retiro == 'cancelado' %}
+              <span class="badge badge-danger">Cancelado</span>
+            {% else %}
+              <span class="badge badge-warning">Pendiente</span>
+            {% endif %}
+          </td>
+          <td style="white-space:nowrap;">
+            <button class="btn btn-sm btn-primary" data-asignar-retiro="{{ ret.id }}">
+              <i class="fas fa-user-plus"></i>
+            </button>
+            <button class="btn btn-sm btn-secondary" data-cambiar-estado-retiro="{{ ret.id }}">
+              <i class="fas fa-sync"></i>
+            </button>
+            {% comment %}
+            <button class="btn btn-sm btn-warning" data-registrar-incidente="{{ ret.id }}" data-tipo="retiro">
+              <i class="fas fa-exclamation-circle"></i>
+            </button>
+            {% endcomment %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="8">No hay retiros que coincidan.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+  <!-- Modal: Asignar Repartidor -->
+  <div id="modalAsignarRepartidor" class="modal" aria-hidden="true">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Asignar Repartidor</h2>
+        <button class="modal-close" data-modal-close>&times;</button>
+      </div>
+      <form id="formAsignarRepartidor" class="form-grid">
+        {% csrf_token %}
+        <input type="hidden" name="reparto_id" id="asignarRepartoId">
+        <input type="hidden" name="tipo_reparto" id="asignarTipoReparto">
+        
+        <label>
+          Repartidor
+          <select name="repartidor_id" id="asignarRepartidorSelect" required>
+            <option value="">Seleccione un repartidor</option>
+            {% for rep in repartidores_disponibles %}
+            <option value="{{ rep.id }}" data-estado="{{ rep.repartidor.estado }}">
+              {{ rep.get_full_name }} - {{ rep.repartidor.get_estado_display }}
+            </option>
+            {% endfor %}
+          </select>
+        </label>
+
+        <label>
+          Observaciones
+          <textarea name="observaciones" rows="3" placeholder="Instrucciones especiales para el repartidor"></textarea>
+        </label>
+
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" data-modal-close>Cancelar</button>
+          <button type="submit" class="btn btn-primary">Asignar</button>
+        </div>
+      </form>
+    </div>
+    <div class="modal-backdrop" data-modal-close></div>
+  </div>
+
+  <!-- Modal: Cambiar Estado -->
+  <div id="modalCambiarEstado" class="modal" aria-hidden="true">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Cambiar Estado</h2>
+        <button class="modal-close" data-modal-close>&times;</button>
+      </div>
+      <form id="formCambiarEstado" class="form-grid">
+        {% csrf_token %}
+        <input type="hidden" name="reparto_id" id="estadoRepartoId">
+        <input type="hidden" name="tipo_reparto" id="estadoTipoReparto">
+        
+        <label>
+          Nuevo Estado
+          <select name="nuevo_estado" id="nuevoEstadoSelect" required>
+            <option value="">Seleccione un estado</option>
+          </select>
+        </label>
+
+        <label>
+          Observaciones
+          <textarea name="observaciones" rows="3" placeholder="Comentarios sobre el cambio de estado"></textarea>
+        </label>
+
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" data-modal-close>Cancelar</button>
+          <button type="submit" class="btn btn-primary">Actualizar</button>
+        </div>
+      </form>
+    </div>
+    <div class="modal-backdrop" data-modal-close></div>
+  </div>
+
+  {% comment %}
+  <!-- Modal: Registrar Incidente -->
+  <div id="modalRegistrarIncidente" class="modal" aria-hidden="true">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Registrar Incidente</h2>
+        <button class="modal-close" data-modal-close>&times;</button>
+      </div>
+      <form id="formRegistrarIncidente" class="form-grid">
+        {% csrf_token %}
+        <input type="hidden" name="reparto_id" id="incidenteRepartoId">
+        <input type="hidden" name="tipo_reparto" id="incidenteTipoReparto">
+        
+        <label>
+          Tipo de Incidente
+          <select name="tipo_incidente" required>
+            <option value="">Seleccione tipo</option>
+            <option value="retraso">Retraso</option>
+            <option value="daño">Daño en el juego</option>
+            <option value="cliente_ausente">Cliente ausente</option>
+            <option value="direccion_incorrecta">Dirección incorrecta</option>
+            <option value="acceso_dificil">Acceso difícil</option>
+            <option value="otro">Otro</option>
+          </select>
+        </label>
+
+        <label>
+          Descripción del Incidente
+          <textarea name="descripcion" rows="4" required placeholder="Describa detalladamente el incidente"></textarea>
+        </label>
+
+        <label>
+          Solución Aplicada
+          <textarea name="solucion" rows="3" placeholder="¿Cómo se resolvió o qué se hizo?"></textarea>
+        </label>
+
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" data-modal-close>Cancelar</button>
+          <button type="submit" class="btn btn-warning">Registrar</button>
+        </div>
+      </form>
+    </div>
+    <div class="modal-backdrop" data-modal-close></div>
+  </div>
+  {% endcomment %}
+
+  <!-- Modal: Ver Detalle -->
+  <div id="modalVerDetalle" class="modal" aria-hidden="true">
+    <div class="modal-content" style="max-width:700px; max-height:90vh; display:flex; flex-direction:column;">
+      <div class="modal-header" style="flex-shrink:0;">
+        <h2 id="modalDetalleTitulo">Detalle</h2>
+        <button class="modal-close" data-modal-close>&times;</button>
+      </div>
+      <div id="modalDetalleContent" style="padding:1.5rem; overflow-y:auto; flex:1; max-height:calc(90vh - 80px);">
+        <!-- Contenido se cargará dinámicamente -->
+      </div>
+    </div>
+    <div class="modal-backdrop" data-modal-close></div>
+  </div>
+
+  {% block extra_scripts %}
+  <script src="{% static 'js/repartos_list.js' %}"></script>
+  <script>
+    // Función para colapsar/expandir secciones
+    function toggleSection(sectionId) {
+      const section = document.getElementById(sectionId);
+      const icon = document.getElementById(sectionId.replace('Table', 'Icon'));
+      
+      if (!section || !icon) return;
+      
+      if (section.style.display === 'none') {
+        section.style.display = 'block';
+        icon.style.transform = 'rotate(0deg)';
+        icon.classList.remove('fa-chevron-up');
+        icon.classList.add('fa-chevron-down');
+      } else {
+        section.style.display = 'none';
+        icon.style.transform = 'rotate(180deg)';
+        icon.classList.remove('fa-chevron-down');
+        icon.classList.add('fa-chevron-up');
+      }
+    }
+    
+    // Inicializar estado de las secciones (opcional: colapsar por defecto)
+    document.addEventListener('DOMContentLoaded', function() {
+      // Las tablas inician expandidas por defecto
+      // Si quieres que inicien colapsadas, descomenta las siguientes líneas:
+      // toggleSection('instalacionesTable');
+      // toggleSection('retirosTable');
+    });
+  </script>
+  {% endblock %}
+</div>
+{% endblock %}
+

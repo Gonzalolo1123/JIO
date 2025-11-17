@@ -1,0 +1,864 @@
+{% extends 'jio_app/base_admin.html' %}
+
+{% load static %}
+{% load humanize %}
+
+{% block title %}Estadísticas - JIO{% endblock %}
+
+{% block extra_head %}
+
+<link rel="stylesheet" href="{% static 'css/estadisticas.css' %}">
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+  /* Estilos mejorados para selectores de período de demanda */
+  .days-period-selector-group {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    background: #f8f9fa;
+    border-radius: 6px;
+    border: 1px solid #e0e0e0;
+  }
+  
+  .days-period-label {
+    font-size: 0.875rem;
+    color: #2E7D32;
+    font-weight: 600;
+    margin: 0;
+    white-space: nowrap;
+  }
+  
+  .days-period-input,
+  .days-period-select {
+    padding: 0.625rem 0.875rem;
+    border: 2px solid #c8e6c9;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #2c3e50;
+    background: white;
+    transition: all 0.3s ease;
+    min-width: 120px;
+    cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  }
+  
+  .days-period-input:focus,
+  .days-period-select:focus {
+    outline: none;
+    border-color: #2E7D32;
+    box-shadow: 0 0 0 3px rgba(46, 125, 50, 0.1);
+    background: #ffffff;
+  }
+  
+  .days-period-input:hover,
+  .days-period-select:hover {
+    border-color: #4CAF50;
+    box-shadow: 0 2px 4px rgba(46, 125, 50, 0.15);
+  }
+  
+  .days-period-select {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%232E7D32' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    background-size: 12px;
+    padding-right: 2.5rem;
+  }
+  
+  .days-period-input::-webkit-calendar-picker-indicator {
+    cursor: pointer;
+    opacity: 0.7;
+    filter: invert(27%) sepia(51%) saturate(2878%) hue-rotate(101deg) brightness(94%) contrast(87%);
+    transition: opacity 0.2s ease;
+  }
+  
+  .days-period-input::-webkit-calendar-picker-indicator:hover {
+    opacity: 1;
+  }
+  
+  
+  /* Estilos específicos para botones de período */
+  #days-filter button,
+  #time-filter button,
+  #category-filter button {
+    padding: 0.5rem 1rem;
+    border: 2px solid #2E7D32;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.3s ease;
+    background: white !important;
+    color: #2E7D32 !important;
+    border-color: #2E7D32 !important;
+  }
+  
+  #days-filter button:hover,
+  #time-filter button:hover,
+  #category-filter button:hover {
+    background: #4CAF50 !important;
+    border-color: #4CAF50 !important;
+    color: white !important;
+  }
+  
+  #days-filter button.active,
+  #time-filter button.active,
+  #category-filter button.active {
+    background: #2E7D32 !important;
+    color: white !important;
+    border-color: #2E7D32 !important;
+    font-weight: 600;
+    box-shadow: 0 2px 4px rgba(46, 125, 50, 0.3);
+  }
+  
+  @media (max-width: 768px) {
+    .days-period-selector-group {
+      flex-direction: column;
+      align-items: stretch;
+      width: 100%;
+    }
+    
+    .days-period-label {
+      margin-bottom: 0.25rem;
+    }
+    
+    .days-period-input,
+    .days-period-select {
+      width: 100%;
+      min-width: auto;
+    }
+    
+  }
+</style>
+
+{% endblock %}
+
+{% block content %}
+
+<div class="content">
+
+  <!-- Dashboard de KPIs -->
+  <div class="kpis-dashboard">
+    <div class="dashboard-header">
+      <h2 style="margin: 0; color: #2E7D32; font-size: 1.75rem;">Resumen de {{ mes_nombre|title }} {{ año_seleccionado }}</h2>
+      <div class="period-selector">
+        <a href="?year={{ año_anterior_nav }}&month={{ mes_anterior_nav }}" class="nav-btn-period prev-btn" title="Mes anterior">
+          <i class="fas fa-chevron-left"></i>
+        </a>
+        <div class="period-selectors">
+          <select id="mes-selector" class="month-year-selector">
+            {% for num, nombre in meses_espanol.items %}
+              <option value="{{ num }}" {% if num == mes_seleccionado %}selected{% endif %}>{{ nombre }}</option>
+            {% endfor %}
+          </select>
+          <select id="año-selector" class="month-year-selector">
+            {% for año in años_disponibles %}
+              <option value="{{ año }}" {% if año == año_seleccionado %}selected{% endif %}>{{ año }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        {% if puede_avanzar %}
+        <a href="?year={{ año_siguiente_nav }}&month={{ mes_siguiente_nav }}" class="nav-btn-period next-btn" title="Mes siguiente">
+          <i class="fas fa-chevron-right"></i>
+        </a>
+        {% else %}
+        <span class="nav-btn-period next-btn disabled" title="No se puede avanzar más">
+          <i class="fas fa-chevron-right"></i>
+        </span>
+        {% endif %}
+      </div>
+    </div>
+    
+    <div class="kpis-grid">
+      <!-- Tarjeta: Reservas del Mes -->
+      <div class="kpi-card">
+        <div class="kpi-icon">
+          <i class="fas fa-calendar-check"></i>
+        </div>
+        <div class="kpi-content">
+          <div class="kpi-label">Reservas del Mes</div>
+          <div class="kpi-value">{{ total_reservas_mes }}</div>
+          <div class="kpi-change {% if crecimiento_reservas >= 0 %}positive{% else %}negative{% endif %}">
+            <i class="fas fa-arrow-{% if crecimiento_reservas >= 0 %}up{% else %}down{% endif %}"></i>
+            {{ crecimiento_reservas|floatformat:1 }}% vs {{ mes_anterior_nombre|title }} {{ año_anterior_num }}
+          </div>
+        </div>
+      </div>
+
+      <!-- Tarjeta: Ventas del Mes -->
+      <div class="kpi-card">
+        <div class="kpi-icon">
+          <i class="fas fa-dollar-sign"></i>
+        </div>
+        <div class="kpi-content">
+          <div class="kpi-label">Ventas del Mes</div>
+          <div class="kpi-value">${{ ventas_mes_actual|floatformat:0|intcomma }}</div>
+          <div class="kpi-change {% if crecimiento_ventas >= 0 %}positive{% else %}negative{% endif %}">
+            <i class="fas fa-arrow-{% if crecimiento_ventas >= 0 %}up{% else %}down{% endif %}"></i>
+            {{ crecimiento_ventas|floatformat:1 }}% vs {{ mes_anterior_nombre|title }} {{ año_anterior_num }}
+          </div>
+        </div>
+      </div>
+
+      <!-- Tarjeta: Clientes Nuevos vs Recurrentes -->
+      <div class="kpi-card">
+        <div class="kpi-icon">
+          <i class="fas fa-users"></i>
+        </div>
+        <div class="kpi-content">
+          <div class="kpi-label">Clientes del Mes</div>
+          <div class="kpi-value">{{ total_clientes_mes }}</div>
+          <div class="kpi-subtitle">
+            <span style="color: #4CAF50;">{{ clientes_nuevos }} nuevos</span> | 
+            <span style="color: #2196F3;">{{ clientes_recurrentes }} recurrentes</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Comparaciones Temporales -->
+  <div class="section comparison-section">
+    <h2>Comparaciones Temporales</h2>
+    
+    <div class="comparison-grid">
+      <!-- Comparación Mes a Mes -->
+      <div class="comparison-card">
+        <h3>Comparación Mes a Mes</h3>
+        <div class="comparison-item">
+          <div class="comparison-label">Ventas</div>
+          <div class="comparison-values">
+            <div class="comparison-current">
+              <span class="comparison-period">{{ mes_nombre|title }} {{ año_seleccionado }}:</span>
+              <span class="comparison-amount">${{ ventas_mes_actual|floatformat:0|intcomma }}</span>
+            </div>
+            <div class="comparison-previous">
+              <span class="comparison-period">{{ mes_anterior_nombre|title }} {{ año_anterior_num }}:</span>
+              <span class="comparison-amount">${{ ventas_mes_anterior|floatformat:0|intcomma }}</span>
+            </div>
+            <div class="comparison-growth {% if crecimiento_ventas >= 0 %}positive{% else %}negative{% endif %}">
+              <i class="fas fa-arrow-{% if crecimiento_ventas >= 0 %}up{% else %}down{% endif %}"></i>
+              {{ crecimiento_ventas|floatformat:1 }}% de crecimiento
+            </div>
+          </div>
+        </div>
+        <div class="comparison-item">
+          <div class="comparison-label">Reservas</div>
+          <div class="comparison-values">
+            <div class="comparison-current">
+              <span class="comparison-period">{{ mes_nombre|title }} {{ año_seleccionado }}:</span>
+              <span class="comparison-amount">{{ total_reservas_mes }}</span>
+            </div>
+            <div class="comparison-previous">
+              <span class="comparison-period">{{ mes_anterior_nombre|title }} {{ año_anterior_num }}:</span>
+              <span class="comparison-amount">{{ total_reservas_mes_anterior }}</span>
+            </div>
+            <div class="comparison-growth {% if crecimiento_reservas >= 0 %}positive{% else %}negative{% endif %}">
+              <i class="fas fa-arrow-{% if crecimiento_reservas >= 0 %}up{% else %}down{% endif %}"></i>
+              {{ crecimiento_reservas|floatformat:1 }}% de crecimiento
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Comparación Año a Año -->
+      <div class="comparison-card">
+        <h3>Comparación Año a Año</h3>
+        <div class="comparison-item">
+          <div class="comparison-label">Ventas</div>
+          <div class="comparison-values">
+            <div class="comparison-current">
+              <span class="comparison-period">{{ año_seleccionado }}:</span>
+              <span class="comparison-amount">${{ ventas_año_actual|floatformat:0|intcomma }}</span>
+            </div>
+            <div class="comparison-previous">
+              <span class="comparison-period">{{ año_seleccionado|add:"-1" }}:</span>
+              <span class="comparison-amount">${{ ventas_año_anterior|floatformat:0|intcomma }}</span>
+            </div>
+            <div class="comparison-growth {% if crecimiento_año >= 0 %}positive{% else %}negative{% endif %}">
+              <i class="fas fa-arrow-{% if crecimiento_año >= 0 %}up{% else %}down{% endif %}"></i>
+              {{ crecimiento_año|floatformat:1 }}% de crecimiento
+            </div>
+          </div>
+        </div>
+        <div class="comparison-item">
+          <div class="comparison-label">Reservas</div>
+          <div class="comparison-values">
+            <div class="comparison-current">
+              <span class="comparison-period">{{ año_seleccionado }}:</span>
+              <span class="comparison-amount">{{ reservas_año_actual }}</span>
+            </div>
+            <div class="comparison-previous">
+              <span class="comparison-period">{{ año_seleccionado|add:"-1" }}:</span>
+              <span class="comparison-amount">{{ reservas_año_anterior }}</span>
+            </div>
+            <div class="comparison-growth {% if crecimiento_reservas_año >= 0 %}positive{% else %}negative{% endif %}">
+              <i class="fas fa-arrow-{% if crecimiento_reservas_año >= 0 %}up{% else %}down{% endif %}"></i>
+              {{ crecimiento_reservas_año|floatformat:1 }}% de crecimiento
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="button-group" id="view-mode-group">
+
+    <label>Vista de gráficos:</label>
+
+    <button type="button" id="btn-small" class="view-mode-btn">Pequeño</button>
+
+    <button type="button" id="btn-medium" class="view-mode-btn active">Mediano</button>
+
+    <button type="button" id="btn-large" class="view-mode-btn">Grande</button>
+
+  </div>
+
+  <!-- Sección de Ventas -->
+
+  <div class="section">
+
+    <h2>Ventas</h2>
+
+    <div style="display:flex; flex-wrap:wrap; align-items:center; gap:1rem; margin-bottom:1rem;">
+      <div class="button-group" id="time-filter">
+        <button onclick="cambiarTipoPeriodoVentas('weekly')" id="btn-ventas-weekly" class="{% if ventas_periodo == 'weekly' %}active{% endif %}">Semanal</button>
+        <button onclick="cambiarTipoPeriodoVentas('monthly')" id="btn-ventas-monthly" class="{% if ventas_periodo == 'monthly' %}active{% endif %}">Mensual</button>
+        <button onclick="cambiarTipoPeriodoVentas('yearly')" id="btn-ventas-yearly" class="{% if ventas_periodo == 'yearly' %}active{% endif %}">Anual</button>
+      </div>
+      
+      <!-- Selectores de período para ventas -->
+      <div id="ventas-period-selectors" style="display:flex; gap:0.75rem; align-items:center; flex-wrap:wrap;">
+        <!-- Selector para período semanal -->
+        <div id="ventas-week-selector" class="days-period-selector-group" style="display:{% if ventas_periodo == 'weekly' %}flex{% else %}none{% endif %};">
+          <label class="days-period-label">Semana:</label>
+          <input type="week" id="inputVentasSemana" class="days-period-input" value="{{ ventas_semana|default:'' }}" 
+                 onchange="cambiarPeriodoVentas('weekly')">
+        </div>
+        
+        <!-- Selectores para período mensual -->
+        <div id="ventas-month-selector" class="days-period-selector-group" style="display:{% if ventas_periodo == 'monthly' %}flex{% else %}none{% endif %};">
+          <label class="days-period-label">Mes:</label>
+          <select id="selectVentasMes" class="days-period-select" onchange="cambiarPeriodoVentas('monthly')">
+            {% for num, nombre in meses_espanol.items %}
+            <option value="{{ num }}" {% if num|stringformat:"s" == ventas_mes|default:mes_seleccionado|stringformat:"s" %}selected{% endif %}>{{ nombre }}</option>
+            {% endfor %}
+          </select>
+          <label class="days-period-label">Año:</label>
+          <select id="selectVentasAñoMes" class="days-period-select" onchange="cambiarPeriodoVentas('monthly')">
+            {% for año in años_disponibles %}
+            <option value="{{ año }}" {% if año|stringformat:"s" == ventas_año|default:año_seleccionado|stringformat:"s" %}selected{% endif %}>{{ año }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        
+        <!-- Selector para período anual -->
+        <div id="ventas-year-selector" class="days-period-selector-group" style="display:{% if ventas_periodo == 'yearly' %}flex{% else %}none{% endif %};">
+          <label class="days-period-label">Año:</label>
+          <select id="selectVentasAño" class="days-period-select" onchange="cambiarPeriodoVentas('yearly')">
+            {% for año in años_disponibles %}
+            <option value="{{ año }}" {% if año|stringformat:"s" == ventas_año|default:año_seleccionado|stringformat:"s" %}selected{% endif %}>{{ año }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="chart-container">
+      <canvas id="moneyChart"></canvas>
+    </div>
+
+  </div>
+
+    <!-- Sección de Ventas por Categoría de Juego -->
+
+    <div class="section">
+
+      <h2>Ventas por categoría de juego</h2>
+
+      <div style="display:flex; flex-wrap:wrap; align-items:center; gap:1rem; margin-bottom:1rem;">
+        <div class="button-group" id="category-filter">
+          <button onclick="cambiarTipoPeriodoCategoria('weekly')" id="btn-categoria-weekly" class="{% if categoria_periodo == 'weekly' %}active{% endif %}">Semanal</button>
+          <button onclick="cambiarTipoPeriodoCategoria('monthly')" id="btn-categoria-monthly" class="{% if categoria_periodo == 'monthly' %}active{% endif %}">Mensual</button>
+          <button onclick="cambiarTipoPeriodoCategoria('yearly')" id="btn-categoria-yearly" class="{% if categoria_periodo == 'yearly' %}active{% endif %}">Anual</button>
+        </div>
+        
+        <!-- Selectores de período para ventas por categoría -->
+        <div id="categoria-period-selectors" style="display:flex; gap:0.75rem; align-items:center; flex-wrap:wrap;">
+          <!-- Selector para período semanal -->
+          <div id="categoria-week-selector" class="days-period-selector-group" style="display:{% if categoria_periodo == 'weekly' %}flex{% else %}none{% endif %};">
+            <label class="days-period-label">Semana:</label>
+            <input type="week" id="inputCategoriaSemana" class="days-period-input" value="{{ categoria_semana|default:'' }}" 
+                   onchange="cambiarPeriodoCategoria('weekly')">
+          </div>
+          
+          <!-- Selectores para período mensual -->
+          <div id="categoria-month-selector" class="days-period-selector-group" style="display:{% if categoria_periodo == 'monthly' %}flex{% else %}none{% endif %};">
+            <label class="days-period-label">Mes:</label>
+            <select id="selectCategoriaMes" class="days-period-select" onchange="cambiarPeriodoCategoria('monthly')">
+              {% for num, nombre in meses_espanol.items %}
+              <option value="{{ num }}" {% if num|stringformat:"s" == categoria_mes %}selected{% endif %}>{{ nombre }}</option>
+              {% endfor %}
+            </select>
+            <label class="days-period-label">Año:</label>
+            <select id="selectCategoriaAñoMes" class="days-period-select" onchange="cambiarPeriodoCategoria('monthly')">
+              {% for año in años_disponibles %}
+              <option value="{{ año }}" {% if año|stringformat:"s" == categoria_año %}selected{% endif %}>{{ año }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          
+          <!-- Selector para período anual -->
+          <div id="categoria-year-selector" class="days-period-selector-group" style="display:{% if categoria_periodo == 'yearly' %}flex{% else %}none{% endif %};">
+            <label class="days-period-label">Año:</label>
+            <select id="selectCategoriaAño" class="days-period-select" onchange="cambiarPeriodoCategoria('yearly')">
+              {% for año in años_disponibles %}
+              <option value="{{ año }}" {% if año|stringformat:"s" == categoria_año %}selected{% endif %}>{{ año }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+      </div>
+
+    <div class="chart-container">
+      <canvas id="categoryChart"></canvas>
+    </div>
+
+  </div>
+
+    <!-- Sección de Días con Mayor Demanda de Reservas -->
+
+    <div class="section">
+
+      <h2>Días con mayor demanda de reservas</h2>
+
+      <div style="display:flex; flex-wrap:wrap; align-items:center; gap:1rem; margin-bottom:1rem;">
+        <div class="button-group" id="days-filter">
+          <button onclick="cambiarTipoPeriodoDemanda('weekly')" id="btn-demanda-weekly" class="{% if demanda_periodo == 'weekly' %}active{% endif %}">Semanal</button>
+          <button onclick="cambiarTipoPeriodoDemanda('monthly')" id="btn-demanda-monthly" class="{% if demanda_periodo == 'monthly' %}active{% endif %}">Mensual</button>
+          <button onclick="cambiarTipoPeriodoDemanda('yearly')" id="btn-demanda-yearly" class="{% if demanda_periodo == 'yearly' %}active{% endif %}">Anual</button>
+        </div>
+        
+        <!-- Selectores de período -->
+        <div id="days-period-selectors" style="display:flex; gap:0.75rem; align-items:center; flex-wrap:wrap;">
+          <!-- Selector para período semanal -->
+          <div id="days-week-selector" class="days-period-selector-group" style="display:{% if demanda_periodo == 'weekly' %}flex{% else %}none{% endif %};">
+            <label class="days-period-label">Semana:</label>
+            <input type="week" id="inputDemandaSemana" class="days-period-input" value="{{ demanda_semana|default:'' }}" 
+                   onchange="cambiarPeriodoDemanda('weekly')">
+          </div>
+          
+          <!-- Selectores para período mensual -->
+          <div id="days-month-selector" class="days-period-selector-group" style="display:{% if demanda_periodo == 'monthly' %}flex{% else %}none{% endif %};">
+            <label class="days-period-label">Mes:</label>
+            <select id="selectDemandaMes" class="days-period-select" onchange="cambiarPeriodoDemanda('monthly')">
+              {% for num, nombre in meses_espanol.items %}
+              <option value="{{ num }}" {% if num|stringformat:"s" == demanda_mes %}selected{% endif %}>{{ nombre }}</option>
+              {% endfor %}
+            </select>
+            <label class="days-period-label">Año:</label>
+            <select id="selectDemandaAñoMes" class="days-period-select" onchange="cambiarPeriodoDemanda('monthly')">
+              {% for año in años_disponibles %}
+              <option value="{{ año }}" {% if año|stringformat:"s" == demanda_año %}selected{% endif %}>{{ año }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          
+          <!-- Selector para período anual -->
+          <div id="days-year-selector" class="days-period-selector-group" style="display:{% if demanda_periodo == 'yearly' %}flex{% else %}none{% endif %};">
+            <label class="days-period-label">Año:</label>
+            <select id="selectDemandaAño" class="days-period-select" onchange="cambiarPeriodoDemanda('yearly')">
+              {% for año in años_disponibles %}
+              <option value="{{ año }}" {% if año|stringformat:"s" == demanda_año %}selected{% endif %}>{{ año }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        
+      </div>
+
+    <div class="chart-container">
+      <canvas id="daysChart"></canvas>
+    </div>
+
+  </div>
+
+</div>
+
+<!-- Datos ocultos para JavaScript -->
+
+<!-- Datos de ventas -->
+
+<div id="ventas-semanales-labels" style="display: none;">{{ ventas_semanales_labels|safe }}</div>
+
+<div id="ventas-semanales-data" style="display: none;">{{ ventas_semanales_data|safe }}</div>
+
+<div id="ventas-mensuales-labels" style="display: none;">{{ ventas_mensuales_labels|safe }}</div>
+
+<div id="ventas-mensuales-data" style="display: none;">{{ ventas_mensuales_data|safe }}</div>
+
+<div id="ventas-anuales-labels" style="display: none;">{{ ventas_anuales_labels|safe }}</div>
+
+<div id="ventas-anuales-data" style="display: none;">{{ ventas_anuales_data|safe }}</div>
+
+<!-- Datos de ventas por categoría -->
+
+<div id="ventas-categoria-diarias-data" style="display: none;">{{ ventas_categoria_diarias_data|safe }}</div>
+
+<div id="ventas-categoria-semanales-data" style="display: none;">{{ ventas_categoria_semanales_data|safe }}</div>
+
+<div id="ventas-categoria-mensuales-data" style="display: none;">{{ ventas_categoria_mensuales_data|safe }}</div>
+
+<div id="ventas-categoria-anuales-data" style="display: none;">{{ ventas_categoria_anuales_data|safe }}</div>
+
+<div id="categorias-unicas" style="display: none;">{{ categorias_unicas|safe }}</div>
+
+<!-- Datos de días con mayor demanda de reservas -->
+
+<div id="dias-semana-semanales-labels" style="display: none;">{{ dias_semana_semanales_labels|safe }}</div>
+
+<div id="dias-semana-semanales-data" style="display: none;">{{ dias_semana_semanales_data|safe }}</div>
+
+<div id="dias-semana-mensuales-labels" style="display: none;">{{ dias_semana_mensuales_labels|safe }}</div>
+
+<div id="dias-semana-mensuales-data" style="display: none;">{{ dias_semana_mensuales_data|safe }}</div>
+
+<div id="dias-semana-anuales-labels" style="display: none;">{{ dias_semana_anuales_labels|safe }}</div>
+
+<div id="dias-semana-anuales-data" style="display: none;">{{ dias_semana_anuales_data|safe }}</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+
+<script src="{% static 'js/estadisticas.js' %}"></script>
+<script>
+  // Navegación de mes/año con selectores
+  document.addEventListener('DOMContentLoaded', function() {
+    const mesSelector = document.getElementById('mes-selector');
+    const añoSelector = document.getElementById('año-selector');
+    
+    function navegarPeriodo() {
+      const mes = mesSelector.value;
+      const año = añoSelector.value;
+      window.location.href = `?year=${año}&month=${mes}`;
+    }
+    
+    if (mesSelector) {
+      mesSelector.addEventListener('change', navegarPeriodo);
+    }
+    
+    if (añoSelector) {
+      añoSelector.addEventListener('change', navegarPeriodo);
+    }
+  });
+  
+  // Función para guardar posición del scroll
+  function guardarPosicionScroll() {
+    sessionStorage.setItem('scrollPosition', window.pageYOffset || document.documentElement.scrollTop);
+  }
+  
+  // Función para restaurar posición del scroll
+  function restaurarPosicionScroll() {
+    const scrollPos = sessionStorage.getItem('scrollPosition');
+    if (scrollPos) {
+      window.scrollTo(0, parseInt(scrollPos));
+      sessionStorage.removeItem('scrollPosition');
+    }
+  }
+  
+  // Restaurar scroll al cargar la página y actualizar botones activos
+  window.addEventListener('load', function() {
+    setTimeout(restaurarPosicionScroll, 100);
+    
+    // Asegurar que los botones correctos estén activos según el período actual
+    function actualizarBotonesActivos(selectorId, periodoActual, btnIds) {
+      const buttons = document.querySelectorAll(selectorId + ' button');
+      buttons.forEach(btn => {
+        btn.classList.remove('active');
+      });
+      
+      if (periodoActual === 'weekly' && btnIds.weekly) {
+        const btn = document.getElementById(btnIds.weekly);
+        if (btn) btn.classList.add('active');
+      } else if (periodoActual === 'monthly' && btnIds.monthly) {
+        const btn = document.getElementById(btnIds.monthly);
+        if (btn) btn.classList.add('active');
+      } else if (periodoActual === 'yearly' && btnIds.yearly) {
+        const btn = document.getElementById(btnIds.yearly);
+        if (btn) btn.classList.add('active');
+      }
+    }
+    
+    // Actualizar botones de días con mayor demanda
+    actualizarBotonesActivos('#days-filter', '{{ demanda_periodo|default:"weekly" }}', {
+      weekly: 'btn-demanda-weekly',
+      monthly: 'btn-demanda-monthly',
+      yearly: 'btn-demanda-yearly'
+    });
+    
+    // Actualizar botones de ventas
+    actualizarBotonesActivos('#time-filter', '{{ ventas_periodo|default:"weekly" }}', {
+      weekly: 'btn-ventas-weekly',
+      monthly: 'btn-ventas-monthly',
+      yearly: 'btn-ventas-yearly'
+    });
+    
+    // Actualizar botones de ventas por categoría
+    actualizarBotonesActivos('#category-filter', '{{ categoria_periodo|default:"weekly" }}', {
+      weekly: 'btn-categoria-weekly',
+      monthly: 'btn-categoria-monthly',
+      yearly: 'btn-categoria-yearly'
+    });
+  });
+  
+  // Función para cambiar tipo de período (semanal/mensual/anual)
+  function cambiarTipoPeriodoDemanda(periodo) {
+    guardarPosicionScroll();
+    
+    const params = new URLSearchParams(window.location.search);
+    params.set('demanda_periodo', periodo);
+    
+    // Limpiar parámetros específicos del período anterior
+    params.delete('demanda_semana');
+    params.delete('demanda_mes');
+    params.delete('demanda_año');
+    
+    window.location.href = '?' + params.toString();
+  }
+  
+  // Función para cambiar período específico (semana, mes, año)
+  function cambiarPeriodoDemanda(periodo) {
+    guardarPosicionScroll();
+    
+    const params = new URLSearchParams(window.location.search);
+    params.set('demanda_periodo', periodo);
+    
+    // Obtener valores de los selectores según el período
+    if (periodo === 'weekly') {
+      const semanaInput = document.getElementById('inputDemandaSemana');
+      if (semanaInput && semanaInput.value) {
+        params.set('demanda_semana', semanaInput.value);
+      } else {
+        params.delete('demanda_semana');
+      }
+      params.delete('demanda_mes');
+      params.delete('demanda_año');
+    } else if (periodo === 'monthly') {
+      const mesSelect = document.getElementById('selectDemandaMes');
+      const añoSelect = document.getElementById('selectDemandaAñoMes');
+      if (mesSelect && mesSelect.value) {
+        params.set('demanda_mes', mesSelect.value);
+      } else {
+        params.delete('demanda_mes');
+      }
+      if (añoSelect && añoSelect.value) {
+        params.set('demanda_año', añoSelect.value);
+      } else {
+        params.delete('demanda_año');
+      }
+      params.delete('demanda_semana');
+    } else if (periodo === 'yearly') {
+      const añoSelect = document.getElementById('selectDemandaAño');
+      if (añoSelect && añoSelect.value) {
+        params.set('demanda_año', añoSelect.value);
+      } else {
+        params.delete('demanda_año');
+      }
+      params.delete('demanda_semana');
+      params.delete('demanda_mes');
+    }
+    
+    window.location.href = '?' + params.toString();
+  }
+  
+  // Función para cambiar tipo de período de ventas
+  function cambiarTipoPeriodoVentas(periodo) {
+    guardarPosicionScroll();
+    
+    const params = new URLSearchParams(window.location.search);
+    params.set('ventas_periodo', periodo);
+    
+    params.delete('ventas_semana');
+    params.delete('ventas_mes');
+    params.delete('ventas_año');
+    
+    window.location.href = '?' + params.toString();
+  }
+  
+  // Función para cambiar período específico de ventas
+  function cambiarPeriodoVentas(periodo) {
+    guardarPosicionScroll();
+    
+    const params = new URLSearchParams(window.location.search);
+    params.set('ventas_periodo', periodo);
+    
+    if (periodo === 'weekly') {
+      const semanaInput = document.getElementById('inputVentasSemana');
+      if (semanaInput && semanaInput.value) {
+        params.set('ventas_semana', semanaInput.value);
+      } else {
+        params.delete('ventas_semana');
+      }
+      params.delete('ventas_mes');
+      params.delete('ventas_año');
+    } else if (periodo === 'monthly') {
+      const mesSelect = document.getElementById('selectVentasMes');
+      const añoSelect = document.getElementById('selectVentasAñoMes');
+      if (mesSelect && mesSelect.value) {
+        params.set('ventas_mes', mesSelect.value);
+      } else {
+        params.delete('ventas_mes');
+      }
+      if (añoSelect && añoSelect.value) {
+        params.set('ventas_año', añoSelect.value);
+      } else {
+        params.delete('ventas_año');
+      }
+      params.delete('ventas_semana');
+    } else if (periodo === 'yearly') {
+      const añoSelect = document.getElementById('selectVentasAño');
+      if (añoSelect && añoSelect.value) {
+        params.set('ventas_año', añoSelect.value);
+      } else {
+        params.delete('ventas_año');
+      }
+      params.delete('ventas_semana');
+      params.delete('ventas_mes');
+    }
+    
+    window.location.href = '?' + params.toString();
+  }
+  
+  // Función para cambiar tipo de período de categoría
+  function cambiarTipoPeriodoCategoria(periodo) {
+    guardarPosicionScroll();
+    
+    const params = new URLSearchParams(window.location.search);
+    params.set('categoria_periodo', periodo);
+    
+    params.delete('categoria_semana');
+    params.delete('categoria_mes');
+    params.delete('categoria_año');
+    
+    window.location.href = '?' + params.toString();
+  }
+  
+  // Función para cambiar período específico de categoría
+  function cambiarPeriodoCategoria(periodo) {
+    guardarPosicionScroll();
+    
+    const params = new URLSearchParams(window.location.search);
+    params.set('categoria_periodo', periodo);
+    
+    if (periodo === 'weekly') {
+      const semanaInput = document.getElementById('inputCategoriaSemana');
+      if (semanaInput && semanaInput.value) {
+        params.set('categoria_semana', semanaInput.value);
+      } else {
+        params.delete('categoria_semana');
+      }
+      params.delete('categoria_mes');
+      params.delete('categoria_año');
+    } else if (periodo === 'monthly') {
+      const mesSelect = document.getElementById('selectCategoriaMes');
+      const añoSelect = document.getElementById('selectCategoriaAñoMes');
+      if (mesSelect && mesSelect.value) {
+        params.set('categoria_mes', mesSelect.value);
+      } else {
+        params.delete('categoria_mes');
+      }
+      if (añoSelect && añoSelect.value) {
+        params.set('categoria_año', añoSelect.value);
+      } else {
+        params.delete('categoria_año');
+      }
+      params.delete('categoria_semana');
+    } else if (periodo === 'yearly') {
+      const añoSelect = document.getElementById('selectCategoriaAño');
+      if (añoSelect && añoSelect.value) {
+        params.set('categoria_año', añoSelect.value);
+      } else {
+        params.delete('categoria_año');
+      }
+      params.delete('categoria_semana');
+      params.delete('categoria_mes');
+    }
+    
+    window.location.href = '?' + params.toString();
+  }
+  
+  // Actualizar función updateDaysChart para mostrar selectores (solo para actualización visual)
+  const originalUpdateDaysChart = window.updateDaysChart;
+  window.updateDaysChart = function(period, buttonElement) {
+    // Llamar a la función original
+    if (originalUpdateDaysChart) {
+      originalUpdateDaysChart(period, buttonElement);
+    }
+    
+    // Mostrar/ocultar selectores según el período
+    const weekSelector = document.getElementById('days-week-selector');
+    const monthSelector = document.getElementById('days-month-selector');
+    const yearSelector = document.getElementById('days-year-selector');
+    
+    if (weekSelector) weekSelector.style.display = period === 'weekly' ? 'flex' : 'none';
+    if (monthSelector) monthSelector.style.display = period === 'monthly' ? 'flex' : 'none';
+    if (yearSelector) yearSelector.style.display = period === 'yearly' ? 'flex' : 'none';
+    
+    // Actualizar texto del rango
+    const rangeText = document.getElementById('days-range-text');
+    if (rangeText) {
+      const ranges = {
+        'weekly': '{{ dias_semana_semanales_rango }}',
+        'monthly': '{{ dias_semana_mensuales_rango }}',
+        'yearly': '{{ dias_semana_anuales_rango }}'
+      };
+      rangeText.textContent = ranges[period] || ranges['weekly'];
+    }
+  };
+  
+  // Actualizar función updateMoneyChart para mostrar selectores
+  const originalUpdateMoneyChart = window.updateMoneyChart;
+  window.updateMoneyChart = function(period, buttonElement) {
+    // Llamar a la función original
+    if (originalUpdateMoneyChart) {
+      originalUpdateMoneyChart(period, buttonElement);
+    }
+    
+    // Mostrar/ocultar selectores según el período
+    const weekSelector = document.getElementById('ventas-week-selector');
+    const monthSelector = document.getElementById('ventas-month-selector');
+    const yearSelector = document.getElementById('ventas-year-selector');
+    
+    if (weekSelector) weekSelector.style.display = period === 'weekly' ? 'flex' : 'none';
+    if (monthSelector) monthSelector.style.display = period === 'monthly' ? 'flex' : 'none';
+    if (yearSelector) yearSelector.style.display = period === 'yearly' ? 'flex' : 'none';
+    
+  };
+  
+  // Actualizar función setCategoryPeriod para mostrar selectores
+  const originalSetCategoryPeriod = window.setCategoryPeriod;
+  window.setCategoryPeriod = function(period, buttonElement) {
+    // Llamar a la función original
+    if (originalSetCategoryPeriod) {
+      originalSetCategoryPeriod(period, buttonElement);
+    }
+    
+    // Mostrar/ocultar selectores según el período
+    const weekSelector = document.getElementById('categoria-week-selector');
+    const monthSelector = document.getElementById('categoria-month-selector');
+    const yearSelector = document.getElementById('categoria-year-selector');
+    
+    if (weekSelector) weekSelector.style.display = period === 'weekly' ? 'flex' : 'none';
+    if (monthSelector) monthSelector.style.display = period === 'monthly' ? 'flex' : 'none';
+    if (yearSelector) yearSelector.style.display = period === 'yearly' ? 'flex' : 'none';
+    
+  };
+</script>
+
+{% endblock %}
+
