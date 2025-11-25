@@ -16,6 +16,7 @@ from django.conf import settings
 import re
 import secrets
 import string
+from decimal import Decimal
 
 # Create your views here.
 
@@ -5373,6 +5374,8 @@ def gasto_create_json(request):
     
     if not descripcion:
         errors.append('La descripción es obligatoria')
+    elif len(descripcion) < 3:
+        errors.append('La descripción debe tener al menos 3 caracteres')
     elif len(descripcion) > 200:
         errors.append('La descripción no puede exceder 200 caracteres')
     
@@ -5382,8 +5385,10 @@ def gasto_create_json(request):
     else:
         try:
             monto_decimal = Decimal(monto)
-            if monto_decimal <= 0:
-                errors.append('El monto debe ser mayor a 0')
+            if monto_decimal < 1:
+                errors.append('El monto debe ser al menos $1')
+            elif monto_decimal > Decimal('20000000'):  # Máximo $20,000,000 CLP
+                errors.append('El monto no puede exceder $20,000,000')
         except (ValueError, TypeError):
             errors.append('El monto debe ser un número válido')
     
@@ -5392,8 +5397,17 @@ def gasto_create_json(request):
         errors.append('La fecha del gasto es obligatoria')
     else:
         try:
-            from datetime import datetime
+            from datetime import datetime, date
             fecha_obj = datetime.strptime(fecha_gasto, '%Y-%m-%d').date()
+            hoy = date.today()
+            # La fecha no puede ser futura
+            if fecha_obj > hoy:
+                errors.append('La fecha del gasto no puede ser futura')
+            # La fecha no puede ser anterior a 1 semana
+            from datetime import timedelta
+            fecha_minima = hoy - timedelta(days=7)
+            if fecha_obj < fecha_minima:
+                errors.append('La fecha del gasto no puede ser anterior a 1 semana')
         except ValueError:
             errors.append('Fecha inválida. Use el formato YYYY-MM-DD')
     
@@ -5472,23 +5486,36 @@ def gasto_update_json(request, gasto_id: int):
     if categoria and categoria not in [choice[0] for choice in GastoOperativo.CATEGORIA_CHOICES]:
         errors.append('Categoría inválida')
     
-    if descripcion and len(descripcion) > 200:
-        errors.append('La descripción no puede exceder 200 caracteres')
+    if descripcion:
+        if len(descripcion) < 3:
+            errors.append('La descripción debe tener al menos 3 caracteres')
+        elif len(descripcion) > 200:
+            errors.append('La descripción no puede exceder 200 caracteres')
     
     monto_decimal = None
     if monto:
         try:
             monto_decimal = Decimal(monto)
-            if monto_decimal <= 0:
-                errors.append('El monto debe ser mayor a 0')
+            if monto_decimal < 1:
+                errors.append('El monto debe ser al menos $1')
+            elif monto_decimal > Decimal('20000000'):  # Máximo $20,000,000 CLP
+                errors.append('El monto no puede exceder $20,000,000')
         except (ValueError, TypeError):
             errors.append('El monto debe ser un número válido')
     
     fecha_obj = None
     if fecha_gasto:
         try:
-            from datetime import datetime
+            from datetime import datetime, date, timedelta
             fecha_obj = datetime.strptime(fecha_gasto, '%Y-%m-%d').date()
+            hoy = date.today()
+            # La fecha no puede ser futura
+            if fecha_obj > hoy:
+                errors.append('La fecha del gasto no puede ser futura')
+            # La fecha no puede ser anterior a 1 semana
+            fecha_minima = hoy - timedelta(days=7)
+            if fecha_obj < fecha_minima:
+                errors.append('La fecha del gasto no puede ser anterior a 1 semana')
         except ValueError:
             errors.append('Fecha inválida. Use el formato YYYY-MM-DD')
     
@@ -5700,11 +5727,19 @@ def promocion_create_json(request):
     
     if not codigo:
         errors.append('El código es obligatorio')
+    elif len(codigo) < 3:
+        errors.append('El código debe tener al menos 3 caracteres')
+    elif len(codigo) > 50:
+        errors.append('El código no puede exceder 50 caracteres')
+    elif not re.match(r'^[A-Z0-9\-_]+$', codigo):
+        errors.append('El código solo puede contener letras mayúsculas, números, guiones y guiones bajos')
     elif Promocion.objects.filter(codigo=codigo).exists():
         errors.append('Ya existe una promoción con ese código')
     
     if not nombre:
         errors.append('El nombre es obligatorio')
+    elif len(nombre) < 3:
+        errors.append('El nombre debe tener al menos 3 caracteres')
     elif len(nombre) > 100:
         errors.append('El nombre no puede exceder 100 caracteres')
     
@@ -5719,8 +5754,16 @@ def promocion_create_json(request):
             valor_decimal = Decimal(valor_descuento)
             if valor_decimal < 0:
                 errors.append('El valor del descuento no puede ser negativo')
-            if tipo_descuento == 'porcentaje' and valor_decimal > 100:
-                errors.append('El porcentaje no puede ser mayor a 100%')
+            if tipo_descuento == 'porcentaje':
+                if valor_decimal < 10:
+                    errors.append('El porcentaje debe ser al menos 10%')
+                elif valor_decimal > 90:
+                    errors.append('El porcentaje no puede ser mayor a 90%')
+            elif tipo_descuento == 'monto_fijo':
+                if valor_decimal > Decimal('10000000'):  # Máximo $10,000,000 CLP
+                    errors.append('El monto fijo no puede exceder $10,000,000')
+                elif valor_decimal == 0:
+                    errors.append('El monto fijo debe ser mayor a $0')
         except (ValueError, TypeError):
             errors.append('El valor del descuento debe ser un número válido')
     
@@ -5729,8 +5772,13 @@ def promocion_create_json(request):
         errors.append('La fecha de inicio es obligatoria')
     else:
         try:
-            from datetime import datetime
+            from datetime import datetime, date, timedelta
             fecha_inicio_obj = datetime.strptime(fecha_inicio, '%Y-%m-%d').date()
+            hoy = date.today()
+            # La fecha de inicio no puede ser anterior a 1 año
+            fecha_minima = hoy - timedelta(days=365)
+            if fecha_inicio_obj < fecha_minima:
+                errors.append('La fecha de inicio no puede ser anterior a 1 año')
         except ValueError:
             errors.append('Fecha de inicio inválida. Use el formato YYYY-MM-DD')
     
@@ -5739,13 +5787,23 @@ def promocion_create_json(request):
         errors.append('La fecha de fin es obligatoria')
     else:
         try:
-            from datetime import datetime
+            from datetime import datetime, date, timedelta
             fecha_fin_obj = datetime.strptime(fecha_fin, '%Y-%m-%d').date()
+            hoy = date.today()
+            # La fecha de fin no puede ser más de 2 años en el futuro
+            fecha_maxima = hoy + timedelta(days=730)
+            if fecha_fin_obj > fecha_maxima:
+                errors.append('La fecha de fin no puede ser más de 2 años en el futuro')
         except ValueError:
             errors.append('Fecha de fin inválida. Use el formato YYYY-MM-DD')
     
-    if fecha_inicio_obj and fecha_fin_obj and fecha_fin_obj < fecha_inicio_obj:
-        errors.append('La fecha de fin debe ser posterior a la fecha de inicio')
+    if fecha_inicio_obj and fecha_fin_obj:
+        if fecha_fin_obj < fecha_inicio_obj:
+            errors.append('La fecha de fin debe ser posterior a la fecha de inicio')
+        # La duración no puede ser mayor a 2 años
+        diferencia = (fecha_fin_obj - fecha_inicio_obj).days
+        if diferencia > 730:
+            errors.append('La promoción no puede durar más de 2 años')
     
     monto_min_decimal = Decimal('0')
     if monto_minimo:
@@ -5753,6 +5811,8 @@ def promocion_create_json(request):
             monto_min_decimal = Decimal(monto_minimo)
             if monto_min_decimal < 0:
                 errors.append('El monto mínimo no puede ser negativo')
+            elif monto_min_decimal > Decimal('100000000'):  # Máximo $100,000,000 CLP
+                errors.append('El monto mínimo no puede exceder $100,000,000')
         except (ValueError, TypeError):
             errors.append('El monto mínimo debe ser un número válido')
     
@@ -5762,6 +5822,8 @@ def promocion_create_json(request):
             limite_usos_int = int(limite_usos)
             if limite_usos_int < 0:
                 errors.append('El límite de usos no puede ser negativo')
+            elif limite_usos_int > 100:  # Máximo 100 usos
+                errors.append('El límite de usos no puede exceder 100')
         except (ValueError, TypeError):
             errors.append('El límite de usos debe ser un número válido')
     
@@ -5838,12 +5900,21 @@ def promocion_update_json(request, promocion_id: int):
 
     errors = []
     
-    if codigo and codigo != promocion.codigo:
-        if Promocion.objects.filter(codigo=codigo).exists():
+    if codigo:
+        if len(codigo) < 3:
+            errors.append('El código debe tener al menos 3 caracteres')
+        elif len(codigo) > 50:
+            errors.append('El código no puede exceder 50 caracteres')
+        elif not re.match(r'^[A-Z0-9\-_]+$', codigo):
+            errors.append('El código solo puede contener letras mayúsculas, números, guiones y guiones bajos')
+        elif codigo != promocion.codigo and Promocion.objects.filter(codigo=codigo).exists():
             errors.append('Ya existe una promoción con ese código')
     
-    if nombre and len(nombre) > 100:
-        errors.append('El nombre no puede exceder 100 caracteres')
+    if nombre:
+        if len(nombre) < 3:
+            errors.append('El nombre debe tener al menos 3 caracteres')
+        elif len(nombre) > 100:
+            errors.append('El nombre no puede exceder 100 caracteres')
     
     if tipo_descuento and tipo_descuento not in [choice[0] for choice in Promocion.TIPO_DESCUENTO_CHOICES]:
         errors.append('Tipo de descuento inválido')
@@ -5855,29 +5926,52 @@ def promocion_update_json(request, promocion_id: int):
             if valor_decimal < 0:
                 errors.append('El valor del descuento no puede ser negativo')
             tipo_desc = tipo_descuento or promocion.tipo_descuento
-            if tipo_desc == 'porcentaje' and valor_decimal > 100:
-                errors.append('El porcentaje no puede ser mayor a 100%')
+            if tipo_desc == 'porcentaje':
+                if valor_decimal < 10:
+                    errors.append('El porcentaje debe ser al menos 10%')
+                elif valor_decimal > 90:
+                    errors.append('El porcentaje no puede ser mayor a 90%')
+            elif tipo_desc == 'monto_fijo':
+                if valor_decimal > Decimal('10000000'):  # Máximo $10,000,000 CLP
+                    errors.append('El monto fijo no puede exceder $10,000,000')
+                elif valor_decimal == 0:
+                    errors.append('El monto fijo debe ser mayor a $0')
         except (ValueError, TypeError):
             errors.append('El valor del descuento debe ser un número válido')
     
     fecha_inicio_obj = None
     if fecha_inicio:
         try:
-            from datetime import datetime
+            from datetime import datetime, date, timedelta
             fecha_inicio_obj = datetime.strptime(fecha_inicio, '%Y-%m-%d').date()
+            hoy = date.today()
+            # La fecha de inicio no puede ser anterior a 1 año
+            fecha_minima = hoy - timedelta(days=365)
+            if fecha_inicio_obj < fecha_minima:
+                errors.append('La fecha de inicio no puede ser anterior a 1 año')
         except ValueError:
             errors.append('Fecha de inicio inválida. Use el formato YYYY-MM-DD')
     
     fecha_fin_obj = None
     if fecha_fin:
         try:
-            from datetime import datetime
+            from datetime import datetime, date, timedelta
             fecha_fin_obj = datetime.strptime(fecha_fin, '%Y-%m-%d').date()
+            hoy = date.today()
+            # La fecha de fin no puede ser más de 2 años en el futuro
+            fecha_maxima = hoy + timedelta(days=730)
+            if fecha_fin_obj > fecha_maxima:
+                errors.append('La fecha de fin no puede ser más de 2 años en el futuro')
         except ValueError:
             errors.append('Fecha de fin inválida. Use el formato YYYY-MM-DD')
     
-    if fecha_inicio_obj and fecha_fin_obj and fecha_fin_obj < fecha_inicio_obj:
-        errors.append('La fecha de fin debe ser posterior a la fecha de inicio')
+    if fecha_inicio_obj and fecha_fin_obj:
+        if fecha_fin_obj < fecha_inicio_obj:
+            errors.append('La fecha de fin debe ser posterior a la fecha de inicio')
+        # La duración no puede ser mayor a 2 años
+        diferencia = (fecha_fin_obj - fecha_inicio_obj).days
+        if diferencia > 730:
+            errors.append('La promoción no puede durar más de 2 años')
     
     monto_min_decimal = None
     if monto_minimo:
@@ -5885,6 +5979,8 @@ def promocion_update_json(request, promocion_id: int):
             monto_min_decimal = Decimal(monto_minimo)
             if monto_min_decimal < 0:
                 errors.append('El monto mínimo no puede ser negativo')
+            elif monto_min_decimal > Decimal('1000000'):  # Máximo $1,000,000 CLP
+                errors.append('El monto mínimo no puede exceder $1,000,000')
         except (ValueError, TypeError):
             errors.append('El monto mínimo debe ser un número válido')
     
@@ -5894,6 +5990,8 @@ def promocion_update_json(request, promocion_id: int):
             limite_usos_int = int(limite_usos)
             if limite_usos_int < 0:
                 errors.append('El límite de usos no puede ser negativo')
+            elif limite_usos_int > 100:  # Máximo 100 usos
+                errors.append('El límite de usos no puede exceder 100')
         except (ValueError, TypeError):
             errors.append('El límite de usos debe ser un número válido')
     
@@ -6614,19 +6712,19 @@ def precios_temporada_list(request):
     juego_filter = request.GET.get('juego', '').strip()
     temporada_filter = request.GET.get('temporada', '').strip()
     
-    order_by = request.GET.get('order_by', 'fecha_inicio').strip()
+    order_by = request.GET.get('order_by', 'mes_inicio').strip()
     direction = request.GET.get('direction', 'desc').strip()
     
     valid_order_fields = {
         'id': 'id',
-        'fecha_inicio': 'fecha_inicio',
-        'fecha_fin': 'fecha_fin',
+        'mes_inicio': 'mes_inicio',
+        'mes_fin': 'mes_fin',
         'precio_arriendo': 'precio_arriendo',
         'temporada': 'temporada',
     }
     
     if order_by not in valid_order_fields:
-        order_by = 'fecha_inicio'
+        order_by = 'mes_inicio'
     
     if direction not in ['asc', 'desc']:
         direction = 'desc'
@@ -6659,6 +6757,7 @@ def precios_temporada_list(request):
         'order_by': order_by,
         'direction': direction,
         'temporada_choices': PrecioTemporada.TEMPORADA_CHOICES,
+        'mes_choices': PrecioTemporada.MES_CHOICES,
         'juegos': Juego.objects.filter(estado='Habilitado').order_by('nombre'),
     })
 
@@ -6679,11 +6778,12 @@ def precio_temporada_detail_json(request, precio_id: int):
             'id': precio.id,
             'juego_id': precio.juego.id,
             'temporada': precio.temporada,
-            'precio_arriendo': str(precio.precio_arriendo),
-            'fecha_inicio': precio.fecha_inicio.strftime('%Y-%m-%d'),
-            'fecha_fin': precio.fecha_fin.strftime('%Y-%m-%d'),
-            'descuento_porcentaje': str(precio.descuento_porcentaje),
+            'precio_arriendo': precio.precio_arriendo,
+            'mes_inicio': precio.mes_inicio,
+            'mes_fin': precio.mes_fin,
+            'descuento_porcentaje': precio.descuento_porcentaje,
             'temporada_choices': PrecioTemporada.TEMPORADA_CHOICES,
+            'mes_choices': PrecioTemporada.MES_CHOICES,
         })
     except PrecioTemporada.DoesNotExist:
         return JsonResponse({'error': 'Precio por temporada no encontrado'}, status=404)
@@ -6701,8 +6801,8 @@ def precio_temporada_create_json(request):
     juego_id = request.POST.get('juego_id', '').strip()
     temporada = request.POST.get('temporada', '').strip()
     precio_arriendo = request.POST.get('precio_arriendo', '0').strip()
-    fecha_inicio = request.POST.get('fecha_inicio', '').strip()
-    fecha_fin = request.POST.get('fecha_fin', '').strip()
+    mes_inicio = request.POST.get('mes_inicio', '').strip()
+    mes_fin = request.POST.get('mes_fin', '').strip()
     descuento_porcentaje = request.POST.get('descuento_porcentaje', '0').strip()
 
     errors = []
@@ -6718,54 +6818,70 @@ def precio_temporada_create_json(request):
     if not temporada or temporada not in [choice[0] for choice in PrecioTemporada.TEMPORADA_CHOICES]:
         errors.append('Temporada inválida')
     
+    precio_arriendo_int = None
     if not precio_arriendo:
         errors.append('El precio de arriendo es obligatorio')
     else:
         try:
-            precio_decimal = float(precio_arriendo)
-            if precio_decimal < 0:
-                errors.append('El precio debe ser mayor o igual a 0')
-        except ValueError:
+            precio_arriendo_int = int(precio_arriendo)
+            if precio_arriendo_int < 40000:  # Mínimo $40,000 CLP
+                errors.append('El precio de arriendo debe ser al menos $40,000')
+            elif precio_arriendo_int > 200000:  # Máximo $200,000 CLP
+                errors.append('El precio de arriendo no puede exceder $200,000')
+        except (ValueError, TypeError):
             errors.append('Precio inválido')
     
-    if not fecha_inicio:
-        errors.append('La fecha de inicio es obligatoria')
-    
-    if not fecha_fin:
-        errors.append('La fecha de fin es obligatoria')
-    
-    fecha_ini = None
-    fecha_f = None
-    if fecha_inicio:
+    mes_inicio_int = None
+    if not mes_inicio:
+        errors.append('El mes de inicio es obligatorio')
+    else:
         try:
-            from datetime import datetime
-            fecha_ini = datetime.strptime(fecha_inicio, '%Y-%m-%d').date()
+            mes_inicio_int = int(mes_inicio)
+            if mes_inicio_int < 1 or mes_inicio_int > 12:
+                errors.append('El mes de inicio debe ser un número entre 1 y 12')
         except ValueError:
-            errors.append('Fecha de inicio inválida')
+            errors.append('Mes de inicio inválido')
     
-    if fecha_fin:
+    mes_fin_int = None
+    if not mes_fin:
+        errors.append('El mes de fin es obligatorio')
+    else:
         try:
-            from datetime import datetime
-            fecha_f = datetime.strptime(fecha_fin, '%Y-%m-%d').date()
+            mes_fin_int = int(mes_fin)
+            if mes_fin_int < 1 or mes_fin_int > 12:
+                errors.append('El mes de fin debe ser un número entre 1 y 12')
         except ValueError:
-            errors.append('Fecha de fin inválida')
+            errors.append('Mes de fin inválido')
     
-    if fecha_ini and fecha_f and fecha_ini > fecha_f:
-        errors.append('La fecha de inicio debe ser anterior a la fecha de fin')
+    # Validar rango de meses (mínimo 1 mes, máximo 6 meses)
+    if mes_inicio_int and mes_fin_int:
+        # Calcular diferencia de meses considerando que puede cruzar año nuevo
+        if mes_fin_int >= mes_inicio_int:
+            diferencia_meses = mes_fin_int - mes_inicio_int + 1
+        else:
+            # Cruza año nuevo (ej: noviembre a enero)
+            diferencia_meses = (12 - mes_inicio_int + 1) + mes_fin_int
+        
+        if diferencia_meses < 1:
+            errors.append('El período de temporada debe durar al menos 1 mes')
+        elif diferencia_meses > 6:
+            errors.append('El período de temporada no puede durar más de 6 meses')
     
-    descuento_decimal = 0
+    descuento_int = 0
     if descuento_porcentaje:
         try:
-            descuento_decimal = float(descuento_porcentaje)
-            if descuento_decimal < 0 or descuento_decimal > 100:
-                errors.append('El descuento debe estar entre 0 y 100')
+            descuento_int = int(descuento_porcentaje)
+            if descuento_int < 10:
+                errors.append('El descuento debe ser al menos 10%')
+            elif descuento_int > 90:
+                errors.append('El descuento no puede ser mayor a 90%')
         except ValueError:
             errors.append('Descuento inválido')
     
     # Verificar unique_together
-    if juego_id and temporada and fecha_ini:
-        if PrecioTemporada.objects.filter(juego_id=int(juego_id), temporada=temporada, fecha_inicio=fecha_ini).exists():
-            errors.append('Ya existe un precio para este juego, temporada y fecha de inicio')
+    if juego_id and temporada and mes_inicio_int:
+        if PrecioTemporada.objects.filter(juego_id=int(juego_id), temporada=temporada, mes_inicio=mes_inicio_int).exists():
+            errors.append('Ya existe un precio para este juego, temporada y mes de inicio')
 
     if errors:
         return JsonResponse({'success': False, 'errors': errors}, status=400)
@@ -6774,10 +6890,10 @@ def precio_temporada_create_json(request):
         precio = PrecioTemporada.objects.create(
             juego=juego,
             temporada=temporada,
-            precio_arriendo=precio_decimal,
-            fecha_inicio=fecha_ini,
-            fecha_fin=fecha_f,
-            descuento_porcentaje=descuento_decimal,
+            precio_arriendo=precio_arriendo_int,
+            mes_inicio=mes_inicio_int,
+            mes_fin=mes_fin_int,
+            descuento_porcentaje=descuento_int,
         )
         return JsonResponse({
             'success': True, 
@@ -6808,8 +6924,8 @@ def precio_temporada_update_json(request, precio_id: int):
     juego_id = request.POST.get('juego_id', '').strip()
     temporada = request.POST.get('temporada', '').strip()
     precio_arriendo = request.POST.get('precio_arriendo', '').strip()
-    fecha_inicio = request.POST.get('fecha_inicio', '').strip()
-    fecha_fin = request.POST.get('fecha_fin', '').strip()
+    mes_inicio = request.POST.get('mes_inicio', '').strip()
+    mes_fin = request.POST.get('mes_fin', '').strip()
     descuento_porcentaje = request.POST.get('descuento_porcentaje', '').strip()
 
     errors = []
@@ -6825,46 +6941,72 @@ def precio_temporada_update_json(request, precio_id: int):
     
     if precio_arriendo:
         try:
-            precio_decimal = float(precio_arriendo)
-            if precio_decimal >= 0:
-                precio.precio_arriendo = precio_decimal
+            precio_arriendo_int = int(precio_arriendo)
+            if precio_arriendo_int < 40000:  # Mínimo $40,000 CLP
+                errors.append('El precio de arriendo debe ser al menos $40,000')
+            elif precio_arriendo_int > 200000:  # Máximo $200,000 CLP
+                errors.append('El precio de arriendo no puede exceder $200,000')
             else:
-                errors.append('El precio debe ser mayor o igual a 0')
-        except ValueError:
+                precio.precio_arriendo = precio_arriendo_int
+        except (ValueError, TypeError):
             errors.append('Precio inválido')
     
-    if fecha_inicio:
+    mes_inicio_int = None
+    if mes_inicio:
         try:
-            from datetime import datetime
-            precio.fecha_inicio = datetime.strptime(fecha_inicio, '%Y-%m-%d').date()
+            mes_inicio_int = int(mes_inicio)
+            if mes_inicio_int < 1 or mes_inicio_int > 12:
+                errors.append('El mes de inicio debe ser un número entre 1 y 12')
+            else:
+                precio.mes_inicio = mes_inicio_int
         except ValueError:
-            errors.append('Fecha de inicio inválida')
+            errors.append('Mes de inicio inválido')
     
-    if fecha_fin:
+    mes_fin_int = None
+    if mes_fin:
         try:
-            from datetime import datetime
-            precio.fecha_fin = datetime.strptime(fecha_fin, '%Y-%m-%d').date()
+            mes_fin_int = int(mes_fin)
+            if mes_fin_int < 1 or mes_fin_int > 12:
+                errors.append('El mes de fin debe ser un número entre 1 y 12')
+            else:
+                precio.mes_fin = mes_fin_int
         except ValueError:
-            errors.append('Fecha de fin inválida')
+            errors.append('Mes de fin inválido')
     
-    if precio.fecha_inicio and precio.fecha_fin and precio.fecha_inicio > precio.fecha_fin:
-        errors.append('La fecha de inicio debe ser anterior a la fecha de fin')
+    # Validar rango de meses (mínimo 1 mes, máximo 6 meses)
+    mes_inicio_final = mes_inicio_int if mes_inicio_int else precio.mes_inicio
+    mes_fin_final = mes_fin_int if mes_fin_int else precio.mes_fin
+    if mes_inicio_final and mes_fin_final:
+        # Calcular diferencia de meses considerando que puede cruzar año nuevo
+        if mes_fin_final >= mes_inicio_final:
+            diferencia_meses = mes_fin_final - mes_inicio_final + 1
+        else:
+            # Cruza año nuevo (ej: noviembre a enero)
+            diferencia_meses = (12 - mes_inicio_final + 1) + mes_fin_final
+        
+        if diferencia_meses < 1:
+            errors.append('El período de temporada debe durar al menos 1 mes')
+        elif diferencia_meses > 6:
+            errors.append('El período de temporada no puede durar más de 6 meses')
     
     if descuento_porcentaje:
         try:
-            descuento_decimal = float(descuento_porcentaje)
-            if 0 <= descuento_decimal <= 100:
-                precio.descuento_porcentaje = descuento_decimal
+            descuento_int = int(descuento_porcentaje)
+            if descuento_int < 10:
+                errors.append('El descuento debe ser al menos 10%')
+            elif descuento_int > 90:
+                errors.append('El descuento no puede ser mayor a 90%')
             else:
-                errors.append('El descuento debe estar entre 0 y 100')
+                precio.descuento_porcentaje = descuento_int
         except ValueError:
             errors.append('Descuento inválido')
     
     # Verificar unique_together al actualizar
-    if juego_id and temporada and precio.fecha_inicio:
-        existing = PrecioTemporada.objects.filter(juego_id=int(juego_id), temporada=temporada, fecha_inicio=precio.fecha_inicio).exclude(id=precio.id)
+    mes_inicio_check = mes_inicio_int if mes_inicio_int else precio.mes_inicio
+    if juego_id and temporada and mes_inicio_check:
+        existing = PrecioTemporada.objects.filter(juego_id=int(juego_id), temporada=temporada, mes_inicio=mes_inicio_check).exclude(id=precio.id)
         if existing.exists():
-            errors.append('Ya existe un precio para este juego, temporada y fecha de inicio')
+            errors.append('Ya existe un precio para este juego, temporada y mes de inicio')
 
     if errors:
         return JsonResponse({'success': False, 'errors': errors}, status=400)
@@ -7031,6 +7173,10 @@ def material_create_json(request):
     
     if not nombre:
         errors.append('El nombre es obligatorio')
+    elif len(nombre) < 3:
+        errors.append('El nombre debe tener al menos 3 caracteres')
+    elif len(nombre) > 100:
+        errors.append('El nombre no puede exceder 100 caracteres')
     
     if not categoria or categoria not in [choice[0] for choice in Material.CATEGORIA_CHOICES]:
         errors.append('Categoría inválida')
@@ -7039,34 +7185,50 @@ def material_create_json(request):
     if stock_actual:
         try:
             stock_actual_int = int(stock_actual)
-            if stock_actual_int < 0:
-                errors.append('El stock actual debe ser mayor o igual a 0')
+            if stock_actual_int < 1:
+                errors.append('El stock actual debe ser al menos 1 unidad')
+            elif stock_actual_int > 100:  # Máximo 100 unidades
+                errors.append('El stock actual no puede exceder 100 unidades')
         except ValueError:
             errors.append('Stock actual inválido')
     
-    stock_minimo_int = 0
+    stock_minimo_int = 2  # Por defecto 2
     if stock_minimo:
         try:
             stock_minimo_int = int(stock_minimo)
-            if stock_minimo_int < 0:
-                errors.append('El stock mínimo debe ser mayor o igual a 0')
+            if stock_minimo_int < 2:
+                errors.append('El stock mínimo debe ser al menos 2 unidades')
         except ValueError:
             errors.append('Stock mínimo inválido')
+    
+    # Validar que stock mínimo no sea mayor que stock actual
+    if stock_actual_int > 0 and stock_minimo_int > stock_actual_int:
+        errors.append('El stock mínimo no puede ser mayor que el stock actual')
     
     precio_decimal = 0
     if precio_unitario:
         try:
-            precio_decimal = float(precio_unitario)
+            precio_decimal = Decimal(precio_unitario)
             if precio_decimal < 0:
                 errors.append('El precio unitario debe ser mayor o igual a 0')
-        except ValueError:
+            elif precio_decimal > Decimal('2000000'):  # Máximo $2,000,000 CLP
+                errors.append('El precio unitario no puede exceder $2,000,000')
+        except (ValueError, TypeError):
             errors.append('Precio unitario inválido')
     
     fecha_compra = None
     if fecha_ultima_compra:
         try:
-            from datetime import datetime
+            from datetime import datetime, date, timedelta
             fecha_compra = datetime.strptime(fecha_ultima_compra, '%Y-%m-%d').date()
+            hoy = date.today()
+            # La fecha no puede ser futura
+            if fecha_compra > hoy:
+                errors.append('La fecha de última compra no puede ser futura')
+            # La fecha no puede ser anterior a 1 semana
+            fecha_minima = hoy - timedelta(days=7)
+            if fecha_compra < fecha_minima:
+                errors.append('La fecha de última compra no puede ser anterior a 1 semana')
         except ValueError:
             errors.append('Fecha de última compra inválida')
     
@@ -7137,7 +7299,12 @@ def material_update_json(request, material_id: int):
     errors = []
     
     if nombre:
-        material.nombre = nombre
+        if len(nombre) < 3:
+            errors.append('El nombre debe tener al menos 3 caracteres')
+        elif len(nombre) > 100:
+            errors.append('El nombre no puede exceder 100 caracteres')
+        else:
+            material.nombre = nombre
     
     if categoria and categoria in [choice[0] for choice in Material.CATEGORIA_CHOICES]:
         material.categoria = categoria
@@ -7148,34 +7315,44 @@ def material_update_json(request, material_id: int):
     if stock_actual:
         try:
             stock_actual_int = int(stock_actual)
-            if stock_actual_int >= 0:
-                material.stock_actual = stock_actual_int
+            if stock_actual_int < 1:
+                errors.append('El stock actual debe ser al menos 1 unidad')
+            elif stock_actual_int > 100:  # Máximo 100 unidades
+                errors.append('El stock actual no puede exceder 100 unidades')
             else:
-                errors.append('El stock actual debe ser mayor o igual a 0')
+                material.stock_actual = stock_actual_int
         except ValueError:
             errors.append('Stock actual inválido')
     
     if stock_minimo:
         try:
             stock_minimo_int = int(stock_minimo)
-            if stock_minimo_int >= 0:
-                material.stock_minimo = stock_minimo_int
+            if stock_minimo_int < 2:
+                errors.append('El stock mínimo debe ser al menos 2 unidades')
             else:
-                errors.append('El stock mínimo debe ser mayor o igual a 0')
+                material.stock_minimo = stock_minimo_int
         except ValueError:
             errors.append('Stock mínimo inválido')
+    
+    # Validar que stock mínimo no sea mayor que stock actual
+    stock_actual_final = material.stock_actual if not stock_actual else stock_actual_int
+    stock_minimo_final = material.stock_minimo if not stock_minimo else stock_minimo_int
+    if stock_actual_final > 0 and stock_minimo_final > stock_actual_final:
+        errors.append('El stock mínimo no puede ser mayor que el stock actual')
     
     if unidad_medida:
         material.unidad_medida = unidad_medida
     
     if precio_unitario:
         try:
-            precio_decimal = float(precio_unitario)
-            if precio_decimal >= 0:
-                material.precio_unitario = precio_decimal
-            else:
+            precio_decimal = Decimal(precio_unitario)
+            if precio_decimal < 0:
                 errors.append('El precio unitario debe ser mayor o igual a 0')
-        except ValueError:
+            elif precio_decimal > Decimal('2000000'):  # Máximo $2,000,000 CLP
+                errors.append('El precio unitario no puede exceder $2,000,000')
+            else:
+                material.precio_unitario = precio_decimal
+        except (ValueError, TypeError):
             errors.append('Precio unitario inválido')
     
     if estado and estado in [choice[0] for choice in Material.ESTADO_CHOICES]:
@@ -7194,8 +7371,18 @@ def material_update_json(request, material_id: int):
     
     if fecha_ultima_compra:
         try:
-            from datetime import datetime
-            material.fecha_ultima_compra = datetime.strptime(fecha_ultima_compra, '%Y-%m-%d').date()
+            from datetime import datetime, date, timedelta
+            fecha_compra = datetime.strptime(fecha_ultima_compra, '%Y-%m-%d').date()
+            hoy = date.today()
+            # La fecha no puede ser futura
+            if fecha_compra > hoy:
+                errors.append('La fecha de última compra no puede ser futura')
+            # La fecha no puede ser anterior a 1 semana
+            fecha_minima = hoy - timedelta(days=7)
+            if fecha_compra < fecha_minima:
+                errors.append('La fecha de última compra no puede ser anterior a 1 semana')
+            else:
+                material.fecha_ultima_compra = fecha_compra
         except ValueError:
             errors.append('Fecha de última compra inválida')
     elif fecha_ultima_compra == '':

@@ -150,25 +150,47 @@ class PrecioTemporada(models.Model):
         ('Especial', 'Temporada Especial'),
     ]
     
+    MES_CHOICES = [
+        (1, 'Enero'),
+        (2, 'Febrero'),
+        (3, 'Marzo'),
+        (4, 'Abril'),
+        (5, 'Mayo'),
+        (6, 'Junio'),
+        (7, 'Julio'),
+        (8, 'Agosto'),
+        (9, 'Septiembre'),
+        (10, 'Octubre'),
+        (11, 'Noviembre'),
+        (12, 'Diciembre'),
+    ]
+    
     juego = models.ForeignKey(Juego, on_delete=models.CASCADE, related_name='precios_temporada')
     temporada = models.CharField(max_length=20, choices=TEMPORADA_CHOICES)
-    precio_arriendo = models.DecimalField(max_digits=10, decimal_places=2)
-    fecha_inicio = models.DateField()
-    fecha_fin = models.DateField()
-    descuento_porcentaje = models.DecimalField(
-        max_digits=5, 
-        decimal_places=2, 
+    precio_arriendo = models.PositiveIntegerField(help_text="Precio de arriendo en pesos chilenos")
+    mes_inicio = models.IntegerField(choices=MES_CHOICES, help_text="Mes de inicio de la temporada")
+    mes_fin = models.IntegerField(choices=MES_CHOICES, help_text="Mes de fin de la temporada")
+    descuento_porcentaje = models.PositiveIntegerField(
         default=0,
-        validators=[MinValueValidator(0), MaxValueValidator(100)]
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+        help_text="Descuento en porcentaje (0-100)"
     )
     
     class Meta:
         verbose_name = 'Precio por Temporada'
         verbose_name_plural = 'Precios por Temporada'
-        unique_together = ['juego', 'temporada', 'fecha_inicio']
+        unique_together = ['juego', 'temporada', 'mes_inicio']
     
     def __str__(self):
-        return f"{self.juego.nombre} - {self.get_temporada_display()}"
+        mes_inicio_nombre = dict(self.MES_CHOICES)[self.mes_inicio]
+        mes_fin_nombre = dict(self.MES_CHOICES)[self.mes_fin]
+        return f"{self.juego.nombre} - {self.get_temporada_display()} ({mes_inicio_nombre} - {mes_fin_nombre})"
+    
+    def get_mes_inicio_display(self):
+        return dict(self.MES_CHOICES)[self.mes_inicio]
+    
+    def get_mes_fin_display(self):
+        return dict(self.MES_CHOICES)[self.mes_fin]
 
 
 class Reserva(models.Model):

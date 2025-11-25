@@ -63,8 +63,8 @@
             document.getElementById('editPrecioTemporadaJuego').value = precio.juego_id;
             document.getElementById('editPrecioTemporadaTemporada').value = precio.temporada;
             document.getElementById('editPrecioTemporadaPrecio').value = precio.precio_arriendo;
-            document.getElementById('editPrecioTemporadaFechaInicio').value = precio.fecha_inicio;
-            document.getElementById('editPrecioTemporadaFechaFin').value = precio.fecha_fin;
+            document.getElementById('editPrecioTemporadaMesInicio').value = precio.mes_inicio;
+            document.getElementById('editPrecioTemporadaMesFin').value = precio.mes_fin;
             document.getElementById('editPrecioTemporadaDescuento').value = precio.descuento_porcentaje;
         }
         

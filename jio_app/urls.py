@@ -69,13 +69,6 @@ urlpatterns = [
     #Contabilidad
     path('panel/contabilidad/', views.contabilidad, name='contabilidad'),
     
-    # CRUD de vehículos
-    path('panel/vehiculos/', views.vehiculos_list, name='vehiculos_list'),
-    path('panel/vehiculos/create/', views.vehiculo_create_json, name='vehiculo_create_json'),
-    path('panel/vehiculos/<int:vehiculo_id>/json/', views.vehiculo_detail_json, name='vehiculo_detail_json'),
-    path('panel/vehiculos/<int:vehiculo_id>/update/', views.vehiculo_update_json, name='vehiculo_update_json'),
-    path('panel/vehiculos/<int:vehiculo_id>/delete/', views.vehiculo_delete_json, name='vehiculo_delete_json'),
-    
     # CRUD de gastos operativos
     path('panel/gastos/', views.gastos_list, name='gastos_list'),
     path('panel/gastos/create/', views.gasto_create_json, name='gasto_create_json'),
@@ -89,20 +82,6 @@ urlpatterns = [
     path('panel/promociones/<int:promocion_id>/json/', views.promocion_detail_json, name='promocion_detail_json'),
     path('panel/promociones/<int:promocion_id>/update/', views.promocion_update_json, name='promocion_update_json'),
     path('panel/promociones/<int:promocion_id>/delete/', views.promocion_delete_json, name='promocion_delete_json'),
-    
-    # CRUD de evaluaciones
-    path('panel/evaluaciones/', views.evaluaciones_list, name='evaluaciones_list'),
-    path('panel/evaluaciones/create/', views.evaluacion_create_json, name='evaluacion_create_json'),
-    path('panel/evaluaciones/<int:evaluacion_id>/json/', views.evaluacion_detail_json, name='evaluacion_detail_json'),
-    path('panel/evaluaciones/<int:evaluacion_id>/update/', views.evaluacion_update_json, name='evaluacion_update_json'),
-    path('panel/evaluaciones/<int:evaluacion_id>/delete/', views.evaluacion_delete_json, name='evaluacion_delete_json'),
-    
-    # CRUD de mantenimiento de vehículos
-    path('panel/mantenimientos/', views.mantenimientos_list, name='mantenimientos_list'),
-    path('panel/mantenimientos/create/', views.mantenimiento_create_json, name='mantenimiento_create_json'),
-    path('panel/mantenimientos/<int:mantenimiento_id>/json/', views.mantenimiento_detail_json, name='mantenimiento_detail_json'),
-    path('panel/mantenimientos/<int:mantenimiento_id>/update/', views.mantenimiento_update_json, name='mantenimiento_update_json'),
-    path('panel/mantenimientos/<int:mantenimiento_id>/delete/', views.mantenimiento_delete_json, name='mantenimiento_delete_json'),
     
     # CRUD de precios por temporada
     path('panel/precios-temporada/', views.precios_temporada_list, name='precios_temporada_list'),
@@ -118,10 +97,4 @@ urlpatterns = [
     path('panel/materiales/<int:material_id>/update/', views.material_update_json, name='material_update_json'),
     path('panel/materiales/<int:material_id>/delete/', views.material_delete_json, name='material_delete_json'),
     
-    # CRUD de proveedores
-    path('panel/proveedores/', views.proveedores_list, name='proveedores_list'),
-    path('panel/proveedores/create/', views.proveedor_create_json, name='proveedor_create_json'),
-    path('panel/proveedores/<int:proveedor_id>/json/', views.proveedor_detail_json, name='proveedor_detail_json'),
-    path('panel/proveedores/<int:proveedor_id>/update/', views.proveedor_update_json, name='proveedor_update_json'),
-    path('panel/proveedores/<int:proveedor_id>/delete/', views.proveedor_delete_json, name='proveedor_delete_json'),
 ]

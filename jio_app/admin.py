@@ -88,9 +88,9 @@ class PrecioTemporadaAdmin(admin.ModelAdmin):
     """
     Configuración del admin para el modelo PrecioTemporada
     """
-    list_display = ('juego', 'temporada', 'precio_arriendo', 'fecha_inicio', 'fecha_fin', 'descuento_porcentaje')
-    list_filter = ('temporada', 'fecha_inicio', 'fecha_fin')
-    search_fields = ('juego__nombre', 'juego__codigo')
+    list_display = ('juego', 'temporada', 'precio_arriendo', 'get_mes_inicio_display', 'get_mes_fin_display', 'descuento_porcentaje')
+    list_filter = ('temporada', 'mes_inicio', 'mes_fin')
+    search_fields = ('juego__nombre',)
     raw_id_fields = ('juego',)
 
 

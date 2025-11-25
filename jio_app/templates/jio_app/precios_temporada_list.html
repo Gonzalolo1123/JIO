@@ -41,19 +41,29 @@
         </label>
         <label>
           Precio de arriendo ($) *
-          <input type="number" name="precio_arriendo" id="editPrecioTemporadaPrecio" required min="0" step="0.01">
+          <input type="number" name="precio_arriendo" id="editPrecioTemporadaPrecio" required min="0" step="1">
         </label>
         <label>
-          Fecha inicio *
-          <input type="date" name="fecha_inicio" id="editPrecioTemporadaFechaInicio" required>
+          Mes inicio *
+          <select name="mes_inicio" id="editPrecioTemporadaMesInicio" required>
+            <option value="">Seleccionar mes</option>
+            {% for value, label in mes_choices %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
         </label>
         <label>
-          Fecha fin *
-          <input type="date" name="fecha_fin" id="editPrecioTemporadaFechaFin" required>
+          Mes fin *
+          <select name="mes_fin" id="editPrecioTemporadaMesFin" required>
+            <option value="">Seleccionar mes</option>
+            {% for value, label in mes_choices %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
         </label>
         <label>
           Descuento (%)
-          <input type="number" name="descuento_porcentaje" id="editPrecioTemporadaDescuento" min="0" max="100" step="0.01" value="0">
+          <input type="number" name="descuento_porcentaje" id="editPrecioTemporadaDescuento" min="0" max="100" step="1" value="0">
         </label>
         <div class="form-actions" style="grid-column: 1 / -1;">
           <button type="button" class="btn btn-secondary" data-modal-close>Cancelar</button>
@@ -100,8 +110,8 @@
           <th>Temporada</th>
           <th>Precio Arriendo</th>
           <th>Descuento</th>
-          <th>Fecha Inicio</th>
-          <th>Fecha Fin</th>
+          <th>Mes Inicio</th>
+          <th>Mes Fin</th>
           <th>Acciones</th>
         </tr>
       </thead>
@@ -113,8 +123,8 @@
           <td>{{ precio.get_temporada_display }}</td>
           <td>${{ precio.precio_arriendo|floatformat:0|intcomma }}</td>
           <td>{% if precio.descuento_porcentaje > 0 %}{{ precio.descuento_porcentaje }}%{% else %}-{% endif %}</td>
-          <td>{{ precio.fecha_inicio|date:"d/m/Y" }}</td>
-          <td>{{ precio.fecha_fin|date:"d/m/Y" }}</td>
+          <td>{{ precio.get_mes_inicio_display }}</td>
+          <td>{{ precio.get_mes_fin_display }}</td>
           <td style="white-space:nowrap;">
             <button class="btn btn-secondary" data-edit-precio-temporada="{{ precio.id }}">Editar</button>
             <button class="btn btn-danger" data-delete-precio-temporada="{{ precio.id }}">Eliminar</button>
@@ -158,19 +168,29 @@
         </label>
         <label>
           Precio de arriendo ($) *
-          <input type="number" name="precio_arriendo" required min="0" step="0.01">
+          <input type="number" name="precio_arriendo" required min="0" step="1">
         </label>
         <label>
-          Fecha inicio *
-          <input type="date" name="fecha_inicio" required>
+          Mes inicio *
+          <select name="mes_inicio" required>
+            <option value="">Seleccionar mes</option>
+            {% for value, label in mes_choices %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
         </label>
         <label>
-          Fecha fin *
-          <input type="date" name="fecha_fin" required>
+          Mes fin *
+          <select name="mes_fin" required>
+            <option value="">Seleccionar mes</option>
+            {% for value, label in mes_choices %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
         </label>
         <label>
           Descuento (%)
-          <input type="number" name="descuento_porcentaje" min="0" max="100" step="0.01" value="0">
+          <input type="number" name="descuento_porcentaje" min="0" max="100" step="1" value="0">
         </label>
         <div class="form-actions" style="grid-column: 1 / -1;">
           <button type="button" class="btn btn-secondary" data-modal-close>Cancelar</button>
