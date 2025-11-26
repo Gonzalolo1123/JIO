@@ -81,6 +81,7 @@ urlpatterns = [
     path('panel/promociones/create/', views.promocion_create_json, name='promocion_create_json'),
     path('panel/promociones/<int:promocion_id>/json/', views.promocion_detail_json, name='promocion_detail_json'),
     path('panel/promociones/<int:promocion_id>/update/', views.promocion_update_json, name='promocion_update_json'),
+    path('panel/promociones/<int:promocion_id>/change-estado/', views.promocion_change_estado_json, name='promocion_change_estado_json'),
     path('panel/promociones/<int:promocion_id>/delete/', views.promocion_delete_json, name='promocion_delete_json'),
     
     # CRUD de precios por temporada
@@ -96,5 +97,13 @@ urlpatterns = [
     path('panel/materiales/<int:material_id>/json/', views.material_detail_json, name='material_detail_json'),
     path('panel/materiales/<int:material_id>/update/', views.material_update_json, name='material_update_json'),
     path('panel/materiales/<int:material_id>/delete/', views.material_delete_json, name='material_delete_json'),
+    path('panel/materiales/categoria/create/', views.categoria_material_create_json, name='categoria_material_create_json'),
+    
+    # CRUD de proveedores
+    path('panel/proveedores/', views.proveedores_list, name='proveedores_list'),
+    path('panel/proveedores/create/', views.proveedor_create_json, name='proveedor_create_json'),
+    path('panel/proveedores/<int:proveedor_id>/json/', views.proveedor_detail_json, name='proveedor_detail_json'),
+    path('panel/proveedores/<int:proveedor_id>/update/', views.proveedor_update_json, name='proveedor_update_json'),
+    path('panel/proveedores/<int:proveedor_id>/delete/', views.proveedor_delete_json, name='proveedor_delete_json'),
     
 ]

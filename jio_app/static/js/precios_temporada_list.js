@@ -66,6 +66,12 @@
             document.getElementById('editPrecioTemporadaMesInicio').value = precio.mes_inicio;
             document.getElementById('editPrecioTemporadaMesFin').value = precio.mes_fin;
             document.getElementById('editPrecioTemporadaDescuento').value = precio.descuento_porcentaje;
+            
+            // Disparar evento change en el select de juego para actualizar precios
+            const juegoSelect = document.getElementById('editPrecioTemporadaJuego');
+            if (juegoSelect) {
+                juegoSelect.dispatchEvent(new Event('change'));
+            }
         }
         
         // Event listeners para modales

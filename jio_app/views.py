@@ -5,7 +5,7 @@ from django.contrib import messages
 from django.http import JsonResponse
 from django.core.exceptions import PermissionDenied
 from django.urls import reverse
-from .models import Juego, Usuario, Repartidor, Cliente, Instalacion, Retiro, Reserva, DetalleReserva, Vehiculo, GastoOperativo, Promocion, Evaluacion, PrecioTemporada, MantenimientoVehiculo, Proveedor, Material
+from .models import Juego, Usuario, Repartidor, Cliente, Instalacion, Retiro, Reserva, DetalleReserva, Vehiculo, GastoOperativo, Promocion, Evaluacion, PrecioTemporada, MantenimientoVehiculo, Proveedor, Material, CategoriaMaterial
 from django.views.decorators.http import require_http_methods
 from django.core import signing
 from django.utils import timezone
@@ -5298,8 +5298,56 @@ def gastos_list(request):
             pass
 
     # Calcular totales
-    from django.db.models import Sum
+    from django.db.models import Sum, Avg, Count
+    from datetime import datetime, timedelta
+    from calendar import monthrange
+    
     total_gastos = base_qs.aggregate(total=Sum('monto'))['total'] or 0
+    
+    # Calcular estadísticas adicionales (sin filtros aplicados, para ver el panorama general)
+    todos_gastos = GastoOperativo.objects.all()
+    hoy = timezone.now().date()
+    
+    # Total del mes actual
+    primer_dia_mes = hoy.replace(day=1)
+    ultimo_dia_mes = hoy.replace(day=monthrange(hoy.year, hoy.month)[1])
+    total_mes_actual = todos_gastos.filter(
+        fecha_gasto__gte=primer_dia_mes,
+        fecha_gasto__lte=ultimo_dia_mes
+    ).aggregate(total=Sum('monto'))['total'] or 0
+    
+    # Total del año actual
+    primer_dia_ano = hoy.replace(month=1, day=1)
+    ultimo_dia_ano = hoy.replace(month=12, day=31)
+    total_ano_actual = todos_gastos.filter(
+        fecha_gasto__gte=primer_dia_ano,
+        fecha_gasto__lte=ultimo_dia_ano
+    ).aggregate(total=Sum('monto'))['total'] or 0
+    
+    # Total de la semana actual (lunes a domingo)
+    dias_semana = hoy.weekday()  # 0 = lunes, 6 = domingo
+    inicio_semana = hoy - timedelta(days=dias_semana)
+    fin_semana = inicio_semana + timedelta(days=6)
+    total_semana_actual = todos_gastos.filter(
+        fecha_gasto__gte=inicio_semana,
+        fecha_gasto__lte=fin_semana
+    ).aggregate(total=Sum('monto'))['total'] or 0
+    
+    # Total general (todos los tiempos)
+    total_general = todos_gastos.aggregate(total=Sum('monto'))['total'] or 0
+    
+    # Promedio mensual del año actual
+    meses_transcurridos = hoy.month
+    promedio_mensual = total_ano_actual / meses_transcurridos if meses_transcurridos > 0 else 0
+    
+    # Gastos por categoría (año actual)
+    gastos_por_categoria = todos_gastos.filter(
+        fecha_gasto__gte=primer_dia_ano,
+        fecha_gasto__lte=ultimo_dia_ano
+    ).values('categoria').annotate(
+        total=Sum('monto'),
+        cantidad=Count('id')
+    ).order_by('-total')
 
     return render(request, 'jio_app/gastos_list.html', {
         'gastos': base_qs,
@@ -5310,6 +5358,12 @@ def gastos_list(request):
         'order_by': order_by,
         'direction': direction,
         'total_gastos': total_gastos,
+        'total_mes_actual': total_mes_actual,
+        'total_ano_actual': total_ano_actual,
+        'total_semana_actual': total_semana_actual,
+        'total_general': total_general,
+        'promedio_mensual': promedio_mensual,
+        'gastos_por_categoria': gastos_por_categoria,
         'categoria_choices': GastoOperativo.CATEGORIA_CHOICES,
         'metodo_pago_choices': GastoOperativo.METODO_PAGO_CHOICES,
         'vehiculos': Vehiculo.objects.all(),
@@ -5613,13 +5667,14 @@ def gasto_delete_json(request, gasto_id: int):
 @login_required
 def promociones_list(request):
     """
-    Lista todas las promociones con filtros de búsqueda
+    Lista todas las promociones con filtros de búsqueda y secciones
     """
     if not request.user.tipo_usuario == 'administrador':
         raise PermissionDenied("Solo los administradores pueden acceder a este recurso.")
 
     query = request.GET.get('q', '').strip()
     estado_filter = request.GET.get('estado', '').strip()
+    seccion = request.GET.get('seccion', 'todas').strip()  # todas, activas, desactivadas
     
     order_by = request.GET.get('order_by', 'fecha_creacion').strip()
     direction = request.GET.get('direction', 'desc').strip()
@@ -5646,6 +5701,13 @@ def promociones_list(request):
     
     base_qs = Promocion.objects.all().order_by(order_field)
     
+    # Filtrar por sección
+    if seccion == 'activas':
+        base_qs = base_qs.filter(estado='activa')
+    elif seccion == 'desactivadas':
+        base_qs = base_qs.filter(estado='inactiva')
+    # 'todas' no aplica filtro de estado
+    
     if query:
         base_qs = base_qs.filter(
             Q(codigo__icontains=query) |
@@ -5653,13 +5715,15 @@ def promociones_list(request):
             Q(descripcion__icontains=query)
         )
     
-    if estado_filter:
+    # El filtro de estado en el formulario solo aplica si estamos en 'todas'
+    if estado_filter and seccion == 'todas':
         base_qs = base_qs.filter(estado=estado_filter)
 
     return render(request, 'jio_app/promociones_list.html', {
         'promociones': base_qs,
         'query': query,
         'estado_filter': estado_filter,
+        'seccion': seccion,
         'order_by': order_by,
         'direction': direction,
         'tipo_descuento_choices': Promocion.TIPO_DESCUENTO_CHOICES,
@@ -6052,6 +6116,45 @@ def promocion_update_json(request, promocion_id: int):
         return JsonResponse({
             'success': False, 
             'errors': [f'Error al actualizar la promoción: {str(e)}']
+        }, status=500)
+
+
+@login_required
+@require_http_methods(["POST"])
+def promocion_change_estado_json(request, promocion_id: int):
+    """
+    Cambia el estado de una promoción rápidamente
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    try:
+        promocion = Promocion.objects.get(id=promocion_id)
+    except Promocion.DoesNotExist:
+        return JsonResponse({'error': 'Promoción no encontrada'}, status=404)
+    
+    nuevo_estado = request.POST.get('estado', '').strip()
+    
+    if not nuevo_estado:
+        return JsonResponse({'error': 'Estado no proporcionado'}, status=400)
+    
+    if nuevo_estado not in [choice[0] for choice in Promocion.ESTADO_CHOICES]:
+        return JsonResponse({'error': 'Estado inválido'}, status=400)
+    
+    try:
+        promocion.estado = nuevo_estado
+        promocion.save()
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'Estado de la promoción cambiado a "{promocion.get_estado_display()}" correctamente.',
+            'nuevo_estado': nuevo_estado,
+            'nuevo_estado_display': promocion.get_estado_display()
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': f'Error al cambiar el estado: {str(e)}'
         }, status=500)
 
 
@@ -6749,6 +6852,12 @@ def precios_temporada_list(request):
     if temporada_filter:
         base_qs = base_qs.filter(temporada=temporada_filter)
 
+    # Crear un diccionario con los precios base de los juegos para JavaScript
+    from django.utils.safestring import mark_safe
+    import json
+    juegos_list = Juego.objects.filter(estado='Habilitado').order_by('nombre')
+    juegos_precios = {str(juego.id): juego.precio_base for juego in juegos_list}
+    
     return render(request, 'jio_app/precios_temporada_list.html', {
         'precios_temporada': base_qs,
         'query': query,
@@ -6758,7 +6867,8 @@ def precios_temporada_list(request):
         'direction': direction,
         'temporada_choices': PrecioTemporada.TEMPORADA_CHOICES,
         'mes_choices': PrecioTemporada.MES_CHOICES,
-        'juegos': Juego.objects.filter(estado='Habilitado').order_by('nombre'),
+        'juegos': juegos_list,
+        'juegos_precios_json': mark_safe(json.dumps(juegos_precios)),
     })
 
 
@@ -7096,11 +7206,21 @@ def materiales_list(request):
         )
     
     if categoria_filter:
-        base_qs = base_qs.filter(categoria=categoria_filter)
+        # Si es una categoría personalizada, filtrar por "otro" (ya que las personalizadas se guardan como "otro")
+        if categoria_filter.startswith('custom_'):
+            base_qs = base_qs.filter(categoria='otro')
+        else:
+            base_qs = base_qs.filter(categoria=categoria_filter)
     
     if estado_filter:
         base_qs = base_qs.filter(estado=estado_filter)
 
+    # Combinar categorías predefinidas con categorías personalizadas
+    categorias_personalizadas = CategoriaMaterial.objects.filter(activa=True).order_by('nombre')
+    categoria_choices_combined = list(Material.CATEGORIA_CHOICES)
+    for cat in categorias_personalizadas:
+        categoria_choices_combined.append((f'custom_{cat.id}', cat.nombre))
+    
     return render(request, 'jio_app/materiales_list.html', {
         'materiales': base_qs,
         'query': query,
@@ -7108,7 +7228,7 @@ def materiales_list(request):
         'estado_filter': estado_filter,
         'order_by': order_by,
         'direction': direction,
-        'categoria_choices': Material.CATEGORIA_CHOICES,
+        'categoria_choices': categoria_choices_combined,
         'estado_choices': Material.ESTADO_CHOICES,
         'proveedores': Proveedor.objects.filter(activo=True).order_by('nombre'),
     })
@@ -7178,7 +7298,12 @@ def material_create_json(request):
     elif len(nombre) > 100:
         errors.append('El nombre no puede exceder 100 caracteres')
     
-    if not categoria or categoria not in [choice[0] for choice in Material.CATEGORIA_CHOICES]:
+    # Validar categoría (puede ser predefinida o personalizada)
+    categorias_validas = [choice[0] for choice in Material.CATEGORIA_CHOICES]
+    categorias_personalizadas = [f'custom_{cat.id}' for cat in CategoriaMaterial.objects.filter(activa=True)]
+    todas_categorias = categorias_validas + categorias_personalizadas
+    
+    if not categoria or categoria not in todas_categorias:
         errors.append('Categoría inválida')
     
     stock_actual_int = 0
@@ -7306,8 +7431,17 @@ def material_update_json(request, material_id: int):
         else:
             material.nombre = nombre
     
-    if categoria and categoria in [choice[0] for choice in Material.CATEGORIA_CHOICES]:
-        material.categoria = categoria
+    # Validar y asignar categoría (puede ser predefinida o personalizada)
+    categorias_validas = [choice[0] for choice in Material.CATEGORIA_CHOICES]
+    categorias_personalizadas = [f'custom_{cat.id}' for cat in CategoriaMaterial.objects.filter(activa=True)]
+    todas_categorias = categorias_validas + categorias_personalizadas
+    
+    if categoria and categoria in todas_categorias:
+        # Si es una categoría personalizada, usar "otro" como valor base
+        if categoria.startswith('custom_'):
+            material.categoria = 'otro'  # Usar "otro" como valor base para categorías personalizadas
+        else:
+            material.categoria = categoria
     
     if descripcion is not None:
         material.descripcion = descripcion or None
@@ -7432,6 +7566,49 @@ def material_delete_json(request, material_id: int):
         return JsonResponse({
             'success': False, 
             'errors': [f'Error al eliminar el material: {str(e)}']
+        }, status=500)
+
+
+# ========== CRUD DE CATEGORÍAS DE MATERIALES ==========
+
+@login_required
+@require_http_methods(["POST"])
+def categoria_material_create_json(request):
+    """
+    Crea una nueva categoría de material personalizada
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+
+    nombre = request.POST.get('nombre_categoria', '').strip()
+
+    errors = []
+    
+    if not nombre:
+        errors.append('El nombre de la categoría es obligatorio')
+    elif len(nombre) < 2:
+        errors.append('El nombre debe tener al menos 2 caracteres')
+    elif len(nombre) > 50:
+        errors.append('El nombre no puede exceder 50 caracteres')
+    elif CategoriaMaterial.objects.filter(nombre__iexact=nombre, activa=True).exists():
+        errors.append('Ya existe una categoría con ese nombre')
+
+    if errors:
+        return JsonResponse({'success': False, 'errors': errors}, status=400)
+
+    try:
+        categoria = CategoriaMaterial.objects.create(nombre=nombre)
+        return JsonResponse({
+            'success': True, 
+            'message': f'Categoría "{categoria.nombre}" creada correctamente.',
+            'categoria_id': categoria.id,
+            'categoria_value': f'custom_{categoria.id}',
+            'categoria_label': categoria.nombre
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False, 
+            'errors': [f'Error al crear la categoría: {str(e)}']
         }, status=500)
 
 

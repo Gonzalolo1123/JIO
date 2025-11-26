@@ -698,3 +698,20 @@ class Material(models.Model):
     def stock_bajo(self):
         """Indica si el stock está por debajo del mínimo"""
         return self.stock_actual <= self.stock_minimo and self.stock_minimo > 0
+
+
+class CategoriaMaterial(models.Model):
+    """
+    Modelo para categorías personalizadas de materiales
+    """
+    nombre = models.CharField(max_length=50, unique=True, help_text="Nombre de la categoría")
+    activa = models.BooleanField(default=True)
+    fecha_creacion = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        verbose_name = 'Categoría de Material'
+        verbose_name_plural = 'Categorías de Materiales'
+        ordering = ['nombre']
+    
+    def __str__(self):
+        return self.nombre

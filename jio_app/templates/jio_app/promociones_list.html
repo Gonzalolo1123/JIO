@@ -6,7 +6,7 @@
 {% block title %}Promociones - JIO{% endblock %}
 
 {% block content %}
-<div class="panel-container">
+<div class="panel-container" style="max-width: 95%; margin: 0 auto; padding: 0 1rem;">
   <div class="panel-header">
     <h1 class="panel-title">Promociones y Descuentos</h1>
   </div>
@@ -93,22 +93,40 @@
     <div class="modal-backdrop" data-modal-close></div>
   </div>
 
+  <!-- Tabs de secciones -->
+  <div class="form-card" style="margin-bottom: 1rem; padding: 0;">
+    <div style="display: flex; border-bottom: 2px solid #e0e0e0;">
+      <button class="tab-button {% if seccion == 'todas' %}active{% endif %}" data-seccion="todas" style="flex: 1; padding: 1rem; background: none; border: none; border-bottom: 3px solid {% if seccion == 'todas' %}#2E7D32{% else %}transparent{% endif %}; color: {% if seccion == 'todas' %}#2E7D32{% else %}#666{% endif %}; font-weight: {% if seccion == 'todas' %}bold{% else %}normal{% endif %}; cursor: pointer; transition: all 0.3s;">
+        Todas las Promociones
+      </button>
+      <button class="tab-button {% if seccion == 'activas' %}active{% endif %}" data-seccion="activas" style="flex: 1; padding: 1rem; background: none; border: none; border-bottom: 3px solid {% if seccion == 'activas' %}#2E7D32{% else %}transparent{% endif %}; color: {% if seccion == 'activas' %}#2E7D32{% else %}#666{% endif %}; font-weight: {% if seccion == 'activas' %}bold{% else %}normal{% endif %}; cursor: pointer; transition: all 0.3s;">
+        Promociones Activas
+      </button>
+      <button class="tab-button {% if seccion == 'desactivadas' %}active{% endif %}" data-seccion="desactivadas" style="flex: 1; padding: 1rem; background: none; border: none; border-bottom: 3px solid {% if seccion == 'desactivadas' %}#2E7D32{% else %}transparent{% endif %}; color: {% if seccion == 'desactivadas' %}#2E7D32{% else %}#666{% endif %}; font-weight: {% if seccion == 'desactivadas' %}bold{% else %}normal{% endif %}; cursor: pointer; transition: all 0.3s;">
+        Promociones Desactivadas
+      </button>
+    </div>
+  </div>
+
   <!-- Filtros de búsqueda -->
   <div class="form-card" id="promocionesPage" data-promociones-base="/panel/promociones/">
-    <form method="get" class="form-grid" style="grid-template-columns: 1fr 1fr auto;align-items: end;gap:1rem;">
+    <form method="get" class="form-grid" id="filterForm" style="grid-template-columns: {% if seccion == 'todas' %}1fr 1fr auto{% else %}1fr auto{% endif %};align-items: end;gap:1rem;">
       <input type="hidden" name="order_by" value="{{ order_by }}">
       <input type="hidden" name="direction" value="{{ direction }}">
+      <input type="hidden" name="seccion" id="seccionInput" value="{{ seccion }}">
       <label>Buscar
         <input type="text" name="q" value="{{ query }}" placeholder="Código, nombre o descripción">
       </label>
-      <label>Estado
-        <select name="estado">
+      {% if seccion == 'todas' %}
+      <label id="estadoFilterLabel">Estado
+        <select name="estado" id="estadoFilterSelect">
           <option value="">Todos los estados</option>
           {% for value, label in estado_choices %}
           <option value="{{ value }}" {% if estado_filter == value %}selected{% endif %}>{{ label }}</option>
           {% endfor %}
         </select>
       </label>
+      {% endif %}
       <button class="btn btn-secondary" type="submit">Filtrar</button>
     </form>
   </div>
@@ -116,7 +134,15 @@
   <!-- Lista de promociones -->
   <div class="form-card" style="overflow:auto;">
     <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:.75rem;">
-      <h2 class="panel-title" style="font-size:1.25rem; color:#2E7D32; margin:0;">Promociones Activas</h2>
+      <h2 class="panel-title" style="font-size:1.25rem; color:#2E7D32; margin:0;">
+        {% if seccion == 'activas' %}
+          Promociones Activas
+        {% elif seccion == 'desactivadas' %}
+          Promociones Desactivadas
+        {% else %}
+          Todas las Promociones
+        {% endif %}
+      </h2>
       <div class="actions-wrap" style="gap:.5rem;">
         <button type="button" id="btnOpenCreatePromocion" class="btn btn-primary"><i class="fas fa-plus"></i> Agregar Promoción</button>
       </div>
@@ -165,6 +191,11 @@
             </span>
           </td>
           <td style="white-space:nowrap;">
+            <select class="estado-select" data-change-estado="{{ promocion.id }}" style="margin-right: 0.5rem; padding: 0.4rem 0.6rem; font-size: 0.875rem; border: 1px solid #3498db; border-radius: 4px; background: white; color: #3498db; cursor: pointer; font-weight: 500;">
+              <option value="activa" {% if promocion.estado == 'activa' %}selected{% endif %}>Activar</option>
+              <option value="inactiva" {% if promocion.estado == 'inactiva' %}selected{% endif %}>Desactivar</option>
+              <option value="expirada" {% if promocion.estado == 'expirada' %}selected{% endif %}>Marcar Expirada</option>
+            </select>
             <button class="btn btn-secondary" data-edit-promocion="{{ promocion.id }}">Editar</button>
             <button class="btn btn-danger" data-delete-promocion="{{ promocion.id }}">Eliminar</button>
           </td>
@@ -262,6 +293,175 @@
   {% block extra_scripts %}
   <script src="{% static 'js/validaciones.js' %}"></script>
   <script src="{% static 'js/promociones_list.js' %}"></script>
+  <script>
+    // Manejo de tabs/secciones
+    document.addEventListener('DOMContentLoaded', function() {
+      const tabButtons = document.querySelectorAll('.tab-button');
+      const seccionInput = document.getElementById('seccionInput');
+      const estadoFilterSelect = document.getElementById('estadoFilterSelect');
+      const estadoFilterLabel = document.getElementById('estadoFilterLabel');
+      const filterForm = document.getElementById('filterForm');
+      
+      tabButtons.forEach(button => {
+        button.addEventListener('click', function() {
+          const seccion = this.getAttribute('data-seccion');
+          seccionInput.value = seccion;
+          
+          // Recargar la página con la nueva sección (el servidor manejará mostrar/ocultar el filtro)
+          filterForm.submit();
+        });
+      });
+      
+      // Manejo de cambio de estado
+      const estadoSelects = document.querySelectorAll('[data-change-estado]');
+      estadoSelects.forEach(select => {
+        // Guardar el valor inicial
+        let valorAnterior = select.value;
+        let procesando = false;
+        
+        select.addEventListener('change', function(e) {
+          // Prevenir múltiples ejecuciones
+          if (procesando) {
+            this.value = valorAnterior;
+            return;
+          }
+          
+          e.preventDefault();
+          e.stopPropagation();
+          
+          const promocionId = this.getAttribute('data-change-estado');
+          const nuevoEstado = this.value;
+          const nuevoEstadoText = this.options[this.selectedIndex].text;
+          
+          // Restaurar el valor anterior inmediatamente para evitar que el select cambie
+          this.value = valorAnterior;
+          procesando = true;
+          
+          // Mostrar confirmación con SweetAlert2
+          if (typeof Swal !== 'undefined' && Swal.fire) {
+            Swal.fire({
+              title: '¿Está seguro?',
+              text: `¿Desea cambiar el estado de esta promoción a "${nuevoEstadoText}"?`,
+              icon: 'warning',
+              showCancelButton: true,
+              confirmButtonColor: '#2E7D32',
+              cancelButtonColor: '#3085d6',
+              confirmButtonText: 'Sí, cambiar estado',
+              cancelButtonText: 'Cancelar',
+              reverseButtons: true,
+              allowOutsideClick: false,
+              allowEscapeKey: true,
+              focusConfirm: false,
+              focusCancel: true
+            }).then((result) => {
+              procesando = false;
+              if (result.isConfirmed) {
+                // Crear FormData
+                const formData = new FormData();
+                formData.append('estado', nuevoEstado);
+                formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+                
+                // Enviar petición
+                fetch(`/panel/promociones/${promocionId}/change-estado/`, {
+                  method: 'POST',
+                  body: formData,
+                  headers: {
+                    'X-CSRFToken': '{{ csrf_token }}'
+                  }
+                })
+                .then(response => response.json())
+                .then(data => {
+                  if (data.success) {
+                    // Mostrar mensaje de éxito
+                    Swal.fire({
+                      icon: 'success',
+                      title: 'Estado actualizado',
+                      text: data.message,
+                      confirmButtonColor: '#2E7D32',
+                      confirmButtonText: 'Aceptar',
+                      allowOutsideClick: false
+                    }).then(() => {
+                      // Recargar la página para actualizar las secciones
+                      location.reload();
+                    });
+                  } else {
+                    // Mostrar error
+                    Swal.fire({
+                      icon: 'error',
+                      title: 'Error',
+                      text: data.error || 'Error al cambiar el estado',
+                      confirmButtonColor: '#d33',
+                      confirmButtonText: 'Aceptar',
+                      allowOutsideClick: false
+                    }).then(() => {
+                      location.reload();
+                    });
+                  }
+                })
+                .catch(error => {
+                  console.error('Error:', error);
+                  Swal.fire({
+                    icon: 'error',
+                    title: 'Error',
+                    text: 'Error al cambiar el estado de la promoción',
+                    confirmButtonColor: '#d33',
+                    confirmButtonText: 'Aceptar',
+                    allowOutsideClick: false
+                  }).then(() => {
+                    location.reload();
+                  });
+                });
+              } else {
+                // Usuario canceló, el valor ya está restaurado
+                procesando = false;
+                // No hacer nada, el select ya tiene su valor anterior
+              }
+            });
+          } else {
+            // Fallback si SweetAlert2 no está disponible
+            this.value = valorAnterior; // Restaurar valor
+            procesando = false;
+            if (confirm('¿Está seguro de cambiar el estado de esta promoción?')) {
+              // Crear FormData
+              const formData = new FormData();
+              formData.append('estado', nuevoEstado);
+              formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+              
+              // Enviar petición
+              fetch(`/panel/promociones/${promocionId}/change-estado/`, {
+                method: 'POST',
+                body: formData,
+                headers: {
+                  'X-CSRFToken': '{{ csrf_token }}'
+                }
+              })
+              .then(response => response.json())
+              .then(data => {
+                if (data.success) {
+                  alert(data.message);
+                  location.reload();
+                } else {
+                  alert(data.error || 'Error al cambiar el estado');
+                  location.reload();
+                }
+              })
+              .catch(error => {
+                console.error('Error:', error);
+                alert('Error al cambiar el estado de la promoción');
+                location.reload();
+              });
+            }
+          }
+        });
+        
+        // Actualizar el valor anterior cuando se carga la página o después de recargar
+        // Esto se hace para mantener el valor correcto después de recargas
+        setTimeout(() => {
+          valorAnterior = select.value;
+        }, 100);
+      });
+    });
+  </script>
   {% endblock %}
 </div>
 {% endblock %}
