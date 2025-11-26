@@ -27,7 +27,7 @@
         </label>
         <label>
           Nombre *
-          <input type="text" name="nombre" id="editPromocionNombre" required maxlength="100">
+          <input type="text" name="nombre" id="editPromocionNombre" required maxlength="100" pattern="[a-zA-Z0-9áéíóúÁÉÍÓÚñÑüÜ\s]+" title="Solo se permiten letras, números y espacios (sin caracteres especiales)">
         </label>
         <label>
           Tipo de descuento *
@@ -40,7 +40,7 @@
         </label>
         <label>
           Valor descuento *
-          <input type="number" name="valor_descuento" id="editPromocionValorDescuento" required min="0" step="0.01">
+          <input type="number" name="valor_descuento" id="editPromocionValorDescuento" required min="0" step="1">
           <small id="editPromocionValorHelp" style="color:#666;">Porcentaje o monto según tipo</small>
         </label>
         <label>
@@ -53,7 +53,8 @@
         </label>
         <label>
           Monto mínimo
-          <input type="number" name="monto_minimo" id="editPromocionMontoMinimo" min="0" step="0.01" value="0">
+          <input type="number" name="monto_minimo" id="editPromocionMontoMinimo" min="0" step="1" value="0">
+          <small style="color:#666;">Monto mínimo de compra para aplicar la promoción (solo enteros)</small>
         </label>
         <label>
           Límite de usos
@@ -170,9 +171,9 @@
           <td>{{ promocion.get_tipo_descuento_display }}</td>
           <td>
             {% if promocion.tipo_descuento == 'porcentaje' %}
-              {{ promocion.valor_descuento }}%
+              {{ promocion.valor_descuento|floatformat:0 }}%
             {% else %}
-              ${{ promocion.valor_descuento|floatformat:0|intcomma }}
+              {{ promocion.valor_descuento|precio_chileno }}
             {% endif %}
           </td>
           <td>
@@ -224,7 +225,7 @@
         </label>
         <label>
           Nombre *
-          <input type="text" name="nombre" required maxlength="100">
+          <input type="text" name="nombre" required maxlength="100" pattern="[a-zA-Z0-9áéíóúÁÉÍÓÚñÑüÜ\s]+" title="Solo se permiten letras, números y espacios (sin caracteres especiales)">
         </label>
         <label>
           Tipo de descuento *
@@ -237,7 +238,7 @@
         </label>
         <label>
           Valor descuento *
-          <input type="number" name="valor_descuento" id="createPromocionValorDescuento" required min="0" step="0.01">
+          <input type="number" name="valor_descuento" id="createPromocionValorDescuento" required min="0" step="1">
           <small id="createPromocionValorHelp" style="color:#666;">Porcentaje o monto según tipo</small>
         </label>
         <label>
@@ -250,7 +251,8 @@
         </label>
         <label>
           Monto mínimo
-          <input type="number" name="monto_minimo" min="0" step="0.01" value="0">
+          <input type="number" name="monto_minimo" min="0" step="1" value="0">
+          <small style="color:#666;">Monto mínimo de compra para aplicar la promoción (solo enteros)</small>
         </label>
         <label>
           Límite de usos
@@ -312,36 +314,90 @@
         });
       });
       
-      // Manejo de cambio de estado
-      const estadoSelects = document.querySelectorAll('[data-change-estado]');
-      estadoSelects.forEach(select => {
-        // Guardar el valor inicial
-        let valorAnterior = select.value;
-        let procesando = false;
-        
-        select.addEventListener('change', function(e) {
-          // Prevenir múltiples ejecuciones
-          if (procesando) {
-            this.value = valorAnterior;
-            return;
-          }
-          
-          e.preventDefault();
-          e.stopPropagation();
-          
-          const promocionId = this.getAttribute('data-change-estado');
-          const nuevoEstado = this.value;
-          const nuevoEstadoText = this.options[this.selectedIndex].text;
-          
-          // Restaurar el valor anterior inmediatamente para evitar que el select cambie
-          this.value = valorAnterior;
-          procesando = true;
+       // Manejo de cambio de estado
+       const estadoSelects = document.querySelectorAll('[data-change-estado]');
+       estadoSelects.forEach(select => {
+         // Guardar el valor inicial
+         let valorAnterior = select.value;
+         let procesando = false;
+         let cambioProgramatico = false; // Bandera para ignorar cambios programáticos
+         
+         select.addEventListener('change', function(e) {
+           // Debug: verificar el estado de las banderas
+           console.log('=== Evento change disparado ===');
+           console.log('cambioProgramatico:', cambioProgramatico);
+           console.log('procesando:', procesando);
+           console.log('valorAnterior:', valorAnterior);
+           console.log('this.value:', this.value);
+           console.log('e.target.value:', e.target.value);
+           
+           // Ignorar si es un cambio programático (cuando restauramos el valor)
+           // ESTO DEBE SER LO PRIMERO, antes de cualquier procesamiento
+           if (cambioProgramatico) {
+             console.log('=== IGNORADO: Cambio programático ===');
+             cambioProgramatico = false;
+             return;
+           }
+           
+           // Prevenir múltiples ejecuciones
+           if (procesando) {
+             console.log('=== IGNORADO: Ya procesando ===');
+             cambioProgramatico = true;
+             this.value = valorAnterior;
+             return;
+           }
+           
+           e.preventDefault();
+           e.stopPropagation();
+           
+           const promocionId = this.getAttribute('data-change-estado');
+           // Capturar el nuevo estado y su texto ANTES de hacer cualquier cambio
+           // Usar e.target.value para asegurar que capturamos el valor correcto del elemento que disparó el evento
+           const nuevoEstado = e.target.value || this.value;
+           
+           // Verificar si el nuevo estado es diferente al anterior
+           // Si no es diferente, podría ser un cambio programático que no fue detectado
+           if (nuevoEstado === valorAnterior) {
+             console.log('=== IGNORADO: Mismo valor que el anterior (probable cambio programático) ===');
+             return;
+           }
+           
+           // Buscar la opción que corresponde al nuevo estado por su valor
+           // Esto es más confiable que usar selectedIndex
+           const opcionSeleccionada = Array.from(this.options).find(opt => opt.value === nuevoEstado);
+           const textoCorrecto = opcionSeleccionada ? opcionSeleccionada.text : nuevoEstado;
+           
+           // Debug: verificar que estamos capturando el valor correcto
+           console.log('=== Cambio de estado DEBUG (USUARIO) ===');
+           console.log('Valor anterior:', valorAnterior);
+           console.log('Nuevo estado (value):', nuevoEstado);
+           console.log('e.target.value:', e.target.value);
+           console.log('this.value:', this.value);
+           console.log('selectedIndex:', this.selectedIndex);
+           console.log('Opciones disponibles:', Array.from(this.options).map(opt => ({value: opt.value, text: opt.text})));
+           console.log('Opción seleccionada encontrada:', opcionSeleccionada);
+           console.log('Texto correcto:', textoCorrecto);
+           console.log('==========================================');
+           
+           // Guardar el texto correcto en una variable que no se sobrescriba
+           const textoParaMostrar = textoCorrecto;
+           const estadoParaEnviar = nuevoEstado;
+           
+           // Restaurar el valor anterior inmediatamente para evitar que el select cambie visualmente
+           // Usar la bandera para evitar que este cambio dispare otro evento
+           // IMPORTANTE: Establecer la bandera ANTES de cambiar el valor
+           cambioProgramatico = true;
+           this.value = valorAnterior;
+           procesando = true;
+           
+           console.log('Valores guardados - textoParaMostrar:', textoParaMostrar, 'estadoParaEnviar:', estadoParaEnviar);
           
           // Mostrar confirmación con SweetAlert2
+          // Usar las variables guardadas antes de restaurar el valor
           if (typeof Swal !== 'undefined' && Swal.fire) {
             Swal.fire({
               title: '¿Está seguro?',
-              text: `¿Desea cambiar el estado de esta promoción a "${nuevoEstadoText}"?`,
+              text: `¿Desea cambiar el estado de esta promoción a "${textoParaMostrar}"?`,
               icon: 'warning',
               showCancelButton: true,
               confirmButtonColor: '#2E7D32',
@@ -354,24 +410,37 @@
               focusConfirm: false,
               focusCancel: true
             }).then((result) => {
-              procesando = false;
               if (result.isConfirmed) {
+                // Obtener token CSRF del formulario
+                const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value || '{{ csrf_token }}';
+                
                 // Crear FormData
+                // Usar el estado guardado antes de restaurar el valor
                 const formData = new FormData();
-                formData.append('estado', nuevoEstado);
-                formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+                formData.append('estado', estadoParaEnviar);
+                formData.append('csrfmiddlewaretoken', csrfToken);
                 
                 // Enviar petición
                 fetch(`/panel/promociones/${promocionId}/change-estado/`, {
                   method: 'POST',
                   body: formData,
                   headers: {
-                    'X-CSRFToken': '{{ csrf_token }}'
+                    'X-CSRFToken': csrfToken
                   }
                 })
-                .then(response => response.json())
-                .then(data => {
-                  if (data.success) {
+                .then(response => {
+                  // Verificar si la respuesta es exitosa
+                  if (!response.ok) {
+                    return response.json().then(data => {
+                      throw new Error(data.error || `Error ${response.status}: ${response.statusText}`);
+                    });
+                  }
+                  return response.json();
+                })
+                 .then(data => {
+                   if (data.success) {
+                     // Actualizar el valor anterior para reflejar el nuevo estado
+                     valorAnterior = estadoParaEnviar;
                     // Mostrar mensaje de éxito
                     Swal.fire({
                       icon: 'success',
@@ -397,13 +466,15 @@
                       location.reload();
                     });
                   }
+                  procesando = false;
                 })
                 .catch(error => {
                   console.error('Error:', error);
+                  procesando = false;
                   Swal.fire({
                     icon: 'error',
                     title: 'Error',
-                    text: 'Error al cambiar el estado de la promoción',
+                    text: error.message || 'Error al cambiar el estado de la promoción',
                     confirmButtonColor: '#d33',
                     confirmButtonText: 'Aceptar',
                     allowOutsideClick: false
@@ -421,33 +492,48 @@
             // Fallback si SweetAlert2 no está disponible
             this.value = valorAnterior; // Restaurar valor
             procesando = false;
-            if (confirm('¿Está seguro de cambiar el estado de esta promoción?')) {
+            if (confirm(`¿Está seguro de cambiar el estado de esta promoción a "${textoParaMostrar}"?`)) {
+              // Obtener token CSRF del formulario
+              const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value || '{{ csrf_token }}';
+              
               // Crear FormData
+              // Usar el estado guardado antes de restaurar el valor
               const formData = new FormData();
-              formData.append('estado', nuevoEstado);
-              formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+              formData.append('estado', estadoParaEnviar);
+              formData.append('csrfmiddlewaretoken', csrfToken);
               
               // Enviar petición
               fetch(`/panel/promociones/${promocionId}/change-estado/`, {
                 method: 'POST',
                 body: formData,
                 headers: {
-                  'X-CSRFToken': '{{ csrf_token }}'
+                  'X-CSRFToken': csrfToken
                 }
               })
-              .then(response => response.json())
-              .then(data => {
-                if (data.success) {
-                  alert(data.message);
-                  location.reload();
+              .then(response => {
+                // Verificar si la respuesta es exitosa
+                if (!response.ok) {
+                  return response.json().then(data => {
+                    throw new Error(data.error || `Error ${response.status}: ${response.statusText}`);
+                  });
+                }
+                return response.json();
+              })
+               .then(data => {
+                 if (data.success) {
+                   valorAnterior = estadoParaEnviar;
+                   alert(data.message);
+                   location.reload();
                 } else {
                   alert(data.error || 'Error al cambiar el estado');
                   location.reload();
                 }
+                procesando = false;
               })
               .catch(error => {
                 console.error('Error:', error);
-                alert('Error al cambiar el estado de la promoción');
+                procesando = false;
+                alert(error.message || 'Error al cambiar el estado de la promoción');
                 location.reload();
               });
             }
@@ -465,4 +551,6 @@
   {% endblock %}
 </div>
 {% endblock %}
+
+
 

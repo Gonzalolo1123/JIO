@@ -150,7 +150,7 @@
           <td>{{ precio.id }}</td>
           <td><strong>{{ precio.juego.nombre }}</strong></td>
           <td>{{ precio.get_temporada_display }}</td>
-          <td>${{ precio.precio_arriendo|floatformat:0|intcomma }}</td>
+          <td>{{ precio.precio_arriendo|precio_chileno }}</td>
           <td>{% if precio.descuento_porcentaje > 0 %}{{ precio.descuento_porcentaje }}%{% else %}-{% endif %}</td>
           <td>{{ precio.get_mes_inicio_display }}</td>
           <td>{{ precio.get_mes_fin_display }}</td>

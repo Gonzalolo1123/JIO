@@ -53,7 +53,8 @@
         </label>
         <label>
           Precio unitario ($)
-          <input type="number" name="precio_unitario" id="editMaterialPrecio" min="0" step="0.01" value="0">
+          <input type="number" name="precio_unitario" id="editMaterialPrecio" min="0" step="1" value="0">
+          <small style="color:#666;">Solo valores enteros (sin decimales)</small>
         </label>
         <label>
           Estado *
@@ -165,7 +166,7 @@
           </td>
           <td>{{ material.stock_minimo|intcomma }}</td>
           <td>{{ material.unidad_medida }}</td>
-          <td>${{ material.precio_unitario|floatformat:0|intcomma }}</td>
+          <td>{{ material.precio_unitario|precio_chileno }}</td>
           <td>
             <span class="status-badge status-{{ material.estado }}">
               {{ material.get_estado_display }}
@@ -226,7 +227,8 @@
         </label>
         <label>
           Precio unitario ($)
-          <input type="number" name="precio_unitario" min="0" step="0.01" value="0">
+          <input type="number" name="precio_unitario" min="0" step="1" value="0">
+          <small style="color:#666;">Solo valores enteros (sin decimales)</small>
         </label>
         <label>
           Estado *
@@ -288,11 +290,11 @@
         <input type="hidden" name="activo" value="true">
         <label style="grid-column: 1 / -1;">
           <strong>Nombre *</strong>
-          <input type="text" name="nombre" id="quickProveedorNombre" required maxlength="100" placeholder="Nombre del proveedor" style="margin-top: 0.5rem; width: 100%; padding: 0.75rem; font-size: 1rem;">
+          <input type="text" name="nombre" id="quickProveedorNombre" required minlength="2" maxlength="100" pattern="[a-zA-Z0-9áéíóúÁÉÍÓÚñÑüÜ\s\-.,()&]+" title="Solo se permiten letras, números y algunos caracteres especiales" placeholder="Nombre del proveedor" style="margin-top: 0.5rem; width: 100%; padding: 0.75rem; font-size: 1rem;">
         </label>
         <label>
           <strong>Teléfono</strong>
-          <input type="text" name="telefono" maxlength="15" placeholder="Ej: +56 9 1234 5678" style="margin-top: 0.5rem; width: 100%; padding: 0.75rem; font-size: 1rem;">
+          <input type="text" name="telefono" maxlength="15" pattern="[\d\s\-\+\(\)]+" title="Solo números, espacios, guiones, paréntesis y +" placeholder="Ej: +56 9 1234 5678" style="margin-top: 0.5rem; width: 100%; padding: 0.75rem; font-size: 1rem;">
         </label>
         <label>
           <strong>Email</strong>
@@ -390,9 +392,19 @@
       
       // Cerrar modales
       document.querySelectorAll('[data-modal-close]').forEach(btn => {
-        btn.addEventListener('click', function() {
+        btn.addEventListener('click', function(e) {
+          e.stopPropagation();
           const modal = this.closest('.modal');
-          if (modal) closeModal(modal);
+          if (modal) {
+            // Solo resetear el formulario si es el modal de categoría o proveedor rápido
+            // NO resetear el formulario principal de material
+            if (modal === modalCategoriaQuick && formCategoriaQuick) {
+              formCategoriaQuick.reset();
+            } else if (modal === modalProveedorQuick && formProveedorQuick) {
+              formProveedorQuick.reset();
+            }
+            closeModal(modal);
+          }
         });
       });
       
@@ -439,9 +451,24 @@
       }
       
       // Envío del formulario de proveedor rápido
-      if (formProveedorQuick) {
+      let isSubmittingProveedor = false;
+      if (formProveedorQuick && !formProveedorQuick.dataset.listenerAttached) {
+        formProveedorQuick.dataset.listenerAttached = 'true';
         formProveedorQuick.addEventListener('submit', async function(e) {
           e.preventDefault();
+          
+          // Prevenir múltiples envíos
+          if (isSubmittingProveedor) {
+            return;
+          }
+          
+          isSubmittingProveedor = true;
+          const submitBtn = this.querySelector('button[type="submit"]');
+          const originalText = submitBtn?.textContent;
+          if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Creando...';
+          }
           
           const formData = new FormData(this);
           const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value;
@@ -460,21 +487,49 @@
             if (data.success) {
               mostrarExitoValidacion(data.message, '¡Proveedor Creado!');
               addProveedorToSelect(data.proveedor_id, formData.get('nombre'));
+              // Solo resetear el formulario de proveedor, NO el formulario principal
+              formProveedorQuick.reset();
               closeModal(modalProveedorQuick);
+              isSubmittingProveedor = false;
             } else {
               mostrarErroresValidacion(data.errors || ['Error al crear el proveedor'], 'Error al Crear Proveedor');
+              isSubmittingProveedor = false;
+              if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.textContent = originalText;
+              }
             }
           } catch (error) {
             console.error('Error:', error);
             mostrarErroresValidacion(['Error de conexión'], 'Error de Conexión');
+            isSubmittingProveedor = false;
+            if (submitBtn) {
+              submitBtn.disabled = false;
+              submitBtn.textContent = originalText;
+            }
           }
         });
       }
       
       // Envío del formulario de categoría rápida
-      if (formCategoriaQuick) {
+      let isSubmittingCategoria = false;
+      if (formCategoriaQuick && !formCategoriaQuick.dataset.listenerAttached) {
+        formCategoriaQuick.dataset.listenerAttached = 'true';
         formCategoriaQuick.addEventListener('submit', async function(e) {
           e.preventDefault();
+          
+          // Prevenir múltiples envíos
+          if (isSubmittingCategoria) {
+            return;
+          }
+          
+          isSubmittingCategoria = true;
+          const submitBtn = this.querySelector('button[type="submit"]');
+          const originalText = submitBtn?.textContent;
+          if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Creando...';
+          }
           
           const formData = new FormData(this);
           const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value;
@@ -493,13 +548,26 @@
             if (data.success) {
               mostrarExitoValidacion(data.message, '¡Categoría Creada!');
               addCategoriaToSelect(data.categoria_value, data.categoria_label);
+              // Solo resetear el formulario de categoría, NO el formulario principal
+              formCategoriaQuick.reset();
               closeModal(modalCategoriaQuick);
+              isSubmittingCategoria = false;
             } else {
               mostrarErroresValidacion(data.errors || ['Error al crear la categoría'], 'Error al Crear Categoría');
+              isSubmittingCategoria = false;
+              if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.textContent = originalText;
+              }
             }
           } catch (error) {
             console.error('Error:', error);
             mostrarErroresValidacion(['Error de conexión'], 'Error de Conexión');
+            isSubmittingCategoria = false;
+            if (submitBtn) {
+              submitBtn.disabled = false;
+              submitBtn.textContent = originalText;
+            }
           }
         });
       }

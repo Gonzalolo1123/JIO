@@ -10,7 +10,7 @@
   <div class="panel-header">
     <h1 class="panel-title">Gastos Operativos</h1>
     {% if total_gastos %}
-    <p class="panel-subtitle">Total filtrado: ${{ total_gastos|floatformat:0|intcomma }}</p>
+    <p class="panel-subtitle">Total filtrado: {{ total_gastos|precio_chileno }}</p>
     {% endif %}
   </div>
 
@@ -21,7 +21,7 @@
         <i class="fas fa-calendar-week"></i>
       </div>
       <div class="stat-content" style="min-width: 0; width: 100%;">
-        <h3 class="stat-value" style="font-size: clamp(1rem, 1.5vw, 1.3rem); font-weight: bold; margin: 0.5rem 0; color: white; line-height: 1.2; overflow: visible; text-overflow: ellipsis;">${{ total_semana_actual|floatformat:0|intcomma }}</h3>
+        <h3 class="stat-value" style="font-size: clamp(1rem, 1.5vw, 1.3rem); font-weight: bold; margin: 0.5rem 0; color: white; line-height: 1.2; overflow: visible; text-overflow: ellipsis;">{{ total_semana_actual|precio_chileno }}</h3>
         <p class="stat-label" style="margin: 0; color: white; opacity: 1; font-weight: 500; font-size: 0.95rem;">Esta Semana</p>
       </div>
     </div>
@@ -31,7 +31,7 @@
         <i class="fas fa-calendar-alt"></i>
       </div>
       <div class="stat-content" style="min-width: 0; width: 100%;">
-        <h3 class="stat-value" style="font-size: clamp(1rem, 1.5vw, 1.3rem); font-weight: bold; margin: 0.5rem 0; color: white; line-height: 1.2; overflow: visible; text-overflow: ellipsis;">${{ total_mes_actual|floatformat:0|intcomma }}</h3>
+        <h3 class="stat-value" style="font-size: clamp(1rem, 1.5vw, 1.3rem); font-weight: bold; margin: 0.5rem 0; color: white; line-height: 1.2; overflow: visible; text-overflow: ellipsis;">{{ total_mes_actual|precio_chileno }}</h3>
         <p class="stat-label" style="margin: 0; color: white; opacity: 1; font-weight: 500; font-size: 0.95rem;">Este Mes</p>
       </div>
     </div>
@@ -41,7 +41,7 @@
         <i class="fas fa-calendar"></i>
       </div>
       <div class="stat-content" style="min-width: 0; width: 100%;">
-        <h3 class="stat-value" style="font-size: clamp(1rem, 1.5vw, 1.3rem); font-weight: bold; margin: 0.5rem 0; color: white; line-height: 1.2; overflow: visible; text-overflow: ellipsis;">${{ total_ano_actual|floatformat:0|intcomma }}</h3>
+        <h3 class="stat-value" style="font-size: clamp(1rem, 1.5vw, 1.3rem); font-weight: bold; margin: 0.5rem 0; color: white; line-height: 1.2; overflow: visible; text-overflow: ellipsis;">{{ total_ano_actual|precio_chileno }}</h3>
         <p class="stat-label" style="margin: 0; color: white; opacity: 1; font-weight: 500; font-size: 0.95rem;">Este Año</p>
       </div>
     </div>
@@ -51,7 +51,7 @@
         <i class="fas fa-chart-line"></i>
       </div>
       <div class="stat-content" style="min-width: 0; width: 100%;">
-        <h3 class="stat-value" style="font-size: clamp(1rem, 1.5vw, 1.3rem); font-weight: bold; margin: 0.5rem 0; color: white; line-height: 1.2; overflow: visible; text-overflow: ellipsis;">${{ promedio_mensual|floatformat:0|intcomma }}</h3>
+        <h3 class="stat-value" style="font-size: clamp(1rem, 1.5vw, 1.3rem); font-weight: bold; margin: 0.5rem 0; color: white; line-height: 1.2; overflow: visible; text-overflow: ellipsis;">{{ promedio_mensual|precio_chileno }}</h3>
         <p class="stat-label" style="margin: 0; color: white; opacity: 1; font-weight: 500; font-size: 0.95rem;">Promedio Mensual</p>
       </div>
     </div>
@@ -61,7 +61,7 @@
         <i class="fas fa-dollar-sign"></i>
       </div>
       <div class="stat-content" style="min-width: 0; width: 100%;">
-        <h3 class="stat-value" style="font-size: clamp(1rem, 1.5vw, 1.3rem); font-weight: bold; margin: 0.5rem 0; color: white; line-height: 1.2; overflow: visible; text-overflow: ellipsis;">${{ total_general|floatformat:0|intcomma }}</h3>
+        <h3 class="stat-value" style="font-size: clamp(1rem, 1.5vw, 1.3rem); font-weight: bold; margin: 0.5rem 0; color: white; line-height: 1.2; overflow: visible; text-overflow: ellipsis;">{{ total_general|precio_chileno }}</h3>
         <p class="stat-label" style="margin: 0; color: white; opacity: 1; font-weight: 500; font-size: 0.95rem;">Total General</p>
       </div>
     </div>
@@ -80,7 +80,7 @@
               {% if value == item.categoria %}{{ label }}{% endif %}
             {% endfor %}
           </strong>
-          <span style="color: #e74c3c; font-weight: bold; white-space: nowrap; word-wrap: break-word; overflow-wrap: break-word; font-size: clamp(0.9rem, 1.5vw, 1rem);">${{ item.total|floatformat:0|intcomma }}</span>
+          <span style="color: #e74c3c; font-weight: bold; white-space: nowrap; word-wrap: break-word; overflow-wrap: break-word; font-size: clamp(0.9rem, 1.5vw, 1rem);">{{ item.total|precio_chileno }}</span>
         </div>
         <small style="color: #7f8c8d;">{{ item.cantidad }} gasto{{ item.cantidad|pluralize }}</small>
       </div>
@@ -223,7 +223,7 @@
           <td style="padding: 0.875rem 0.75rem;">{{ gasto.fecha_gasto|date:"d/m/Y" }}</td>
           <td style="padding: 0.875rem 0.75rem;">{{ gasto.get_categoria_display }}</td>
           <td style="padding: 0.875rem 0.75rem;">{{ gasto.descripcion|truncatechars:50 }}</td>
-          <td style="padding: 0.875rem 0.75rem;">${{ gasto.monto|floatformat:0|intcomma }}</td>
+          <td style="padding: 0.875rem 0.75rem;">{{ gasto.monto|precio_chileno }}</td>
           <td style="padding: 0.875rem 0.75rem;">{{ gasto.get_metodo_pago_display }}</td>
           <td style="white-space:nowrap; padding: 0.875rem 0.75rem;">
             <button class="btn btn-secondary" data-edit-gasto="{{ gasto.id }}" style="font-size: 0.95rem; padding: 0.5rem 1rem;">Editar</button>

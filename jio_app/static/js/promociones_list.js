@@ -116,6 +116,38 @@
             });
         }
         
+        // Validación para prevenir caracteres especiales en el nombre
+        const nombreInputs = [
+            document.getElementById('editPromocionNombre'),
+            document.getElementById('formCreatePromocion')?.querySelector('input[name="nombre"]')
+        ];
+        
+        nombreInputs.forEach(input => {
+            if (input) {
+                // Prevenir entrada de caracteres especiales
+                input.addEventListener('input', function(e) {
+                    // Permitir solo letras, números, espacios y caracteres acentuados
+                    const valor = this.value;
+                    const valorLimpio = valor.replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑüÜ\s]/g, '');
+                    if (valor !== valorLimpio) {
+                        this.value = valorLimpio;
+                    }
+                });
+                
+                // Validar al hacer paste
+                input.addEventListener('paste', function(e) {
+                    e.preventDefault();
+                    const texto = (e.clipboardData || window.clipboardData).getData('text');
+                    const textoLimpio = texto.replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑüÜ\s]/g, '');
+                    const inicio = this.selectionStart;
+                    const fin = this.selectionEnd;
+                    const valorActual = this.value;
+                    this.value = valorActual.substring(0, inicio) + textoLimpio + valorActual.substring(fin);
+                    this.setSelectionRange(inicio + textoLimpio.length, inicio + textoLimpio.length);
+                });
+            }
+        });
+        
         // Event listeners para modales
         document.querySelectorAll('[data-modal-close]').forEach(btn => {
             btn.addEventListener('click', function() {
@@ -246,6 +278,12 @@
                 
                 const promocionId = document.getElementById('editPromocionId').value;
                 const formData = new FormData(this);
+                
+                // Asegurar que el estado se incluya explícitamente
+                const estadoField = document.getElementById('editPromocionEstado');
+                if (estadoField) {
+                    formData.set('estado', estadoField.value);
+                }
                 
                 // Agregar juegos seleccionados como array
                 const juegosSeleccionados = Array.from(this.querySelectorAll('#editPromocionJuegosContainer input[type="checkbox"]:checked')).map(cb => cb.value);

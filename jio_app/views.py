@@ -5806,6 +5806,8 @@ def promocion_create_json(request):
         errors.append('El nombre debe tener al menos 3 caracteres')
     elif len(nombre) > 100:
         errors.append('El nombre no puede exceder 100 caracteres')
+    elif not re.match(r'^[a-zA-Z0-9áéíóúÁÉÍÓÚñÑüÜ\s]+$', nombre):
+        errors.append('El nombre solo puede contener letras, números y espacios (sin caracteres especiales)')
     
     if not tipo_descuento or tipo_descuento not in [choice[0] for choice in Promocion.TIPO_DESCUENTO_CHOICES]:
         errors.append('Tipo de descuento inválido o no seleccionado')
@@ -5816,6 +5818,9 @@ def promocion_create_json(request):
     else:
         try:
             valor_decimal = Decimal(valor_descuento)
+            # Validar que sea un número entero (sin decimales)
+            if valor_decimal % 1 != 0:
+                errors.append('El valor del descuento debe ser un número entero (sin decimales)')
             if valor_decimal < 0:
                 errors.append('El valor del descuento no puede ser negativo')
             if tipo_descuento == 'porcentaje':
@@ -5873,6 +5878,9 @@ def promocion_create_json(request):
     if monto_minimo:
         try:
             monto_min_decimal = Decimal(monto_minimo)
+            # Validar que sea un número entero (sin decimales)
+            if monto_min_decimal % 1 != 0:
+                errors.append('El monto mínimo debe ser un número entero (sin decimales)')
             if monto_min_decimal < 0:
                 errors.append('El monto mínimo no puede ser negativo')
             elif monto_min_decimal > Decimal('100000000'):  # Máximo $100,000,000 CLP
@@ -5979,6 +5987,8 @@ def promocion_update_json(request, promocion_id: int):
             errors.append('El nombre debe tener al menos 3 caracteres')
         elif len(nombre) > 100:
             errors.append('El nombre no puede exceder 100 caracteres')
+        elif not re.match(r'^[a-zA-Z0-9áéíóúÁÉÍÓÚñÑüÜ\s]+$', nombre):
+            errors.append('El nombre solo puede contener letras, números y espacios (sin caracteres especiales)')
     
     if tipo_descuento and tipo_descuento not in [choice[0] for choice in Promocion.TIPO_DESCUENTO_CHOICES]:
         errors.append('Tipo de descuento inválido')
@@ -5987,6 +5997,9 @@ def promocion_update_json(request, promocion_id: int):
     if valor_descuento:
         try:
             valor_decimal = Decimal(valor_descuento)
+            # Validar que sea un número entero (sin decimales)
+            if valor_decimal % 1 != 0:
+                errors.append('El valor del descuento debe ser un número entero (sin decimales)')
             if valor_decimal < 0:
                 errors.append('El valor del descuento no puede ser negativo')
             tipo_desc = tipo_descuento or promocion.tipo_descuento
@@ -6041,6 +6054,9 @@ def promocion_update_json(request, promocion_id: int):
     if monto_minimo:
         try:
             monto_min_decimal = Decimal(monto_minimo)
+            # Validar que sea un número entero (sin decimales)
+            if monto_min_decimal % 1 != 0:
+                errors.append('El monto mínimo debe ser un número entero (sin decimales)')
             if monto_min_decimal < 0:
                 errors.append('El monto mínimo no puede ser negativo')
             elif monto_min_decimal > Decimal('1000000'):  # Máximo $1,000,000 CLP
@@ -6093,8 +6109,12 @@ def promocion_update_json(request, promocion_id: int):
             promocion.monto_minimo = monto_min_decimal
         if limite_usos_int is not None:
             promocion.limite_usos = limite_usos_int
+        # Actualizar estado si se proporciona (siempre debe estar presente en el formulario)
+        # El estado es un campo requerido, por lo que siempre debe estar presente
         if estado:
-            promocion.estado = estado
+            if estado in [choice[0] for choice in Promocion.ESTADO_CHOICES]:
+                promocion.estado = estado
+            # Si el estado no es válido, ya se validó antes y se agregó a errors
         
         promocion.save()
         
@@ -6126,20 +6146,20 @@ def promocion_change_estado_json(request, promocion_id: int):
     Cambia el estado de una promoción rápidamente
     """
     if request.user.tipo_usuario != 'administrador':
-        return JsonResponse({'error': 'No autorizado'}, status=403)
+        return JsonResponse({'success': False, 'error': 'No autorizado'}, status=403)
     
     try:
         promocion = Promocion.objects.get(id=promocion_id)
     except Promocion.DoesNotExist:
-        return JsonResponse({'error': 'Promoción no encontrada'}, status=404)
+        return JsonResponse({'success': False, 'error': 'Promoción no encontrada'}, status=404)
     
     nuevo_estado = request.POST.get('estado', '').strip()
     
     if not nuevo_estado:
-        return JsonResponse({'error': 'Estado no proporcionado'}, status=400)
+        return JsonResponse({'success': False, 'error': 'Estado no proporcionado'}, status=400)
     
     if nuevo_estado not in [choice[0] for choice in Promocion.ESTADO_CHOICES]:
-        return JsonResponse({'error': 'Estado inválido'}, status=400)
+        return JsonResponse({'success': False, 'error': 'Estado inválido'}, status=400)
     
     try:
         promocion.estado = nuevo_estado
@@ -7334,6 +7354,9 @@ def material_create_json(request):
     if precio_unitario:
         try:
             precio_decimal = Decimal(precio_unitario)
+            # Validar que sea un número entero (sin decimales)
+            if precio_decimal % 1 != 0:
+                errors.append('El precio unitario debe ser un número entero (sin decimales)')
             if precio_decimal < 0:
                 errors.append('El precio unitario debe ser mayor o igual a 0')
             elif precio_decimal > Decimal('2000000'):  # Máximo $2,000,000 CLP
@@ -7480,6 +7503,9 @@ def material_update_json(request, material_id: int):
     if precio_unitario:
         try:
             precio_decimal = Decimal(precio_unitario)
+            # Validar que sea un número entero (sin decimales)
+            if precio_decimal % 1 != 0:
+                errors.append('El precio unitario debe ser un número entero (sin decimales)')
             if precio_decimal < 0:
                 errors.append('El precio unitario debe ser mayor o igual a 0')
             elif precio_decimal > Decimal('2000000'):  # Máximo $2,000,000 CLP
@@ -7597,6 +7623,13 @@ def categoria_material_create_json(request):
         return JsonResponse({'success': False, 'errors': errors}, status=400)
 
     try:
+        # Verificar nuevamente antes de crear para evitar condiciones de carrera
+        if CategoriaMaterial.objects.filter(nombre__iexact=nombre, activa=True).exists():
+            return JsonResponse({
+                'success': False, 
+                'errors': ['Ya existe una categoría con ese nombre']
+            }, status=400)
+        
         categoria = CategoriaMaterial.objects.create(nombre=nombre)
         return JsonResponse({
             'success': True, 
@@ -7606,6 +7639,26 @@ def categoria_material_create_json(request):
             'categoria_label': categoria.nombre
         })
     except Exception as e:
+        # Manejar errores de duplicado de base de datos
+        error_str = str(e)
+        if 'unique' in error_str.lower() or 'duplicate' in error_str.lower() or 'llave duplicada' in error_str.lower():
+            # Si ya existe, intentar obtenerla
+            try:
+                categoria_existente = CategoriaMaterial.objects.filter(nombre__iexact=nombre, activa=True).first()
+                if categoria_existente:
+                    return JsonResponse({
+                        'success': True, 
+                        'message': f'Categoría "{categoria_existente.nombre}" ya existe.',
+                        'categoria_id': categoria_existente.id,
+                        'categoria_value': f'custom_{categoria_existente.id}',
+                        'categoria_label': categoria_existente.nombre
+                    })
+            except:
+                pass
+            return JsonResponse({
+                'success': False, 
+                'errors': ['Ya existe una categoría con ese nombre']
+            }, status=400)
         return JsonResponse({
             'success': False, 
             'errors': [f'Error al crear la categoría: {str(e)}']
@@ -7731,9 +7784,22 @@ def proveedor_create_json(request):
     
     if not nombre:
         errors.append('El nombre es obligatorio')
+    elif len(nombre) < 2:
+        errors.append('El nombre debe tener al menos 2 caracteres')
+    elif len(nombre) > 100:
+        errors.append('El nombre no puede exceder 100 caracteres')
+    elif not re.match(r'^[a-zA-Z0-9áéíóúÁÉÍÓÚñÑüÜ\s\-.,()&]+$', nombre):
+        errors.append('El nombre contiene caracteres no permitidos')
     
     if not tipo_proveedor or tipo_proveedor not in [choice[0] for choice in Proveedor.TIPO_PROVEEDOR_CHOICES]:
         errors.append('Tipo de proveedor inválido')
+    
+    if telefono:
+        # Validar formato de teléfono (solo números, espacios, guiones, paréntesis y +)
+        if not re.match(r'^[\d\s\-\+\(\)]+$', telefono):
+            errors.append('El teléfono contiene caracteres no permitidos')
+        elif len(telefono) > 15:
+            errors.append('El teléfono no puede exceder 15 caracteres')
     
     if email:
         from django.core.validators import validate_email
@@ -7749,6 +7815,13 @@ def proveedor_create_json(request):
         return JsonResponse({'success': False, 'errors': errors}, status=400)
 
     try:
+        # Verificar nuevamente antes de crear para evitar condiciones de carrera
+        if Proveedor.objects.filter(nombre__iexact=nombre, activo=True).exists():
+            return JsonResponse({
+                'success': False, 
+                'errors': ['Ya existe un proveedor con ese nombre']
+            }, status=400)
+        
         proveedor = Proveedor.objects.create(
             nombre=nombre,
             tipo_proveedor=tipo_proveedor,
@@ -7767,6 +7840,24 @@ def proveedor_create_json(request):
             'proveedor_id': proveedor.id
         })
     except Exception as e:
+        # Manejar errores de duplicado de base de datos
+        error_str = str(e)
+        if 'unique' in error_str.lower() or 'duplicate' in error_str.lower() or 'llave duplicada' in error_str.lower():
+            # Si ya existe, intentar obtenerlo
+            try:
+                proveedor_existente = Proveedor.objects.filter(nombre__iexact=nombre, activo=True).first()
+                if proveedor_existente:
+                    return JsonResponse({
+                        'success': True, 
+                        'message': f'Proveedor "{proveedor_existente.nombre}" ya existe.',
+                        'proveedor_id': proveedor_existente.id
+                    })
+            except:
+                pass
+            return JsonResponse({
+                'success': False, 
+                'errors': ['Ya existe un proveedor con ese nombre']
+            }, status=400)
         return JsonResponse({
             'success': False, 
             'errors': [f'Error al crear el proveedor: {str(e)}']
