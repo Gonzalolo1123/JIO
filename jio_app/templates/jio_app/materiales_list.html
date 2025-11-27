@@ -485,7 +485,18 @@
             const data = await response.json();
             
             if (data.success) {
-              mostrarExitoValidacion(data.message, '¡Proveedor Creado!');
+              // Mostrar mensaje de éxito sin recargar la página
+              if (typeof Swal !== 'undefined' && Swal.fire) {
+                Swal.fire({
+                  title: '¡Proveedor Creado!',
+                  text: data.message,
+                  icon: 'success',
+                  confirmButtonColor: '#28a745',
+                  confirmButtonText: 'Aceptar',
+                  timer: 2000,
+                  timerProgressBar: true
+                });
+              }
               addProveedorToSelect(data.proveedor_id, formData.get('nombre'));
               // Solo resetear el formulario de proveedor, NO el formulario principal
               formProveedorQuick.reset();
@@ -546,7 +557,18 @@
             const data = await response.json();
             
             if (data.success) {
-              mostrarExitoValidacion(data.message, '¡Categoría Creada!');
+              // Mostrar mensaje de éxito sin recargar la página
+              if (typeof Swal !== 'undefined' && Swal.fire) {
+                Swal.fire({
+                  title: '¡Categoría Creada!',
+                  text: data.message,
+                  icon: 'success',
+                  confirmButtonColor: '#28a745',
+                  confirmButtonText: 'Aceptar',
+                  timer: 2000,
+                  timerProgressBar: true
+                });
+              }
               addCategoriaToSelect(data.categoria_value, data.categoria_label);
               // Solo resetear el formulario de categoría, NO el formulario principal
               formCategoriaQuick.reset();

@@ -1,5 +1,33 @@
 // Navbar dropdown
 document.addEventListener('DOMContentLoaded', function() {
+  // Prevenir espacios en todos los inputs de contraseña
+  const passwordInputs = document.querySelectorAll('input[type="password"]');
+  passwordInputs.forEach(function(input) {
+    input.addEventListener('input', function(e) {
+      const valor = e.target.value;
+      if (valor !== valor.replace(/\s/g, '')) {
+        e.target.value = valor.replace(/\s/g, '');
+      }
+    });
+    
+    input.addEventListener('paste', function(e) {
+      e.preventDefault();
+      const textoPegado = (e.clipboardData || window.clipboardData).getData('text');
+      const textoSinEspacios = textoPegado.replace(/\s/g, '');
+      const valorActual = input.value;
+      const posicionInicio = input.selectionStart;
+      const posicionFin = input.selectionEnd;
+      input.value = valorActual.substring(0, posicionInicio) + textoSinEspacios + valorActual.substring(posicionFin);
+      input.setSelectionRange(posicionInicio + textoSinEspacios.length, posicionInicio + textoSinEspacios.length);
+    });
+    
+    input.addEventListener('keydown', function(e) {
+      if (e.key === ' ' || e.keyCode === 32) {
+        e.preventDefault();
+      }
+    });
+  });
+
   const dropdownBtn = document.querySelector('.dropdown-btn');
   const dropdownContent = document.querySelector('.dropdown-content');
   if (dropdownBtn && dropdownContent) {

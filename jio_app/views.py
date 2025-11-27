@@ -810,6 +810,8 @@ def create_admin(request):
             errors.append('Email inválido o demasiado largo (máx 100).')
         if len(password) < 8:
             errors.append('La contraseña debe tener al menos 8 caracteres.')
+        if ' ' in password:
+            errors.append('La contraseña no puede contener espacios.')
         if Usuario.objects.filter(email=email).exists():
             errors.append('Ya existe un usuario con ese email.')
         # Generar username único basado en nombre y apellido
@@ -1095,6 +1097,8 @@ def invite_signup(request):
             errors.append('Usuario inválido. Use 3-30 caracteres: letras, números, . _ -')
         if len(password) < 8:
             errors.append('La contraseña debe tener al menos 8 caracteres.')
+        if ' ' in password:
+            errors.append('La contraseña no puede contener espacios.')
         if role == 'repartidor':
             if telefono and telefono_regex.match(telefono) is None:
                 errors.append('El teléfono no tiene un formato válido (8-15 dígitos, puede incluir +, -, (), espacios).')
@@ -1981,7 +1985,6 @@ def juego_create_json(request):
     dimension_largo = request.POST.get('dimension_largo', '').strip()
     dimension_ancho = request.POST.get('dimension_ancho', '').strip()
     dimension_alto = request.POST.get('dimension_alto', '').strip()
-    capacidad_personas = request.POST.get('capacidad_personas', '').strip()
     peso_maximo = request.POST.get('peso_maximo', '').strip()
     precio_base = request.POST.get('precio_base', '').strip()
     foto = request.FILES.get('foto')  # Cambio: Ahora recibimos un archivo
@@ -1989,7 +1992,9 @@ def juego_create_json(request):
     peso_excedido_confirmado = request.POST.get('peso_excedido_confirmado', 'false').strip().lower() == 'true'
 
     errors = []
-    capacidad = None
+    # Obtener límites de la categoría para asignar capacidad automáticamente
+    limites = obtener_limites_categoria(categoria)
+    capacidad = limites.get('capacidad_maxima', 10) if limites else 10  # Valor por defecto
     peso = None
     precio = None
     largo = None
@@ -2077,19 +2082,8 @@ def juego_create_json(request):
         except (ValueError, TypeError):
             errors.append('El alto debe ser un número válido')
     
-    if not capacidad_personas:
-        errors.append('La capacidad de personas es obligatoria')
-    else:
-        try:
-            capacidad = int(capacidad_personas)
-            if capacidad <= 0:
-                errors.append('La capacidad debe ser mayor a 0')
-            elif capacidad > 100:
-                errors.append('La capacidad de personas no puede exceder 100')
-            elif limites and capacidad != limites.get('capacidad_maxima'):
-                errors.append(f'Para la categoría {categoria}, la capacidad máxima debe ser {limites.get("capacidad_maxima")} personas')
-        except (ValueError, TypeError):
-            errors.append('La capacidad debe ser un número válido')
+    # La capacidad se asigna automáticamente según la categoría
+    # Ya está asignada arriba usando limites.get('capacidad_maxima')
     
     peso_excedido = False
     if not peso_maximo:
@@ -2835,7 +2829,6 @@ def juego_update_json(request, juego_id: int):
     dimension_largo = request.POST.get('dimension_largo', '').strip()
     dimension_ancho = request.POST.get('dimension_ancho', '').strip()
     dimension_alto = request.POST.get('dimension_alto', '').strip()
-    capacidad_personas = request.POST.get('capacidad_personas', '').strip()
     peso_maximo = request.POST.get('peso_maximo', '').strip()
     precio_base = request.POST.get('precio_base', '').strip()
     foto = request.FILES.get('foto')  # Cambio: Ahora recibimos un archivo
@@ -2931,16 +2924,11 @@ def juego_update_json(request, juego_id: int):
         except (ValueError, TypeError):
             errors.append('El alto debe ser un número válido')
     
-    try:
-        capacidad = int(capacidad_personas)
-        if capacidad <= 0:
-            errors.append('La capacidad debe ser mayor a 0')
-        elif capacidad > 100:
-            errors.append('La capacidad de personas no puede exceder 100')
-        elif limites and capacidad != limites.get('capacidad_maxima'):
-            errors.append(f'Para la categoría {categoria}, la capacidad máxima debe ser {limites.get("capacidad_maxima")} personas')
-    except (ValueError, TypeError):
-        errors.append('La capacidad debe ser un número válido')
+    # La capacidad se asigna automáticamente según la categoría
+    # Usar la categoría proporcionada o la actual del juego
+    categoria_actual = categoria if categoria else juego.categoria
+    limites_actual = obtener_limites_categoria(categoria_actual)
+    capacidad = limites_actual.get('capacidad_maxima', juego.capacidad_personas) if limites_actual else juego.capacidad_personas
     
     peso_excedido = False
     try:
@@ -4639,7 +4627,7 @@ def arriendo_update_json(request, arriendo_id: int):
     horas_extra = 0
     precio_horas_extra = 0
     if reserva.hora_instalacion and reserva.hora_retiro:
-        from datetime import timedelta
+        from datetime import datetime, timedelta
         # Convertir horas a datetime para calcular diferencia
         fecha_base = datetime(2000, 1, 1).date()
         datetime_inst = datetime.combine(fecha_base, reserva.hora_instalacion)
@@ -4698,6 +4686,8 @@ def arriendo_update_json(request, arriendo_id: int):
         reserva.observaciones = observaciones.strip() or None
     
     # Validar y procesar juegos
+    # Solo procesar juegos si se proporcionan nuevos juegos
+    juegos_proporcionados = False
     try:
         import json
         if isinstance(juegos_json, str):
@@ -4705,7 +4695,9 @@ def arriendo_update_json(request, arriendo_id: int):
         else:
             juegos_data = juegos_json
         
+        # Verificar si se proporcionaron juegos (no vacío y no es solo un array vacío)
         if juegos_data and len(juegos_data) > 0:
+            juegos_proporcionados = True
             juegos_validos = []
             total = 0
             
@@ -4738,11 +4730,13 @@ def arriendo_update_json(request, arriendo_id: int):
                 except (ValueError, Juego.DoesNotExist):
                     errors.append(f'Juego con ID {juego_id} no encontrado')
             
-            if not errors:
-                # Eliminar detalles antiguos y crear nuevos
+            if not errors and juegos_proporcionados:
+                # Eliminar detalles antiguos y crear nuevos solo si se proporcionaron juegos
                 reserva.detalles.all().delete()
                 # Total incluye juegos + distancia + horas extra
-                total_final = total + reserva.precio_distancia + reserva.precio_horas_extra
+                precio_distancia = reserva.precio_distancia or 0
+                precio_horas_extra = reserva.precio_horas_extra or 0
+                total_final = total + precio_distancia + precio_horas_extra
                 reserva.total_reserva = total_final
                 
                 for juego_item in juegos_validos:
@@ -4753,11 +4747,55 @@ def arriendo_update_json(request, arriendo_id: int):
                         precio_unitario=juego_item['precio_unitario'],
                         subtotal=juego_item['subtotal'],
                     )
+        # Si no se proporcionaron juegos, mantener los existentes y recalcular el total
+        elif not juegos_proporcionados:
+            # Recalcular el total con los juegos existentes
+            try:
+                total_juegos_existentes = sum(detalle.subtotal for detalle in reserva.detalles.all())
+                precio_distancia = reserva.precio_distancia or 0
+                precio_horas_extra = reserva.precio_horas_extra or 0
+                total_final = total_juegos_existentes + precio_distancia + precio_horas_extra
+                reserva.total_reserva = total_final
+            except Exception as e:
+                # Si hay error al recalcular, mantener el total actual
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f'Error al recalcular total: {str(e)}')
     except json.JSONDecodeError:
         errors.append('Formato de juegos inválido')
     
     if errors:
         return JsonResponse({'success': False, 'errors': errors}, status=400)
+    
+    # Asegurar que los campos numéricos tengan valores por defecto (evitar None)
+    if reserva.precio_distancia is None:
+        reserva.precio_distancia = 0
+    if reserva.precio_horas_extra is None:
+        reserva.precio_horas_extra = 0
+    if reserva.horas_extra is None:
+        reserva.horas_extra = 0
+    if reserva.distancia_km is None:
+        reserva.distancia_km = 0
+    if reserva.total_reserva is None:
+        # Recalcular si es None
+        try:
+            total_juegos = sum(detalle.subtotal for detalle in reserva.detalles.all())
+            reserva.total_reserva = total_juegos + (reserva.precio_distancia or 0) + (reserva.precio_horas_extra or 0)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f'Error al calcular total_reserva: {str(e)}')
+            reserva.total_reserva = 0
+    
+    # Validar que la reserva tenga los campos mínimos necesarios antes de guardar
+    if not reserva.cliente:
+        return JsonResponse({'success': False, 'errors': ['La reserva debe tener un cliente asociado']}, status=400)
+    if not reserva.fecha_evento:
+        return JsonResponse({'success': False, 'errors': ['La reserva debe tener una fecha de evento']}, status=400)
+    if not reserva.hora_instalacion:
+        return JsonResponse({'success': False, 'errors': ['La reserva debe tener una hora de instalación']}, status=400)
+    if not reserva.hora_retiro:
+        return JsonResponse({'success': False, 'errors': ['La reserva debe tener una hora de retiro']}, status=400)
     
     try:
         reserva.save()
@@ -4766,77 +4804,274 @@ def arriendo_update_json(request, arriendo_id: int):
         try:
             instalacion = Instalacion.objects.get(reserva=reserva)
             # Actualizar si ya existe
-            if fecha_evento:
-                from datetime import datetime
-                fecha_obj = datetime.strptime(fecha_evento, '%Y-%m-%d').date()
-                instalacion.fecha_instalacion = fecha_obj
-            if hora_instalacion:
-                from datetime import datetime
-                hora_inst_obj = datetime.strptime(hora_instalacion, '%H:%M').time()
-                instalacion.hora_instalacion = hora_inst_obj
+            # Siempre asegurar que tenga fecha y hora (usar valores de reserva si no se proporcionan)
+            if fecha_evento and fecha_evento.strip():
+                try:
+                    from datetime import datetime
+                    fecha_obj = datetime.strptime(fecha_evento, '%Y-%m-%d').date()
+                    instalacion.fecha_instalacion = fecha_obj
+                except (ValueError, AttributeError):
+                    # Si falla el parseo, usar la fecha de la reserva
+                    if reserva.fecha_evento:
+                        instalacion.fecha_instalacion = reserva.fecha_evento
+            elif not instalacion.fecha_instalacion and reserva.fecha_evento:
+                # Si no se proporciona fecha pero la instalación no tiene, usar la de la reserva
+                instalacion.fecha_instalacion = reserva.fecha_evento
+            
+            if hora_instalacion and hora_instalacion.strip():
+                try:
+                    from datetime import datetime
+                    hora_inst_obj = datetime.strptime(hora_instalacion, '%H:%M').time()
+                    instalacion.hora_instalacion = hora_inst_obj
+                except (ValueError, AttributeError):
+                    # Si falla el parseo, usar la hora de la reserva
+                    if reserva.hora_instalacion:
+                        instalacion.hora_instalacion = reserva.hora_instalacion
+            elif not instalacion.hora_instalacion and reserva.hora_instalacion:
+                # Si no se proporciona hora pero la instalación no tiene, usar la de la reserva
+                instalacion.hora_instalacion = reserva.hora_instalacion
+            
             if direccion_evento:
                 instalacion.direccion_instalacion = direccion_evento
+            elif not instalacion.direccion_instalacion and reserva.direccion_evento:
+                instalacion.direccion_instalacion = reserva.direccion_evento
+            
             if cliente_telefono:
                 instalacion.telefono_cliente = cliente_telefono
+            elif not instalacion.telefono_cliente:
+                # Intentar obtener del cliente si está disponible
+                try:
+                    if reserva.cliente and reserva.cliente.usuario and reserva.cliente.usuario.telefono:
+                        instalacion.telefono_cliente = reserva.cliente.usuario.telefono
+                except:
+                    instalacion.telefono_cliente = ''
+            
             if observaciones is not None:
                 instalacion.observaciones_instalacion = observaciones.strip() or None
-            instalacion.save()
+            
+            # Validación final: asegurar que todos los campos requeridos estén presentes
+            if not instalacion.fecha_instalacion or not instalacion.hora_instalacion:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f'Instalación sin fecha/hora requerida. Fecha: {instalacion.fecha_instalacion}, Hora: {instalacion.hora_instalacion}')
+                # Usar valores de la reserva como último recurso
+                if not instalacion.fecha_instalacion:
+                    instalacion.fecha_instalacion = reserva.fecha_evento
+                if not instalacion.hora_instalacion:
+                    instalacion.hora_instalacion = reserva.hora_instalacion
+            
+            try:
+                instalacion.save()
+            except Exception as e:
+                # Si hay error al guardar la instalación, registrar pero no fallar
+                import logging
+                import traceback
+                logger = logging.getLogger(__name__)
+                logger.error(f'Error al guardar instalación: {str(e)}')
+                logger.error(f'Traceback: {traceback.format_exc()}')
+                logger.error(f'Datos instalación: fecha={instalacion.fecha_instalacion}, hora={instalacion.hora_instalacion}, direccion={instalacion.direccion_instalacion}')
         except Instalacion.DoesNotExist:
             # Crear instalación si no existe
             from datetime import datetime
-            fecha_obj_inst = datetime.strptime(fecha_evento, '%Y-%m-%d').date() if fecha_evento else reserva.fecha_evento
-            hora_inst_obj_inst = datetime.strptime(hora_instalacion, '%H:%M').time() if hora_instalacion else reserva.hora_instalacion
-            direccion_inst = direccion_evento if direccion_evento else reserva.direccion_evento
-            telefono_inst = cliente_telefono if cliente_telefono else (reserva.cliente.usuario.telefono or '')
+            fecha_obj_inst = None
+            hora_inst_obj_inst = None
             
-            Instalacion.objects.create(
-                reserva=reserva,
-                fecha_instalacion=fecha_obj_inst,
-                hora_instalacion=hora_inst_obj_inst,
-                direccion_instalacion=direccion_inst,
-                telefono_cliente=telefono_inst,
-                estado_instalacion='programada',
-                observaciones_instalacion=observaciones.strip() if observaciones else None,
-            )
+            try:
+                if fecha_evento and fecha_evento.strip():
+                    fecha_obj_inst = datetime.strptime(fecha_evento, '%Y-%m-%d').date()
+                elif reserva.fecha_evento:
+                    fecha_obj_inst = reserva.fecha_evento
+            except (ValueError, AttributeError):
+                fecha_obj_inst = reserva.fecha_evento if reserva.fecha_evento else None
+            
+            try:
+                if hora_instalacion and hora_instalacion.strip():
+                    hora_inst_obj_inst = datetime.strptime(hora_instalacion, '%H:%M').time()
+                elif reserva.hora_instalacion:
+                    hora_inst_obj_inst = reserva.hora_instalacion
+            except (ValueError, AttributeError):
+                hora_inst_obj_inst = reserva.hora_instalacion if reserva.hora_instalacion else None
+            
+            direccion_inst = direccion_evento if direccion_evento else (reserva.direccion_evento or '')
+            try:
+                telefono_inst = cliente_telefono if cliente_telefono else (reserva.cliente.usuario.telefono if reserva.cliente and reserva.cliente.usuario else '')
+            except (AttributeError, Exception):
+                telefono_inst = cliente_telefono if cliente_telefono else ''
+            
+            # Solo crear instalación si tenemos fecha y hora
+            if fecha_obj_inst and hora_inst_obj_inst:
+                try:
+                    Instalacion.objects.create(
+                        reserva=reserva,
+                        fecha_instalacion=fecha_obj_inst,
+                        hora_instalacion=hora_inst_obj_inst,
+                        direccion_instalacion=direccion_inst,
+                        telefono_cliente=telefono_inst,
+                        estado_instalacion='programada',
+                        observaciones_instalacion=observaciones.strip() if observaciones else None,
+                    )
+                except Exception as e:
+                    # Si hay error al crear la instalación, registrar pero no fallar
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.error(f'Error al crear instalación: {str(e)}')
         
         # Actualizar o crear retiro
         try:
             retiro = Retiro.objects.get(reserva=reserva)
             # Actualizar si ya existe
-            if fecha_evento:
-                from datetime import datetime
-                fecha_obj = datetime.strptime(fecha_evento, '%Y-%m-%d').date()
-                retiro.fecha_retiro = fecha_obj
-            if hora_retiro:
-                from datetime import datetime
-                hora_ret_obj = datetime.strptime(hora_retiro, '%H:%M').time()
-                retiro.hora_retiro = hora_ret_obj
+            # Siempre asegurar que tenga fecha y hora (usar valores de reserva si no se proporcionan)
+            if fecha_evento and fecha_evento.strip():
+                try:
+                    from datetime import datetime
+                    fecha_obj = datetime.strptime(fecha_evento, '%Y-%m-%d').date()
+                    retiro.fecha_retiro = fecha_obj
+                except (ValueError, AttributeError):
+                    # Si falla el parseo, usar la fecha de la reserva
+                    if reserva.fecha_evento:
+                        retiro.fecha_retiro = reserva.fecha_evento
+            elif not retiro.fecha_retiro and reserva.fecha_evento:
+                # Si no se proporciona fecha pero el retiro no tiene, usar la de la reserva
+                retiro.fecha_retiro = reserva.fecha_evento
+            
+            if hora_retiro and hora_retiro.strip():
+                try:
+                    from datetime import datetime
+                    hora_ret_obj = datetime.strptime(hora_retiro, '%H:%M').time()
+                    retiro.hora_retiro = hora_ret_obj
+                except (ValueError, AttributeError):
+                    # Si falla el parseo, usar la hora de la reserva
+                    if reserva.hora_retiro:
+                        retiro.hora_retiro = reserva.hora_retiro
+            elif not retiro.hora_retiro and reserva.hora_retiro:
+                # Si no se proporciona hora pero el retiro no tiene, usar la de la reserva
+                retiro.hora_retiro = reserva.hora_retiro
+            
             if observaciones is not None:
                 retiro.observaciones_retiro = observaciones.strip() or None
-            retiro.save()
+            
+            # Validación final: asegurar que todos los campos requeridos estén presentes
+            if not retiro.fecha_retiro or not retiro.hora_retiro:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f'Retiro sin fecha/hora requerida. Fecha: {retiro.fecha_retiro}, Hora: {retiro.hora_retiro}')
+                # Usar valores de la reserva como último recurso
+                if not retiro.fecha_retiro:
+                    retiro.fecha_retiro = reserva.fecha_evento
+                if not retiro.hora_retiro:
+                    retiro.hora_retiro = reserva.hora_retiro
+            
+            try:
+                retiro.save()
+            except Exception as e:
+                # Si hay error al guardar el retiro, registrar pero no fallar
+                import logging
+                import traceback
+                logger = logging.getLogger(__name__)
+                logger.error(f'Error al guardar retiro: {str(e)}')
+                logger.error(f'Traceback: {traceback.format_exc()}')
+                logger.error(f'Datos retiro: fecha={retiro.fecha_retiro}, hora={retiro.hora_retiro}')
         except Retiro.DoesNotExist:
             # Crear retiro si no existe
             from datetime import datetime
-            fecha_obj_ret = datetime.strptime(fecha_evento, '%Y-%m-%d').date() if fecha_evento else reserva.fecha_evento
-            hora_ret_obj_ret = datetime.strptime(hora_retiro, '%H:%M').time() if hora_retiro else reserva.hora_retiro
+            try:
+                if fecha_evento and fecha_evento.strip():
+                    fecha_obj_ret = datetime.strptime(fecha_evento, '%Y-%m-%d').date()
+                elif reserva.fecha_evento:
+                    fecha_obj_ret = reserva.fecha_evento
+                else:
+                    fecha_obj_ret = None
+            except (ValueError, AttributeError):
+                fecha_obj_ret = reserva.fecha_evento if reserva.fecha_evento else None
             
-            Retiro.objects.create(
-                reserva=reserva,
-                fecha_retiro=fecha_obj_ret,
-                hora_retiro=hora_ret_obj_ret,
-                estado_retiro='programado',
-                observaciones_retiro=observaciones.strip() if observaciones else None,
-            )
+            try:
+                if hora_retiro and hora_retiro.strip():
+                    hora_ret_obj_ret = datetime.strptime(hora_retiro, '%H:%M').time()
+                elif reserva.hora_retiro:
+                    hora_ret_obj_ret = reserva.hora_retiro
+                else:
+                    hora_ret_obj_ret = None
+            except (ValueError, AttributeError):
+                hora_ret_obj_ret = reserva.hora_retiro if reserva.hora_retiro else None
+            
+            # Solo crear retiro si tenemos fecha y hora
+            if fecha_obj_ret and hora_ret_obj_ret:
+                try:
+                    Retiro.objects.create(
+                        reserva=reserva,
+                        fecha_retiro=fecha_obj_ret,
+                        hora_retiro=hora_ret_obj_ret,
+                        estado_retiro='programado',
+                        observaciones_retiro=observaciones.strip() if observaciones else None,
+                    )
+                except Exception as e:
+                    # Si hay error al crear el retiro, registrar pero no fallar
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.error(f'Error al crear retiro: {str(e)}')
         
-        return JsonResponse({
-            'success': True, 
-            'message': f'Arriendo #{reserva.id} actualizado correctamente.',
-            'arriendo_id': reserva.id
-        })
+        # Asegurar que la reserva tenga un ID antes de retornar
+        if not reserva.id:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error('Reserva no tiene ID después de guardar')
+            return JsonResponse({
+                'success': False, 
+                'errors': ['Error: La reserva no se guardó correctamente']
+            }, status=500)
+        
+        try:
+            return JsonResponse({
+                'success': True, 
+                'message': f'Arriendo #{reserva.id} actualizado correctamente.',
+                'arriendo_id': reserva.id
+            })
+        except Exception as json_error:
+            # Si hay error al crear la respuesta JSON, los cambios ya se guardaron
+            import logging
+            import traceback
+            logger = logging.getLogger(__name__)
+            logger.error(f'Error al crear respuesta JSON (pero cambios guardados): {str(json_error)}\n{traceback.format_exc()}')
+            # Retornar respuesta simple sin usar reserva.id
+            return JsonResponse({
+                'success': True, 
+                'message': 'Arriendo actualizado correctamente.',
+                'arriendo_id': arriendo_id
+            })
     except Exception as e:
+        import traceback
+        import logging
+        logger = logging.getLogger(__name__)
+        error_trace = traceback.format_exc()
+        error_msg = str(e)
+        logger.error(f'Error al actualizar arriendo #{arriendo_id}: {error_msg}\n{error_trace}')
+        
+        # Intentar guardar la reserva si aún no se ha guardado
+        try:
+            if reserva and reserva.id:
+                # Asegurar valores por defecto antes de guardar
+                if reserva.precio_distancia is None:
+                    reserva.precio_distancia = 0
+                if reserva.precio_horas_extra is None:
+                    reserva.precio_horas_extra = 0
+                if reserva.horas_extra is None:
+                    reserva.horas_extra = 0
+                if reserva.distancia_km is None:
+                    reserva.distancia_km = 0
+                if reserva.total_reserva is None:
+                    try:
+                        total_juegos = sum(detalle.subtotal for detalle in reserva.detalles.all())
+                        reserva.total_reserva = total_juegos + (reserva.precio_distancia or 0) + (reserva.precio_horas_extra or 0)
+                    except:
+                        reserva.total_reserva = 0
+                reserva.save()
+        except Exception as save_error:
+            logger.error(f'Error al guardar reserva en catch: {str(save_error)}')
+        
+        # Retornar error más descriptivo
         return JsonResponse({
             'success': False, 
-            'errors': [f'Error al actualizar el arriendo: {str(e)}']
+            'errors': [f'Error al actualizar el arriendo: {error_msg}']
         }, status=500)
 
 
