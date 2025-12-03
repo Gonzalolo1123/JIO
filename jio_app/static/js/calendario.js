@@ -35,6 +35,9 @@ document.addEventListener('DOMContentLoaded', function() {
     let selectedSuggestionIndex = -1;
     let currentSuggestions = [];
     
+    // Variables para código de descuento
+    let promocionAplicada = null;
+    
     // Coordenadas de Osorno (ciudad base)
     const OSORNO_LAT = -40.5739;
     const OSORNO_LNG = -73.1317;
@@ -804,6 +807,53 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         }
         
+        // Listener para botón de aplicar código de descuento (usar delegación de eventos)
+        // Usar delegación porque el modal puede no estar en el DOM cuando se carga la página
+        document.addEventListener('click', function(e) {
+            // Verificar si el click fue en el botón o en algún elemento dentro del botón
+            const btnAplicar = e.target.closest('#btn-aplicar-codigo');
+            if (btnAplicar) {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('🖱️ Click en botón aplicar código detectado (delegación)');
+                validarYAplicarCodigo();
+            }
+        });
+        
+        // Listener adicional directo para asegurar que funcione
+        // Se registrará cuando se abra el modal
+        function registrarListenerCodigo() {
+            const btnAplicar = document.getElementById('btn-aplicar-codigo');
+            if (btnAplicar) {
+                // Remover listener anterior si existe
+                const nuevoBtn = btnAplicar.cloneNode(true);
+                btnAplicar.parentNode.replaceChild(nuevoBtn, btnAplicar);
+                
+                nuevoBtn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    console.log('🖱️ Click en botón aplicar código detectado (directo)');
+                    validarYAplicarCodigo();
+                });
+                console.log('✅ Listener de código registrado directamente');
+            } else {
+                console.warn('⚠️ Botón btn-aplicar-codigo no encontrado al registrar listener');
+            }
+        }
+        
+        // Guardar función para usarla cuando se abra el modal
+        window.registrarListenerCodigo = registrarListenerCodigo;
+        
+        // Listener para Enter en el input de código
+        document.addEventListener('keypress', function(e) {
+            const codigoInput = document.getElementById('codigo_descuento');
+            if (codigoInput && e.target === codigoInput && e.key === 'Enter') {
+                e.preventDefault();
+                console.log('⌨️ Enter presionado en input de código');
+                validarYAplicarCodigo();
+            }
+        });
+        
         // Listener para cambio de hora de instalación (calcular automáticamente hora de retiro)
         const horaInstalacionInput = document.getElementById('hora_instalacion');
         if (horaInstalacionInput) {
@@ -1171,10 +1221,26 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }, 300);
         
+        // Registrar listener del botón de código de descuento
+        setTimeout(() => {
+            if (window.registrarListenerCodigo) {
+                window.registrarListenerCodigo();
+            }
+        }, 100);
+        
         console.log('Modal mostrado, display:', modalReserva.style.display);
     }
     
     function cerrarModal() {
+        // Limpiar código de descuento
+        promocionAplicada = null;
+        const codigoInput = document.getElementById('codigo_descuento');
+        const codigoMensaje = document.getElementById('codigo-mensaje');
+        if (codigoInput) codigoInput.value = '';
+        if (codigoMensaje) {
+            codigoMensaje.textContent = '';
+            codigoMensaje.style.display = 'none';
+        }
         selectedDate = null;
         modalReserva.classList.remove('show');
         modalReserva.style.display = 'none';
@@ -1449,6 +1515,9 @@ document.addEventListener('DOMContentLoaded', function() {
         const precioHorasExtraSpan = document.getElementById('precio-horas-extra-total');
         const totalSpan = document.getElementById('total-reserva');
         const distanciaInput = document.getElementById('distancia_km');
+        const descuentoContainer = document.getElementById('descuento-container');
+        const montoDescuentoSpan = document.getElementById('monto-descuento');
+        const codigoAplicadoText = document.getElementById('codigo-aplicado-text');
         
         if (!container) return;
         
@@ -1467,7 +1536,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Calcular precio por distancia
         const distanciaKm = distanciaInput ? (parseInt(distanciaInput.value) || 0) : 0;
-        const precioDistancia = calcularPrecioDistancia(distanciaKm);
+        let precioDistancia = calcularPrecioDistancia(distanciaKm);
         
         // Calcular precio de horas extra
         const horasExtraSpan = document.getElementById('horas-extra');
@@ -1475,13 +1544,301 @@ document.addEventListener('DOMContentLoaded', function() {
         const PRECIO_POR_HORA_EXTRA = 10000;
         const precioHorasExtra = horasExtra * PRECIO_POR_HORA_EXTRA;
         
-        // Total = subtotal juegos + precio distancia + precio horas extra
-        const total = subtotalJuegos + precioDistancia + precioHorasExtra;
+        // Total sin descuento = subtotal juegos + precio distancia + precio horas extra
+        let totalSinDescuento = subtotalJuegos + precioDistancia + precioHorasExtra;
         
+        // Aplicar descuento si hay promoción aplicada
+        let montoDescuento = 0;
+        console.log('💰 Calculando descuento. Promoción aplicada:', promocionAplicada);
+        
+        if (promocionAplicada) {
+            console.log('📊 Tipo de descuento:', promocionAplicada.tipo_descuento);
+            console.log('📊 Valor descuento:', promocionAplicada.valor_descuento);
+            console.log('📊 Total sin descuento:', totalSinDescuento);
+            console.log('📊 Precio distancia:', precioDistancia);
+            
+            if (promocionAplicada.tipo_descuento === 'porcentaje') {
+                montoDescuento = totalSinDescuento * (promocionAplicada.valor_descuento / 100);
+            } else if (promocionAplicada.tipo_descuento === 'monto_fijo') {
+                montoDescuento = promocionAplicada.valor_descuento;
+                if (montoDescuento > totalSinDescuento) {
+                    montoDescuento = totalSinDescuento;
+                }
+            } else if (promocionAplicada.tipo_descuento === 'envio_gratis' || promocionAplicada.envio_gratis) {
+                // Descontar el precio por distancia
+                montoDescuento = precioDistancia;
+            } else if (promocionAplicada.monto_descuento) {
+                // Si el backend ya calculó el descuento, usarlo
+                montoDescuento = promocionAplicada.monto_descuento;
+            }
+            
+            console.log('💰 Monto descuento calculado:', montoDescuento);
+        }
+        
+        const total = totalSinDescuento - montoDescuento;
+        console.log('💰 Total final:', total);
+        
+        // Actualizar UI
         if (subtotalJuegosSpan) subtotalJuegosSpan.textContent = formatearPrecioChileno(subtotalJuegos);
         if (precioDistanciaSpan) precioDistanciaSpan.textContent = formatearPrecioChileno(precioDistancia);
         if (precioHorasExtraSpan) precioHorasExtraSpan.textContent = formatearPrecioChileno(precioHorasExtra);
-        if (totalSpan) totalSpan.textContent = formatearPrecioChileno(total);
+        
+        // Mostrar/ocultar descuento
+        console.log('🎨 Elementos de descuento:', {
+            descuentoContainer: !!descuentoContainer,
+            montoDescuentoSpan: !!montoDescuentoSpan,
+            codigoAplicadoText: !!codigoAplicadoText,
+            promocionAplicada: !!promocionAplicada,
+            montoDescuento
+        });
+        
+        if (descuentoContainer && montoDescuentoSpan && codigoAplicadoText) {
+            if (promocionAplicada && montoDescuento > 0) {
+                console.log('✅ Mostrando descuento en UI');
+                descuentoContainer.style.display = 'flex';
+                montoDescuentoSpan.textContent = '-' + formatearPrecioChileno(montoDescuento);
+                codigoAplicadoText.textContent = promocionAplicada.codigo;
+            } else {
+                console.log('❌ Ocultando descuento');
+                descuentoContainer.style.display = 'none';
+            }
+        } else {
+            console.warn('⚠️ Faltan elementos para mostrar descuento');
+        }
+        
+        if (totalSpan) {
+            totalSpan.textContent = formatearPrecioChileno(total);
+            console.log('✅ Total actualizado en UI:', formatearPrecioChileno(total));
+        }
+    }
+    
+    // Hacer la función accesible globalmente para debugging
+    window.validarYAplicarCodigo = async function validarYAplicarCodigo() {
+        console.log('🔍 Iniciando validación de código...');
+        console.log('🔍 Stack trace:', new Error().stack);
+        const codigoInput = document.getElementById('codigo_descuento');
+        const codigoMensaje = document.getElementById('codigo-mensaje');
+        const btnAplicar = document.getElementById('btn-aplicar-codigo');
+        
+        // Limpiar mensaje anterior
+        if (codigoMensaje) {
+            codigoMensaje.style.display = 'none';
+            codigoMensaje.textContent = '';
+        }
+        
+        console.log('Elementos encontrados:', {
+            codigoInput: !!codigoInput,
+            codigoMensaje: !!codigoMensaje,
+            btnAplicar: !!btnAplicar,
+            selectedDate: !!selectedDate
+        });
+        
+        // Validaciones inmediatas - mostrar mensajes de error de inmediato
+        if (!codigoInput) {
+            console.error('❌ No se encontró el input de código');
+            mostrarMensajeCodigo('Error: No se encontró el campo de código de descuento', 'error');
+            return;
+        }
+        
+        if (!selectedDate) {
+            console.warn('⚠️ No hay fecha seleccionada');
+            mostrarMensajeCodigo('⚠️ Debe seleccionar una fecha primero', 'error');
+            return;
+        }
+        
+        const codigo = codigoInput.value.trim().toUpperCase();
+        console.log('Código ingresado:', codigo);
+        
+        if (!codigo) {
+            console.warn('⚠️ Código vacío');
+            mostrarMensajeCodigo('⚠️ Por favor, ingresa un código de descuento', 'error');
+            return;
+        }
+        
+        // Mostrar mensaje de carga inmediatamente
+        mostrarMensajeCodigo('⏳ Validando código...', 'info');
+        
+        const emailInput = document.getElementById('email');
+        const email = emailInput ? emailInput.value.trim() : '';
+        
+        // Obtener total actual
+        const container = document.getElementById('juegos-container');
+        let subtotalJuegos = 0;
+        if (container) {
+            container.querySelectorAll('.juego-row').forEach(row => {
+                const select = row.querySelector('.juego-select');
+                const precioSpan = row.querySelector('.juego-precio');
+                if (select.value && precioSpan) {
+                    const precioText = precioSpan.textContent.replace(/[^0-9]/g, '');
+                    if (precioText) {
+                        subtotalJuegos += parseInt(precioText);
+                    }
+                }
+            });
+        }
+        
+        const distanciaInput = document.getElementById('distancia_km');
+        const distanciaKm = distanciaInput ? (parseInt(distanciaInput.value) || 0) : 0;
+        const precioDistancia = calcularPrecioDistancia(distanciaKm);
+        
+        const horasExtraSpan = document.getElementById('horas-extra');
+        const horasExtra = horasExtraSpan ? (parseInt(horasExtraSpan.textContent) || 0) : 0;
+        const precioHorasExtra = horasExtra * 10000;
+        
+        const totalPrecio = subtotalJuegos + precioDistancia + precioHorasExtra;
+        
+        // Obtener IDs de juegos seleccionados
+        const juegosIds = [];
+        if (container) {
+            container.querySelectorAll('.juego-select').forEach(select => {
+                if (select.value) {
+                    juegosIds.push(parseInt(select.value));
+                }
+            });
+        }
+        
+        console.log('📊 Datos calculados:', {
+            subtotalJuegos,
+            precioDistancia,
+            precioHorasExtra,
+            totalPrecio,
+            juegosIds,
+            email
+        });
+        
+        // Deshabilitar botón y mostrar estado de carga
+        if (btnAplicar) {
+            btnAplicar.disabled = true;
+            const textoOriginal = btnAplicar.textContent || 'Aplicar';
+            btnAplicar.dataset.originalText = textoOriginal;
+            btnAplicar.textContent = 'Validando...';
+            btnAplicar.style.opacity = '0.7';
+            btnAplicar.style.cursor = 'not-allowed';
+        }
+        
+        try {
+            const fechaStr = selectedDate.toISOString().split('T')[0];
+            const csrftoken = getCookie('csrftoken');
+            
+            console.log('📤 Enviando petición a /api/validar-codigo/');
+            console.log('Datos enviados:', {
+                codigo,
+                fecha: fechaStr,
+                email,
+                total_precio: totalPrecio,
+                juegos_ids: juegosIds
+            });
+            
+            const response = await fetch('/api/validar-codigo/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrftoken
+                },
+                body: JSON.stringify({
+                    codigo: codigo,
+                    fecha: fechaStr,
+                    email: email,
+                    total_precio: totalPrecio,
+                    juegos_ids: juegosIds
+                })
+            });
+            
+            console.log('📥 Respuesta recibida, status:', response.status);
+            
+            let data;
+            try {
+                data = await response.json();
+            } catch (parseError) {
+                console.error('❌ Error al parsear JSON:', parseError);
+                const errorText = await response.text();
+                console.error('Contenido del error:', errorText);
+                mostrarMensajeCodigo('❌ Error al procesar la respuesta del servidor. Por favor, intenta nuevamente.', 'error');
+                promocionAplicada = null;
+                actualizarTotal();
+                return;
+            }
+            
+            if (!response.ok) {
+                console.error('❌ Error HTTP:', response.status, response.statusText);
+                console.error('Datos del error:', data);
+                const mensajeError = data.error || `Error del servidor (${response.status}). Por favor, intenta nuevamente.`;
+                mostrarMensajeCodigo(`❌ ${mensajeError}`, 'error');
+                promocionAplicada = null;
+                actualizarTotal();
+                return;
+            }
+            console.log('📦 Datos recibidos:', data);
+            
+            if (data.success) {
+                console.log('✅ Código válido, aplicando descuento...');
+                promocionAplicada = data.promocion;
+                console.log('Promoción aplicada:', promocionAplicada);
+                const mensajeExito = `✓ Código "${codigo}" aplicado correctamente. Descuento: ${formatearPrecioChileno(data.promocion.monto_descuento)}`;
+                mostrarMensajeCodigo(mensajeExito, 'success');
+                actualizarTotal();
+            } else {
+                console.warn('⚠️ Código inválido:', data.error);
+                promocionAplicada = null;
+                const mensajeError = data.error || 'Error al validar el código';
+                mostrarMensajeCodigo(`❌ ${mensajeError}`, 'error');
+                actualizarTotal();
+            }
+        } catch (error) {
+            console.error('❌ Error al validar código:', error);
+            console.error('Stack trace:', error.stack);
+            mostrarMensajeCodigo('❌ Error de conexión. Por favor, verifica tu conexión a internet e intenta nuevamente.', 'error');
+            promocionAplicada = null;
+            actualizarTotal();
+        } finally {
+            if (btnAplicar) {
+                btnAplicar.disabled = false;
+                btnAplicar.textContent = btnAplicar.dataset.originalText || 'Aplicar';
+                btnAplicar.style.opacity = '1';
+                btnAplicar.style.cursor = 'pointer';
+            }
+        }
+    }
+    
+    function mostrarMensajeCodigo(mensaje, tipo) {
+        console.log('💬 Mostrando mensaje:', mensaje, 'Tipo:', tipo);
+        const codigoMensaje = document.getElementById('codigo-mensaje');
+        if (!codigoMensaje) {
+            console.error('❌ No se encontró el elemento codigo-mensaje');
+            // Intentar mostrar con alert como fallback
+            alert(mensaje);
+            return;
+        }
+        
+        codigoMensaje.textContent = mensaje;
+        codigoMensaje.style.display = 'block';
+        codigoMensaje.style.padding = '0.75rem';
+        codigoMensaje.style.borderRadius = '4px';
+        codigoMensaje.style.marginTop = '0.5rem';
+        codigoMensaje.style.fontSize = '0.875rem';
+        codigoMensaje.style.fontWeight = '500';
+        codigoMensaje.style.transition = 'all 0.3s ease';
+        
+        // Estilos según el tipo de mensaje
+        if (tipo === 'success') {
+            codigoMensaje.style.color = '#2c5530';
+            codigoMensaje.style.backgroundColor = '#d4edda';
+            codigoMensaje.style.border = '1px solid #c3e6cb';
+        } else if (tipo === 'info') {
+            codigoMensaje.style.color = '#0c5460';
+            codigoMensaje.style.backgroundColor = '#d1ecf1';
+            codigoMensaje.style.border = '1px solid #bee5eb';
+        } else {
+            // error
+            codigoMensaje.style.color = '#721c24';
+            codigoMensaje.style.backgroundColor = '#f8d7da';
+            codigoMensaje.style.border = '1px solid #f5c6cb';
+        }
+        
+        // Hacer scroll suave al mensaje para que sea visible
+        codigoMensaje.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        
+        console.log('✅ Mensaje mostrado en elemento:', codigoMensaje);
     }
     
     function actualizarJuegosJson() {
@@ -1564,7 +1921,8 @@ document.addEventListener('DOMContentLoaded', function() {
             direccion_lng: direccionLngInput ? direccionLngInput.value : '',
             observaciones: observacionesInput ? observacionesInput.value.trim() : '',
             distancia_km: distanciaInput ? (distanciaInput.value || '0') : '0',
-            juegos: juegosActualizados || []
+            juegos: juegosActualizados || [],
+            codigo_descuento: promocionAplicada ? promocionAplicada.codigo : ''
         };
         
         console.log('📤 Datos a enviar:', datosReserva);

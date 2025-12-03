@@ -5,7 +5,7 @@ from django.contrib import messages
 from django.http import JsonResponse
 from django.core.exceptions import PermissionDenied
 from django.urls import reverse
-from .models import Juego, Usuario, Repartidor, Cliente, Instalacion, Retiro, Reserva, DetalleReserva, Vehiculo, GastoOperativo, Promocion, Evaluacion, PrecioTemporada, MantenimientoVehiculo, Proveedor, Material, CategoriaMaterial
+from .models import Juego, Usuario, Repartidor, Cliente, Instalacion, Retiro, Reserva, DetalleReserva, Vehiculo, GastoOperativo, Promocion, Evaluacion, PrecioTemporada, MantenimientoVehiculo, Proveedor, Material, CategoriaMaterial, UsoPromocion
 from django.views.decorators.http import require_http_methods
 from django.core import signing
 from django.utils import timezone
@@ -279,6 +279,168 @@ def disponibilidad_fecha_json(request):
 
 @require_http_methods(["POST"])
 @csrf_exempt
+def validar_codigo_descuento(request):
+    """
+    Valida un código de descuento para una fecha y email específicos
+    """
+    import json
+    
+    try:
+        if request.content_type == 'application/json':
+            data = json.loads(request.body)
+        else:
+            data = request.POST.dict()
+    except:
+        data = request.POST.dict()
+    
+    # Manejar datos que pueden venir como string o otros tipos
+    codigo_raw = data.get('codigo', '')
+    codigo = str(codigo_raw).strip().upper() if codigo_raw else ''
+    
+    fecha_evento_raw = data.get('fecha', '')
+    fecha_evento = str(fecha_evento_raw).strip() if fecha_evento_raw else ''
+    
+    email_raw = data.get('email', '')
+    email = str(email_raw).strip() if email_raw else ''
+    
+    # total_precio puede venir como int, float o string desde JSON
+    total_precio_raw = data.get('total_precio', '0')
+    if isinstance(total_precio_raw, (int, float)):
+        total_precio = str(total_precio_raw)
+    else:
+        total_precio = str(total_precio_raw).strip() if total_precio_raw else '0'
+    juegos_ids = data.get('juegos_ids', [])  # IDs de juegos seleccionados
+    
+    # Parsear juegos_ids si viene como string
+    if isinstance(juegos_ids, str):
+        try:
+            juegos_ids = json.loads(juegos_ids)
+        except:
+            juegos_ids = []
+    
+    if not codigo:
+        return JsonResponse({
+            'success': False,
+            'error': 'El código es obligatorio'
+        }, status=400)
+    
+    if not fecha_evento:
+        return JsonResponse({
+            'success': False,
+            'error': 'La fecha es obligatoria'
+        }, status=400)
+    
+    # Validar formato de fecha
+    try:
+        from datetime import datetime
+        fecha_obj = datetime.strptime(fecha_evento, '%Y-%m-%d').date()
+    except ValueError:
+        return JsonResponse({
+            'success': False,
+            'error': 'Formato de fecha inválido'
+        }, status=400)
+    
+    # Buscar la promoción
+    try:
+        promocion = Promocion.objects.get(codigo=codigo)
+    except Promocion.DoesNotExist:
+        return JsonResponse({
+            'success': False,
+            'error': 'Código de descuento no encontrado'
+        }, status=404)
+    
+    # Validar que esté vigente
+    if not promocion.esta_vigente:
+        return JsonResponse({
+            'success': False,
+            'error': 'Este código de descuento no está vigente'
+        }, status=400)
+    
+    # Validar que la fecha del evento esté dentro del rango de la promoción
+    if fecha_obj < promocion.fecha_inicio or fecha_obj > promocion.fecha_fin:
+        return JsonResponse({
+            'success': False,
+            'error': f'Este código solo es válido del {promocion.fecha_inicio.strftime("%d/%m/%Y")} al {promocion.fecha_fin.strftime("%d/%m/%Y")}'
+        }, status=400)
+    
+    # Validar que pueda usarse (límite de usos)
+    if not promocion.puede_usarse:
+        return JsonResponse({
+            'success': False,
+            'error': 'Este código ha alcanzado su límite de usos'
+        }, status=400)
+    
+    # Validar que el email no haya usado este código antes
+    if email:
+        if UsoPromocion.objects.filter(promocion=promocion, email=email).exists():
+            return JsonResponse({
+                'success': False,
+                'error': 'Ya has usado este código de descuento anteriormente'
+            }, status=400)
+    
+    # Validar monto mínimo
+    try:
+        total_precio_decimal = Decimal(str(total_precio))
+        if promocion.monto_minimo > 0 and total_precio_decimal < promocion.monto_minimo:
+            return JsonResponse({
+                'success': False,
+                'error': f'El monto mínimo para aplicar este descuento es ${promocion.monto_minimo:,.0f}'
+            }, status=400)
+    except (ValueError, TypeError):
+        pass  # Si no se puede parsear el total, continuamos
+    
+    # Validar que los juegos sean aplicables (si la promoción tiene juegos específicos)
+    if promocion.juegos.exists():
+        juegos_promocion = set(promocion.juegos.values_list('id', flat=True))
+        juegos_seleccionados = set([int(jid) for jid in juegos_ids if jid])
+        
+        if not juegos_seleccionados.intersection(juegos_promocion):
+            return JsonResponse({
+                'success': False,
+                'error': 'Este código no es aplicable a los juegos seleccionados'
+            }, status=400)
+    
+    # Calcular el descuento
+    try:
+        total_precio_decimal = Decimal(str(total_precio))
+    except (ValueError, TypeError):
+        total_precio_decimal = Decimal('0')
+    
+    monto_descuento = Decimal('0')
+    
+    if promocion.tipo_descuento == 'porcentaje':
+        monto_descuento = total_precio_decimal * (promocion.valor_descuento / Decimal('100'))
+    elif promocion.tipo_descuento == 'monto_fijo':
+        monto_descuento = promocion.valor_descuento
+        if monto_descuento > total_precio_decimal:
+            monto_descuento = total_precio_decimal  # No puede descontar más del total
+    elif promocion.tipo_descuento == 'envio_gratis':
+        # Envío gratis: descontar el precio por distancia
+        # Esto se calculará en el frontend o en la creación de la reserva
+        monto_descuento = Decimal('0')  # Se aplicará después
+    # 2x1 se manejaría de forma especial, por ahora no lo implementamos
+    
+    total_con_descuento = total_precio_decimal - monto_descuento
+    if total_con_descuento < 0:
+        total_con_descuento = Decimal('0')
+    
+    return JsonResponse({
+        'success': True,
+        'promocion': {
+            'id': promocion.id,
+            'codigo': promocion.codigo,
+            'nombre': promocion.nombre,
+            'tipo_descuento': promocion.tipo_descuento,
+            'valor_descuento': float(promocion.valor_descuento),
+            'monto_descuento': float(monto_descuento),
+            'total_con_descuento': float(total_con_descuento),
+            'envio_gratis': promocion.tipo_descuento == 'envio_gratis'
+        }
+    })
+
+
+@require_http_methods(["POST"])
+@csrf_exempt
 def crear_reserva_publica(request):
     """
     Crea una reserva desde el calendario público (sin autenticación)
@@ -305,6 +467,7 @@ def crear_reserva_publica(request):
     observaciones = data.get('observaciones', '').strip()
     distancia_km = data.get('distancia_km', '0').strip()
     juegos_data = data.get('juegos', [])  # Array de juegos
+    codigo_descuento = data.get('codigo_descuento', '').strip().upper()  # Código de descuento
     
     # Debug: imprimir datos recibidos
     import logging
@@ -580,7 +743,60 @@ def crear_reserva_publica(request):
         precio_horas_extra = horas_extra * PRECIO_POR_HORA_EXTRA
     
     # Calcular total (suma de todos los juegos + precio por distancia + horas extra)
-    total_final = total_juegos + precio_distancia + precio_horas_extra
+    total_sin_descuento = total_juegos + precio_distancia + precio_horas_extra
+    
+    # Validar y aplicar código de descuento si existe
+    promocion = None
+    monto_descuento = Decimal('0')
+    total_final = total_sin_descuento
+    
+    if codigo_descuento:
+        try:
+            promocion = Promocion.objects.get(codigo=codigo_descuento)
+            
+            # Validar que esté vigente
+            if not promocion.esta_vigente:
+                errors.append('El código de descuento no está vigente')
+            # Validar fecha
+            elif fecha_obj < promocion.fecha_inicio or fecha_obj > promocion.fecha_fin:
+                errors.append(f'Este código solo es válido del {promocion.fecha_inicio.strftime("%d/%m/%Y")} al {promocion.fecha_fin.strftime("%d/%m/%Y")}')
+            # Validar que pueda usarse
+            elif not promocion.puede_usarse:
+                errors.append('Este código ha alcanzado su límite de usos')
+            # Validar que el email no lo haya usado
+            elif UsoPromocion.objects.filter(promocion=promocion, email=email).exists():
+                errors.append('Ya has usado este código de descuento anteriormente')
+            # Validar monto mínimo
+            elif promocion.monto_minimo > 0 and total_sin_descuento < promocion.monto_minimo:
+                errors.append(f'El monto mínimo para aplicar este descuento es ${promocion.monto_minimo:,.0f}')
+            # Validar juegos aplicables
+            elif promocion.juegos.exists():
+                juegos_promocion_ids = set(promocion.juegos.values_list('id', flat=True))
+                juegos_seleccionados_ids = set([j['juego'].id for j in juegos_validos])
+                if not juegos_seleccionados_ids.intersection(juegos_promocion_ids):
+                    errors.append('Este código no es aplicable a los juegos seleccionados')
+            else:
+                # Calcular descuento
+                if promocion.tipo_descuento == 'porcentaje':
+                    monto_descuento = total_sin_descuento * (promocion.valor_descuento / Decimal('100'))
+                elif promocion.tipo_descuento == 'monto_fijo':
+                    monto_descuento = promocion.valor_descuento
+                    if monto_descuento > total_sin_descuento:
+                        monto_descuento = total_sin_descuento
+                elif promocion.tipo_descuento == 'envio_gratis':
+                    # Descontar el precio por distancia
+                    monto_descuento = precio_distancia
+                
+                total_final = total_sin_descuento - monto_descuento
+                if total_final < 0:
+                    total_final = Decimal('0')
+        except Promocion.DoesNotExist:
+            errors.append('Código de descuento no encontrado')
+        except Exception as e:
+            errors.append(f'Error al validar código de descuento: {str(e)}')
+    
+    if errors:
+        return JsonResponse({'success': False, 'errors': errors}, status=400)
     
     try:
         # Crear reserva
@@ -594,6 +810,8 @@ def crear_reserva_publica(request):
             precio_distancia=precio_distancia,
             horas_extra=horas_extra,
             precio_horas_extra=precio_horas_extra,
+            promocion=promocion,
+            monto_descuento=monto_descuento,
             estado='pendiente',
             observaciones=observaciones or None,
             total_reserva=total_final,
@@ -608,6 +826,17 @@ def crear_reserva_publica(request):
                 precio_unitario=juego_item['precio_unitario'],
                 subtotal=juego_item['subtotal'],
             )
+        
+        # Registrar el uso de la promoción si se aplicó
+        if promocion:
+            UsoPromocion.objects.create(
+                promocion=promocion,
+                email=email,
+                reserva=reserva
+            )
+            # Incrementar contador de usos
+            promocion.usos_actuales += 1
+            promocion.save()
         
         return JsonResponse({
             'success': True,

@@ -219,7 +219,9 @@ class Reserva(models.Model):
     precio_distancia = models.DecimalField(max_digits=10, decimal_places=2, default=0, help_text="Precio por distancia (km * precio por km)")
     horas_extra = models.PositiveIntegerField(default=0, help_text="Horas adicionales después de las 6 horas base")
     precio_horas_extra = models.DecimalField(max_digits=10, decimal_places=2, default=0, help_text="Precio por horas extra ($10.000 por hora)")
-    total_reserva = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    promocion = models.ForeignKey('Promocion', on_delete=models.SET_NULL, null=True, blank=True, related_name='reservas', help_text="Promoción aplicada")
+    monto_descuento = models.DecimalField(max_digits=10, decimal_places=2, default=0, help_text="Monto del descuento aplicado")
+    total_reserva = models.DecimalField(max_digits=10, decimal_places=2, default=0, help_text="Total después del descuento")
     fecha_creacion = models.DateTimeField(auto_now_add=True)
     fecha_modificacion = models.DateTimeField(auto_now=True)
     
@@ -530,6 +532,26 @@ class Promocion(models.Model):
         if self.limite_usos > 0 and self.usos_actuales >= self.limite_usos:
             return False
         return True
+
+
+class UsoPromocion(models.Model):
+    """
+    Registra el uso de códigos de promoción por email/cliente
+    Para evitar que un mismo código sea usado más de una vez por la misma persona
+    """
+    promocion = models.ForeignKey(Promocion, on_delete=models.CASCADE, related_name='usos')
+    email = models.EmailField(help_text="Email del cliente que usó el código")
+    reserva = models.ForeignKey('Reserva', on_delete=models.CASCADE, related_name='uso_promocion', null=True, blank=True)
+    fecha_uso = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        verbose_name = 'Uso de Promoción'
+        verbose_name_plural = 'Usos de Promociones'
+        ordering = ['-fecha_uso']
+        unique_together = ['promocion', 'email']  # Un email solo puede usar un código una vez
+    
+    def __str__(self):
+        return f"{self.email} - {self.promocion.codigo} - {self.fecha_uso.date()}"
 
 
 class Evaluacion(models.Model):

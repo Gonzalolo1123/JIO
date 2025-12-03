@@ -2,7 +2,8 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from .models import (
     Usuario, Cliente, Repartidor, Juego, PrecioTemporada,
-    Reserva, DetalleReserva, Instalacion, Retiro, Pago
+    Reserva, DetalleReserva, Instalacion, Retiro, Pago,
+    Promocion, UsoPromocion
 )
 
 # Register your models here.
@@ -222,6 +223,51 @@ class PagoAdmin(admin.ModelAdmin):
             'classes': ('collapse',)
         }),
     )
+
+
+@admin.register(Promocion)
+class PromocionAdmin(admin.ModelAdmin):
+    """
+    Configuración del admin para el modelo Promocion
+    """
+    list_display = ('codigo', 'nombre', 'tipo_descuento', 'valor_descuento', 'fecha_inicio', 'fecha_fin', 'estado', 'usos_actuales', 'limite_usos')
+    list_filter = ('estado', 'tipo_descuento', 'fecha_inicio', 'fecha_fin')
+    search_fields = ('codigo', 'nombre', 'descripcion')
+    filter_horizontal = ('juegos',)
+    readonly_fields = ('fecha_creacion', 'fecha_modificacion', 'usos_actuales')
+    ordering = ('-fecha_creacion',)
+    
+    fieldsets = (
+        ('Información Básica', {
+            'fields': ('codigo', 'nombre', 'descripcion', 'estado')
+        }),
+        ('Descuento', {
+            'fields': ('tipo_descuento', 'valor_descuento', 'monto_minimo')
+        }),
+        ('Vigencia', {
+            'fields': ('fecha_inicio', 'fecha_fin')
+        }),
+        ('Restricciones', {
+            'fields': ('juegos', 'limite_usos', 'usos_actuales')
+        }),
+        ('Fechas del Sistema', {
+            'fields': ('fecha_creacion', 'fecha_modificacion'),
+            'classes': ('collapse',)
+        }),
+    )
+
+
+@admin.register(UsoPromocion)
+class UsoPromocionAdmin(admin.ModelAdmin):
+    """
+    Configuración del admin para el modelo UsoPromocion
+    """
+    list_display = ('promocion', 'email', 'reserva', 'fecha_uso')
+    list_filter = ('fecha_uso', 'promocion')
+    search_fields = ('email', 'promocion__codigo', 'promocion__nombre')
+    readonly_fields = ('fecha_uso',)
+    raw_id_fields = ('promocion', 'reserva')
+    ordering = ('-fecha_uso',)
 
 
 # Configuración personalizada del sitio de administración
