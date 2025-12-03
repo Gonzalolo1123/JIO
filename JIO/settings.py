@@ -92,11 +92,11 @@ WSGI_APPLICATION = 'JIO.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'postgres',
+        'NAME': 'jio_db',
         'USER': 'postgres',
-        'PASSWORD': 'damian8140',
+        'PASSWORD': 'compuvi',
         'HOST': 'localhost',
-        'PORT': '5433',
+        'PORT': '5432',
     }
 }
 
