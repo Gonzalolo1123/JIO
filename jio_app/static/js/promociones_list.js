@@ -89,9 +89,9 @@
             if (!helpElement) return;
             
             if (tipoDescuento === 'porcentaje') {
-                helpElement.textContent = 'Porcentaje (0-100%)';
+                helpElement.textContent = 'Porcentaje (1-90%)';
             } else if (tipoDescuento === 'monto_fijo') {
-                helpElement.textContent = 'Monto fijo en pesos ($)';
+                helpElement.textContent = 'Monto fijo en pesos ($) - Máximo $15,000';
             } else if (tipoDescuento === '2x1') {
                 helpElement.textContent = 'No aplica (descuento automático)';
             } else if (tipoDescuento === 'envio_gratis') {

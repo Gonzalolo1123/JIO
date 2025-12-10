@@ -446,6 +446,127 @@
             }
         };
         document.addEventListener('keydown', escapeKeyHandler);
+        
+        // Funcionalidad para agregar vehículo rápido
+        const modalVehiculoRapido = document.getElementById('modalCreateVehiculoRapido');
+        const formVehiculoRapido = document.getElementById('formCreateVehiculoRapido');
+        const btnAddVehiculoCreate = document.getElementById('btnAddVehiculoCreate');
+        const btnAddVehiculoEdit = document.getElementById('btnAddVehiculoEdit');
+        const selectCreateVehiculo = document.getElementById('createGastoVehiculo');
+        const selectEditVehiculo = document.getElementById('editGastoVehiculo');
+        let selectVehiculoActual = null; // Para saber qué select actualizar
+        
+        function abrirModalVehiculo(selectTarget) {
+            if (!modalVehiculoRapido) {
+                console.error('Modal de vehículo no encontrado');
+                return;
+            }
+            selectVehiculoActual = selectTarget;
+            if (formVehiculoRapido) {
+                formVehiculoRapido.reset();
+            }
+            openModal(modalVehiculoRapido);
+        }
+        
+        if (btnAddVehiculoCreate) {
+            btnAddVehiculoCreate.addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('Botón agregar vehículo (crear) clickeado');
+                abrirModalVehiculo(selectCreateVehiculo);
+            });
+        } else {
+            console.warn('Botón btnAddVehiculoCreate no encontrado');
+        }
+        
+        if (btnAddVehiculoEdit) {
+            btnAddVehiculoEdit.addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('Botón agregar vehículo (editar) clickeado');
+                abrirModalVehiculo(selectEditVehiculo);
+            });
+        } else {
+            console.warn('Botón btnAddVehiculoEdit no encontrado');
+        }
+        
+        // Envío del formulario de vehículo rápido
+        if (formVehiculoRapido && !formVehiculoRapido.dataset.listenerAttached) {
+            formVehiculoRapido.dataset.listenerAttached = 'true';
+            
+            formVehiculoRapido.addEventListener('submit', async function(e) {
+                e.preventDefault();
+                
+                const submitBtn = this.querySelector('button[type="submit"]');
+                const originalText = submitBtn?.textContent;
+                if (submitBtn) {
+                    submitBtn.disabled = true;
+                    submitBtn.textContent = 'Creando...';
+                }
+                
+                const formData = new FormData(this);
+                const endpoint = this.dataset.endpoint;
+                
+                try {
+                    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value;
+                    if (!csrfToken) {
+                        throw new Error('Token CSRF no encontrado');
+                    }
+                    
+                    const response = await fetch(endpoint, {
+                        method: 'POST',
+                        body: formData,
+                        headers: {
+                            'X-CSRFToken': csrfToken
+                        }
+                    });
+                    
+                    if (!response.ok) {
+                        const errorData = await response.json().catch(() => ({ errors: [`Error ${response.status}: ${response.statusText}`] }));
+                        throw new Error(JSON.stringify(errorData));
+                    }
+                    
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        // Agregar el nuevo vehículo al select
+                        if (selectVehiculoActual) {
+                            const option = document.createElement('option');
+                            option.value = data.vehiculo_id;
+                            option.textContent = `${data.patente} - ${data.marca} ${data.modelo}`;
+                            option.selected = true;
+                            selectVehiculoActual.appendChild(option);
+                        }
+                        
+                        mostrarExitoValidacion(data.message || 'Vehículo creado correctamente', '¡Vehículo Creado!');
+                        closeModal(modalVehiculoRapido);
+                        
+                        if (submitBtn) {
+                            submitBtn.disabled = false;
+                            submitBtn.textContent = originalText;
+                        }
+                    } else {
+                        mostrarErroresValidacion(data.errors || ['Error al crear el vehículo'], 'Error al Crear Vehículo');
+                        if (submitBtn) {
+                            submitBtn.disabled = false;
+                            submitBtn.textContent = originalText;
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                    try {
+                        const errorObj = JSON.parse(error.message);
+                        mostrarErroresValidacion(errorObj.errors || ['Error al crear el vehículo'], 'Error al Crear Vehículo');
+                    } catch {
+                        mostrarErroresValidacion(['Error de conexión'], 'Error de Conexión');
+                    }
+                    if (submitBtn) {
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = originalText;
+                    }
+                }
+            });
+        }
     }
     
     // Inicializar cuando el DOM esté listo

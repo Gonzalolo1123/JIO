@@ -49,7 +49,11 @@
         </label>
         <label>
           Unidad de medida
-          <input type="text" name="unidad_medida" id="editMaterialUnidad" maxlength="20" value="unidad">
+          <select name="unidad_medida" id="editMaterialUnidad" required>
+            {% for value, label in unidad_medida_choices %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
         </label>
         <label>
           Precio unitario ($)
@@ -223,7 +227,11 @@
         </label>
         <label>
           Unidad de medida
-          <input type="text" name="unidad_medida" maxlength="20" value="unidad">
+          <select name="unidad_medida" required>
+            {% for value, label in unidad_medida_choices %}
+            <option value="{{ value }}" {% if value == 'unidad' %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
         </label>
         <label>
           Precio unitario ($)

@@ -412,6 +412,11 @@ def validar_codigo_descuento(request):
         monto_descuento = total_precio_decimal * (promocion.valor_descuento / Decimal('100'))
     elif promocion.tipo_descuento == 'monto_fijo':
         monto_descuento = promocion.valor_descuento
+        # Validar que quede al menos un 10% de margen de ganancia
+        margen_minimo = total_precio_decimal * Decimal('0.10')  # 10% mínimo
+        monto_maximo_descuento = total_precio_decimal - margen_minimo
+        if monto_descuento > monto_maximo_descuento:
+            monto_descuento = monto_maximo_descuento  # Limitar para mantener margen
         if monto_descuento > total_precio_decimal:
             monto_descuento = total_precio_decimal  # No puede descontar más del total
     elif promocion.tipo_descuento == 'envio_gratis':
@@ -781,6 +786,11 @@ def crear_reserva_publica(request):
                     monto_descuento = total_sin_descuento * (promocion.valor_descuento / Decimal('100'))
                 elif promocion.tipo_descuento == 'monto_fijo':
                     monto_descuento = promocion.valor_descuento
+                    # Validar que quede al menos un 10% de margen de ganancia
+                    margen_minimo = total_sin_descuento * Decimal('0.10')  # 10% mínimo
+                    monto_maximo_descuento = total_sin_descuento - margen_minimo
+                    if monto_descuento > monto_maximo_descuento:
+                        monto_descuento = monto_maximo_descuento  # Limitar para mantener margen
                     if monto_descuento > total_sin_descuento:
                         monto_descuento = total_sin_descuento
                 elif promocion.tipo_descuento == 'envio_gratis':
@@ -5536,7 +5546,10 @@ def vehiculo_create_json(request):
         return JsonResponse({
             'success': True, 
             'message': f'Vehículo "{vehiculo.patente}" creado correctamente.',
-            'vehiculo_id': vehiculo.id
+            'vehiculo_id': vehiculo.id,
+            'patente': vehiculo.patente,
+            'marca': vehiculo.marca,
+            'modelo': vehiculo.modelo
         })
     except Exception as e:
         return JsonResponse({
@@ -5905,8 +5918,31 @@ def gasto_create_json(request):
             monto_decimal = Decimal(monto)
             if monto_decimal < 1:
                 errors.append('El monto debe ser al menos $1')
-            elif monto_decimal > Decimal('20000000'):  # Máximo $20,000,000 CLP
-                errors.append('El monto no puede exceder $20,000,000')
+            
+            # Límites razonables por categoría
+            limites_categoria = {
+                'combustible': (10000, 30000, 'Combustible: entre $10,000 y $30,000'),
+                'mantenimiento': (20000, 2000000, 'Mantenimiento: entre $20,000 y $2,000,000'),
+                'publicidad': (10000, 500000, 'Publicidad: entre $10,000 y $500,000'),
+                'servicios': (10000, 100000, 'Servicios: entre $10,000 y $100,000'),
+                'materiales': (5000, 150000, 'Materiales: entre $5,000 y $150,000'),
+                'salarios': (200000, 2000000, 'Salarios: entre $200,000 y $2,000,000'),
+                'alquiler': (100000, 1000000, 'Alquiler: entre $100,000 y $1,000,000'),
+                'seguros': (50000, 500000, 'Seguros: entre $50,000 y $500,000'),
+                'impuestos': (10000, 500000, 'Impuestos: entre $10,000 y $500,000'),
+                'otros': (1000, 200000, 'Otros: entre $1,000 y $200,000'),
+            }
+            
+            if categoria in limites_categoria:
+                min_monto, max_monto, mensaje = limites_categoria[categoria]
+                if monto_decimal < min_monto:
+                    errors.append(f'El monto es muy bajo para esta categoría. {mensaje}')
+                elif monto_decimal > max_monto:
+                    errors.append(f'El monto es muy alto para esta categoría. {mensaje}')
+            else:
+                # Límite general si la categoría no está en el diccionario
+                if monto_decimal > Decimal('2000000'):
+                    errors.append('El monto no puede exceder $2,000,000')
         except (ValueError, TypeError):
             errors.append('El monto debe ser un número válido')
     
@@ -6288,15 +6324,17 @@ def promocion_create_json(request):
             if valor_decimal < 0:
                 errors.append('El valor del descuento no puede ser negativo')
             if tipo_descuento == 'porcentaje':
-                if valor_decimal < 10:
-                    errors.append('El porcentaje debe ser al menos 10%')
+                if valor_decimal < 1:
+                    errors.append('El porcentaje debe ser al menos 1%')
                 elif valor_decimal > 90:
-                    errors.append('El porcentaje no puede ser mayor a 90%')
+                    errors.append('El porcentaje no puede ser mayor a 90% (debe quedar un margen de ganancia)')
             elif tipo_descuento == 'monto_fijo':
-                if valor_decimal > Decimal('10000000'):  # Máximo $10,000,000 CLP
-                    errors.append('El monto fijo no puede exceder $10,000,000')
+                if valor_decimal > Decimal('15000'):  # Máximo $15,000 CLP
+                    errors.append('El monto fijo no puede exceder $15,000')
                 elif valor_decimal == 0:
                     errors.append('El monto fijo debe ser mayor a $0')
+                # Nota: La validación de margen de ganancia se hace al aplicar la promoción
+                # para asegurar que siempre quede al menos un 10% de margen
         except (ValueError, TypeError):
             errors.append('El valor del descuento debe ser un número válido')
     
@@ -6368,7 +6406,9 @@ def promocion_create_json(request):
     
     juegos_validos = []
     if juegos_ids:
-        for juego_id in juegos_ids:
+        # Filtrar strings vacíos y valores None antes de procesar
+        juegos_ids_clean = [j for j in juegos_ids if j and str(j).strip()]
+        for juego_id in juegos_ids_clean:
             try:
                 juego = Juego.objects.get(id=int(juego_id))
                 juegos_validos.append(juego)
@@ -6468,15 +6508,17 @@ def promocion_update_json(request, promocion_id: int):
                 errors.append('El valor del descuento no puede ser negativo')
             tipo_desc = tipo_descuento or promocion.tipo_descuento
             if tipo_desc == 'porcentaje':
-                if valor_decimal < 10:
-                    errors.append('El porcentaje debe ser al menos 10%')
+                if valor_decimal < 1:
+                    errors.append('El porcentaje debe ser al menos 1%')
                 elif valor_decimal > 90:
-                    errors.append('El porcentaje no puede ser mayor a 90%')
+                    errors.append('El porcentaje no puede ser mayor a 90% (debe quedar un margen de ganancia)')
             elif tipo_desc == 'monto_fijo':
-                if valor_decimal > Decimal('10000000'):  # Máximo $10,000,000 CLP
-                    errors.append('El monto fijo no puede exceder $10,000,000')
+                if valor_decimal > Decimal('15000'):  # Máximo $15,000 CLP
+                    errors.append('El monto fijo no puede exceder $15,000')
                 elif valor_decimal == 0:
                     errors.append('El monto fijo debe ser mayor a $0')
+                # Nota: La validación de margen de ganancia se hace al aplicar la promoción
+                # para asegurar que siempre quede al menos un 10% de margen
         except (ValueError, TypeError):
             errors.append('El valor del descuento debe ser un número válido')
     
@@ -6544,7 +6586,9 @@ def promocion_update_json(request, promocion_id: int):
     
     juegos_validos = []
     if juegos_ids:
-        for juego_id in juegos_ids:
+        # Filtrar strings vacíos y valores None antes de procesar
+        juegos_ids_clean = [j for j in juegos_ids if j and str(j).strip()]
+        for juego_id in juegos_ids_clean:
             try:
                 juego = Juego.objects.get(id=int(juego_id))
                 juegos_validos.append(juego)
@@ -7419,7 +7463,7 @@ def precio_temporada_create_json(request):
         try:
             precio_arriendo_int = int(precio_arriendo)
             if precio_arriendo_int < 40000:  # Mínimo $40,000 CLP
-                errors.append('El precio de arriendo debe ser al menos $40,000')
+                errors.append('El precio mínimo de arriendo es de $40,000 pesos chilenos. Por favor, ingrese un valor igual o superior a este monto.')
             elif precio_arriendo_int > 200000:  # Máximo $200,000 CLP
                 errors.append('El precio de arriendo no puede exceder $200,000')
         except (ValueError, TypeError):
@@ -7537,7 +7581,7 @@ def precio_temporada_update_json(request, precio_id: int):
         try:
             precio_arriendo_int = int(precio_arriendo)
             if precio_arriendo_int < 40000:  # Mínimo $40,000 CLP
-                errors.append('El precio de arriendo debe ser al menos $40,000')
+                errors.append('El precio mínimo de arriendo es de $40,000 pesos chilenos. Por favor, ingrese un valor igual o superior a este monto.')
             elif precio_arriendo_int > 200000:  # Máximo $200,000 CLP
                 errors.append('El precio de arriendo no puede exceder $200,000')
             else:
@@ -7708,6 +7752,7 @@ def materiales_list(request):
     return render(request, 'jio_app/materiales_list.html', {
         'materiales': base_qs,
         'query': query,
+        'unidad_medida_choices': Material.UNIDAD_MEDIDA_CHOICES,
         'categoria_filter': categoria_filter,
         'estado_filter': estado_filter,
         'order_by': order_by,
@@ -7746,6 +7791,7 @@ def material_detail_json(request, material_id: int):
             'observaciones': material.observaciones or '',
             'categoria_choices': Material.CATEGORIA_CHOICES,
             'estado_choices': Material.ESTADO_CHOICES,
+            'unidad_medida_choices': Material.UNIDAD_MEDIDA_CHOICES,
         })
     except Material.DoesNotExist:
         return JsonResponse({'error': 'Material no encontrado'}, status=404)
@@ -7766,6 +7812,10 @@ def material_create_json(request):
     stock_actual = request.POST.get('stock_actual', '0').strip()
     stock_minimo = request.POST.get('stock_minimo', '0').strip()
     unidad_medida = request.POST.get('unidad_medida', 'unidad').strip()
+    # Validar unidad de medida
+    unidades_validas = [choice[0] for choice in Material.UNIDAD_MEDIDA_CHOICES]
+    if unidad_medida and unidad_medida not in unidades_validas:
+        errors.append('Unidad de medida inválida')
     precio_unitario = request.POST.get('precio_unitario', '0').strip()
     estado = request.POST.get('estado', 'disponible').strip()
     ubicacion = request.POST.get('ubicacion', '').strip()
@@ -7794,10 +7844,9 @@ def material_create_json(request):
     if stock_actual:
         try:
             stock_actual_int = int(stock_actual)
-            if stock_actual_int < 1:
-                errors.append('El stock actual debe ser al menos 1 unidad')
-            elif stock_actual_int > 100:  # Máximo 100 unidades
-                errors.append('El stock actual no puede exceder 100 unidades')
+            if stock_actual_int < 0:
+                errors.append('El stock actual no puede ser negativo')
+            # Removemos el límite máximo de 100 unidades para permitir más flexibilidad
         except ValueError:
             errors.append('Stock actual inválido')
     
@@ -7837,10 +7886,10 @@ def material_create_json(request):
             # La fecha no puede ser futura
             if fecha_compra > hoy:
                 errors.append('La fecha de última compra no puede ser futura')
-            # La fecha no puede ser anterior a 1 semana
-            fecha_minima = hoy - timedelta(days=7)
+            # La fecha no puede ser anterior a 5 años (validación para evitar errores)
+            fecha_minima = hoy - timedelta(days=365*5)
             if fecha_compra < fecha_minima:
-                errors.append('La fecha de última compra no puede ser anterior a 1 semana')
+                errors.append('La fecha de última compra no puede ser anterior a 5 años. Por favor, verifique la fecha ingresada.')
         except ValueError:
             errors.append('Fecha de última compra inválida')
     
@@ -7855,25 +7904,61 @@ def material_create_json(request):
         return JsonResponse({'success': False, 'errors': errors}, status=400)
 
     try:
-        material = Material.objects.create(
-            nombre=nombre,
-            categoria=categoria,
-            descripcion=descripcion or None,
-            stock_actual=stock_actual_int,
-            stock_minimo=stock_minimo_int,
-            unidad_medida=unidad_medida,
-            precio_unitario=precio_decimal,
-            estado=estado,
-            ubicacion=ubicacion or None,
-            proveedor=proveedor_obj,
-            fecha_ultima_compra=fecha_compra,
-            observaciones=observaciones or None,
-        )
-        return JsonResponse({
-            'success': True, 
-            'message': f'Material "{material.nombre}" creado correctamente.',
-            'material_id': material.id
-        })
+        # Buscar si ya existe un material con el mismo nombre
+        material_existente = Material.objects.filter(nombre__iexact=nombre).first()
+        
+        if material_existente:
+            # Si existe, sumar al stock existente en lugar de crear uno nuevo
+            material_existente.stock_actual += stock_actual_int
+            # Actualizar otros campos si se proporcionan
+            if categoria and categoria in todas_categorias:
+                if categoria.startswith('custom_'):
+                    material_existente.categoria = 'otro'
+                else:
+                    material_existente.categoria = categoria
+            if descripcion:
+                material_existente.descripcion = descripcion
+            if precio_decimal > 0:
+                # Actualizar precio unitario si es mayor (asumiendo que el nuevo precio es más reciente)
+                material_existente.precio_unitario = precio_decimal
+            if estado:
+                material_existente.estado = estado
+            if ubicacion:
+                material_existente.ubicacion = ubicacion
+            if proveedor_obj:
+                material_existente.proveedor = proveedor_obj
+            if fecha_compra:
+                material_existente.fecha_ultima_compra = fecha_compra
+            if observaciones:
+                material_existente.observaciones = observaciones
+            material_existente.save()
+            
+            return JsonResponse({
+                'success': True, 
+                'message': f'Stock del material "{material_existente.nombre}" actualizado. Stock actual: {material_existente.stock_actual} {material_existente.unidad_medida}.',
+                'material_id': material_existente.id
+            })
+        else:
+            # Si no existe, crear uno nuevo
+            material = Material.objects.create(
+                nombre=nombre,
+                categoria=categoria,
+                descripcion=descripcion or None,
+                stock_actual=stock_actual_int,
+                stock_minimo=stock_minimo_int,
+                unidad_medida=unidad_medida,
+                precio_unitario=precio_decimal,
+                estado=estado,
+                ubicacion=ubicacion or None,
+                proveedor=proveedor_obj,
+                fecha_ultima_compra=fecha_compra,
+                observaciones=observaciones or None,
+            )
+            return JsonResponse({
+                'success': True, 
+                'message': f'Material "{material.nombre}" creado correctamente.',
+                'material_id': material.id
+            })
     except Exception as e:
         return JsonResponse({
             'success': False, 
@@ -7901,6 +7986,11 @@ def material_update_json(request, material_id: int):
     stock_actual = request.POST.get('stock_actual', '').strip()
     stock_minimo = request.POST.get('stock_minimo', '').strip()
     unidad_medida = request.POST.get('unidad_medida', '').strip()
+    # Validar unidad de medida si se proporciona
+    if unidad_medida:
+        unidades_validas = [choice[0] for choice in Material.UNIDAD_MEDIDA_CHOICES]
+        if unidad_medida not in unidades_validas:
+            errors.append('Unidad de medida inválida')
     precio_unitario = request.POST.get('precio_unitario', '').strip()
     estado = request.POST.get('estado', '').strip()
     ubicacion = request.POST.get('ubicacion', '').strip()
@@ -7936,10 +8026,9 @@ def material_update_json(request, material_id: int):
     if stock_actual:
         try:
             stock_actual_int = int(stock_actual)
-            if stock_actual_int < 1:
-                errors.append('El stock actual debe ser al menos 1 unidad')
-            elif stock_actual_int > 100:  # Máximo 100 unidades
-                errors.append('El stock actual no puede exceder 100 unidades')
+            if stock_actual_int < 0:
+                errors.append('El stock actual no puede ser negativo')
+            # Removemos el límite máximo de 100 unidades para permitir más flexibilidad
             else:
                 material.stock_actual = stock_actual_int
         except ValueError:
@@ -8001,10 +8090,10 @@ def material_update_json(request, material_id: int):
             # La fecha no puede ser futura
             if fecha_compra > hoy:
                 errors.append('La fecha de última compra no puede ser futura')
-            # La fecha no puede ser anterior a 1 semana
-            fecha_minima = hoy - timedelta(days=7)
+            # La fecha no puede ser anterior a 5 años (validación para evitar errores)
+            fecha_minima = hoy - timedelta(days=365*5)
             if fecha_compra < fecha_minima:
-                errors.append('La fecha de última compra no puede ser anterior a 1 semana')
+                errors.append('La fecha de última compra no puede ser anterior a 5 años. Por favor, verifique la fecha ingresada.')
             else:
                 material.fecha_ultima_compra = fecha_compra
         except ValueError:

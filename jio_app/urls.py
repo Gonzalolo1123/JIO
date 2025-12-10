@@ -107,4 +107,11 @@ urlpatterns = [
     path('panel/proveedores/<int:proveedor_id>/update/', views.proveedor_update_json, name='proveedor_update_json'),
     path('panel/proveedores/<int:proveedor_id>/delete/', views.proveedor_delete_json, name='proveedor_delete_json'),
     
+    # CRUD de vehículos
+    path('panel/vehiculos/', views.vehiculos_list, name='vehiculos_list'),
+    path('panel/vehiculos/create/', views.vehiculo_create_json, name='vehiculo_create_json'),
+    path('panel/vehiculos/<int:vehiculo_id>/json/', views.vehiculo_detail_json, name='vehiculo_detail_json'),
+    path('panel/vehiculos/<int:vehiculo_id>/update/', views.vehiculo_update_json, name='vehiculo_update_json'),
+    path('panel/vehiculos/<int:vehiculo_id>/delete/', views.vehiculo_delete_json, name='vehiculo_delete_json'),
+    
 ]

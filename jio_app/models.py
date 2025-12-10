@@ -693,12 +693,25 @@ class Material(models.Model):
         ('baja', 'Dado de Baja'),
     ]
     
+    UNIDAD_MEDIDA_CHOICES = [
+        ('unidad', 'Unidad'),
+        ('metro', 'Metro'),
+        ('litro', 'Litro'),
+        ('kg', 'Kilogramo'),
+        ('m2', 'Metro cuadrado'),
+        ('m3', 'Metro cúbico'),
+        ('par', 'Par'),
+        ('caja', 'Caja'),
+        ('rollo', 'Rollo'),
+        ('paquete', 'Paquete'),
+    ]
+    
     nombre = models.CharField(max_length=100, help_text="Nombre del material/equipo")
     categoria = models.CharField(max_length=20, choices=CATEGORIA_CHOICES)
     descripcion = models.TextField(blank=True, null=True)
     stock_actual = models.PositiveIntegerField(default=0, help_text="Cantidad disponible")
     stock_minimo = models.PositiveIntegerField(default=0, help_text="Stock mínimo antes de alertar")
-    unidad_medida = models.CharField(max_length=20, default='unidad', help_text="Ej: unidad, metro, litro, kg")
+    unidad_medida = models.CharField(max_length=20, choices=UNIDAD_MEDIDA_CHOICES, default='unidad', help_text="Unidad de medida")
     precio_unitario = models.DecimalField(max_digits=10, decimal_places=2, default=0, help_text="Precio de compra unitario")
     estado = models.CharField(max_length=20, choices=ESTADO_CHOICES, default='disponible')
     ubicacion = models.CharField(max_length=100, blank=True, null=True, help_text="Ubicación física del material")

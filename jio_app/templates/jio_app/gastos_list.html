@@ -131,12 +131,17 @@
         </label>
         <label>
           Vehículo (opcional)
-          <select name="vehiculo_id" id="editGastoVehiculo">
-            <option value="">Ninguno</option>
-            {% for vehiculo in vehiculos %}
-            <option value="{{ vehiculo.id }}">{{ vehiculo.patente }} - {{ vehiculo.marca }} {{ vehiculo.modelo }}</option>
-            {% endfor %}
-          </select>
+          <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <select name="vehiculo_id" id="editGastoVehiculo" style="flex: 1;">
+              <option value="">Ninguno</option>
+              {% for vehiculo in vehiculos %}
+              <option value="{{ vehiculo.id }}">{{ vehiculo.patente }} - {{ vehiculo.marca }} {{ vehiculo.modelo }}</option>
+              {% endfor %}
+            </select>
+            <button type="button" class="btn btn-secondary" id="btnAddVehiculoEdit" style="padding: 0.5rem; min-width: auto;" title="Añadir nuevo vehículo">
+              <i class="fas fa-plus"></i>
+            </button>
+          </div>
         </label>
         <label>
           Reserva (opcional)
@@ -280,12 +285,17 @@
         </label>
         <label>
           Vehículo (opcional)
-          <select name="vehiculo_id">
-            <option value="">Ninguno</option>
-            {% for vehiculo in vehiculos %}
-            <option value="{{ vehiculo.id }}">{{ vehiculo.patente }} - {{ vehiculo.marca }} {{ vehiculo.modelo }}</option>
-            {% endfor %}
-          </select>
+          <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <select name="vehiculo_id" id="createGastoVehiculo" style="flex: 1;">
+              <option value="">Ninguno</option>
+              {% for vehiculo in vehiculos %}
+              <option value="{{ vehiculo.id }}">{{ vehiculo.patente }} - {{ vehiculo.marca }} {{ vehiculo.modelo }}</option>
+              {% endfor %}
+            </select>
+            <button type="button" class="btn btn-secondary" id="btnAddVehiculoCreate" style="padding: 0.5rem; min-width: auto;" title="Añadir nuevo vehículo">
+              <i class="fas fa-plus"></i>
+            </button>
+          </div>
         </label>
         <label>
           Reserva (opcional)
@@ -304,6 +314,54 @@
         <label style="grid-column: 1 / -1;">
           Observaciones
           <textarea name="observaciones" rows="3"></textarea>
+        </label>
+        <div class="form-actions" style="grid-column: 1 / -1;">
+          <button type="button" class="btn btn-secondary" data-modal-close>Cancelar</button>
+          <button type="submit" class="btn btn-primary">Crear</button>
+        </div>
+      </form>
+    </div>
+    <div class="modal-backdrop" data-modal-close></div>
+  </div>
+  
+  <!-- Modal para crear vehículo rápido -->
+  <div id="modalCreateVehiculoRapido" class="modal" aria-hidden="true">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Nuevo vehículo</h2>
+        <button class="modal-close" data-modal-close>&times;</button>
+      </div>
+      <form id="formCreateVehiculoRapido" class="form-grid" data-endpoint="{% url 'jio_app:vehiculo_create_json' %}">
+        {% csrf_token %}
+        <label>
+          Patente *
+          <input type="text" name="patente" id="vehiculoRapidoPatente" required maxlength="10" style="text-transform:uppercase;">
+        </label>
+        <label>
+          Tipo *
+          <select name="tipo" id="vehiculoRapidoTipo" required>
+            <option value="">Seleccionar tipo</option>
+            <option value="camioneta">Camioneta</option>
+            <option value="furgon">Furgón</option>
+            <option value="camion">Camión</option>
+            <option value="otro">Otro</option>
+          </select>
+        </label>
+        <label>
+          Marca *
+          <input type="text" name="marca" id="vehiculoRapidoMarca" required maxlength="50">
+        </label>
+        <label>
+          Modelo *
+          <input type="text" name="modelo" id="vehiculoRapidoModelo" required maxlength="50">
+        </label>
+        <label>
+          Año *
+          <input type="number" name="año" id="vehiculoRapidoAño" required min="1900" max="2100">
+        </label>
+        <label>
+          Color
+          <input type="text" name="color" id="vehiculoRapidoColor" maxlength="30">
         </label>
         <div class="form-actions" style="grid-column: 1 / -1;">
           <button type="button" class="btn btn-secondary" data-modal-close>Cancelar</button>
