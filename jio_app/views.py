@@ -4972,22 +4972,34 @@ def arriendo_update_json(request, arriendo_id: int):
                     errors.append(f'Juego con ID {juego_id} no encontrado')
             
             if not errors and juegos_proporcionados:
-                # Eliminar detalles antiguos y crear nuevos solo si se proporcionaron juegos
-                reserva.detalles.all().delete()
-                # Total incluye juegos + distancia + horas extra
-                precio_distancia = reserva.precio_distancia or 0
-                precio_horas_extra = reserva.precio_horas_extra or 0
-                total_final = total + precio_distancia + precio_horas_extra
-                reserva.total_reserva = total_final
+                # Comparar juegos proporcionados con los existentes para evitar recrear si no cambiaron
+                juegos_existentes_ids = set(reserva.detalles.values_list('juego_id', flat=True))
+                juegos_proporcionados_ids = set([j['juego'].id for j in juegos_validos])
                 
-                for juego_item in juegos_validos:
-                    DetalleReserva.objects.create(
-                        reserva=reserva,
-                        juego=juego_item['juego'],
-                        cantidad=juego_item['cantidad'],
-                        precio_unitario=juego_item['precio_unitario'],
-                        subtotal=juego_item['subtotal'],
-                    )
+                # Solo eliminar y recrear si los juegos realmente cambiaron
+                if juegos_existentes_ids != juegos_proporcionados_ids:
+                    # Eliminar detalles antiguos y crear nuevos solo si los juegos cambiaron
+                    reserva.detalles.all().delete()
+                    # Total incluye juegos + distancia + horas extra
+                    precio_distancia = reserva.precio_distancia or 0
+                    precio_horas_extra = reserva.precio_horas_extra or 0
+                    total_final = total + precio_distancia + precio_horas_extra
+                    reserva.total_reserva = total_final
+                    
+                    for juego_item in juegos_validos:
+                        DetalleReserva.objects.create(
+                            reserva=reserva,
+                            juego=juego_item['juego'],
+                            cantidad=juego_item['cantidad'],
+                            precio_unitario=juego_item['precio_unitario'],
+                            subtotal=juego_item['subtotal'],
+                        )
+                else:
+                    # Si los juegos no cambiaron, solo recalcular el total (por si cambió el precio)
+                    precio_distancia = reserva.precio_distancia or 0
+                    precio_horas_extra = reserva.precio_horas_extra or 0
+                    total_final = total + precio_distancia + precio_horas_extra
+                    reserva.total_reserva = total_final
         # Si no se proporcionaron juegos, mantener los existentes y recalcular el total
         elif not juegos_proporcionados:
             # Recalcular el total con los juegos existentes
