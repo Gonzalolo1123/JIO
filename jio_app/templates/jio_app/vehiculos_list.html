@@ -23,7 +23,10 @@
         <input type="hidden" name="vehiculo_id" id="editVehiculoId">
         <label>
           Patente *
-          <input type="text" name="patente" id="editVehiculoPatente" required maxlength="10" style="text-transform:uppercase;">
+          <input type="text" name="patente" id="editVehiculoPatente" required minlength="6" maxlength="6" style="text-transform:uppercase;" placeholder="ABC123">
+          <small style="display:block;color:#666;margin-top:0.25rem;">
+            <i class="fas fa-info-circle"></i> Exactamente 6 caracteres
+          </small>
         </label>
         <label>
           Tipo *
@@ -36,19 +39,33 @@
         </label>
         <label>
           Marca *
-          <input type="text" name="marca" id="editVehiculoMarca" required maxlength="50">
+          <input type="text" name="marca" id="editVehiculoMarca" required maxlength="15" placeholder="Ej: Toyota">
+          <small style="display:block;color:#666;margin-top:0.25rem;">
+            <i class="fas fa-info-circle"></i> Máximo 15 caracteres
+          </small>
         </label>
         <label>
           Modelo *
-          <input type="text" name="modelo" id="editVehiculoModelo" required maxlength="50">
+          <input type="text" name="modelo" id="editVehiculoModelo" required maxlength="10" placeholder="Ej: Hilux">
+          <small style="display:block;color:#666;margin-top:0.25rem;">
+            <i class="fas fa-info-circle"></i> Máximo 10 caracteres
+          </small>
         </label>
         <label>
           Año *
-          <input type="number" name="año" id="editVehiculoAño" required min="1900" max="2100">
+          <input type="number" name="año" id="editVehiculoAño" required min="1900" placeholder="Ej: 2024">
+          <small style="display:block;color:#666;margin-top:0.25rem;">
+            <i class="fas fa-info-circle"></i> Entre 1900 y <span id="añoMaximoEdit">2026</span>
+          </small>
         </label>
         <label>
-          Color
-          <input type="text" name="color" id="editVehiculoColor" maxlength="30">
+          Color *
+          <select name="color" id="editVehiculoColor" required>
+            <option value="">Seleccionar color</option>
+            {% for color in colores_vehiculos %}
+            <option value="{{ color }}">{{ color }}</option>
+            {% endfor %}
+          </select>
         </label>
         <label>
           Kilometraje actual (km)
@@ -175,7 +192,10 @@
         {% csrf_token %}
         <label>
           Patente *
-          <input type="text" name="patente" required maxlength="10" style="text-transform:uppercase;">
+          <input type="text" name="patente" id="createVehiculoPatente" required minlength="6" maxlength="6" style="text-transform:uppercase;" placeholder="ABC123">
+          <small style="display:block;color:#666;margin-top:0.25rem;">
+            <i class="fas fa-info-circle"></i> Exactamente 6 caracteres
+          </small>
         </label>
         <label>
           Tipo *
@@ -188,19 +208,33 @@
         </label>
         <label>
           Marca *
-          <input type="text" name="marca" required maxlength="50">
+          <input type="text" name="marca" id="createVehiculoMarca" required maxlength="15" placeholder="Ej: Toyota">
+          <small style="display:block;color:#666;margin-top:0.25rem;">
+            <i class="fas fa-info-circle"></i> Máximo 15 caracteres
+          </small>
         </label>
         <label>
           Modelo *
-          <input type="text" name="modelo" required maxlength="50">
+          <input type="text" name="modelo" id="createVehiculoModelo" required maxlength="10" placeholder="Ej: Hilux">
+          <small style="display:block;color:#666;margin-top:0.25rem;">
+            <i class="fas fa-info-circle"></i> Máximo 10 caracteres
+          </small>
         </label>
         <label>
           Año *
-          <input type="number" name="año" required min="1900" max="2100">
+          <input type="number" name="año" id="createVehiculoAño" required min="1900" placeholder="Ej: 2024">
+          <small style="display:block;color:#666;margin-top:0.25rem;">
+            <i class="fas fa-info-circle"></i> Entre 1900 y <span id="añoMaximoCreate">2026</span>
+          </small>
         </label>
         <label>
-          Color
-          <input type="text" name="color" maxlength="30">
+          Color *
+          <select name="color" id="createVehiculoColor" required>
+            <option value="">Seleccionar color</option>
+            {% for color in colores_vehiculos %}
+            <option value="{{ color }}">{{ color }}</option>
+            {% endfor %}
+          </select>
         </label>
         <label>
           Kilometraje actual (km)

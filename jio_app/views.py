@@ -5398,6 +5398,17 @@ def vehiculos_list(request):
     if estado_filter:
         base_qs = base_qs.filter(estado=estado_filter)
 
+    # Lista de colores predefinidos para vehículos
+    COLORES_VEHICULOS = [
+        'Blanco', 'Negro', 'Gris', 'Plata', 'Rojo', 'Azul', 'Verde', 
+        'Amarillo', 'Naranja', 'Marrón', 'Beige', 'Dorado', 'Bordo', 
+        'Celeste', 'Turquesa', 'Violeta', 'Rosa', 'Cobre', 'Champagne'
+    ]
+    
+    # Calcular año máximo (año actual + 1)
+    from datetime import datetime
+    año_maximo = datetime.now().year + 1
+    
     return render(request, 'jio_app/vehiculos_list.html', {
         'vehiculos': base_qs,
         'query': query,
@@ -5407,6 +5418,8 @@ def vehiculos_list(request):
         'direction': direction,
         'tipo_choices': Vehiculo.TIPO_CHOICES,
         'estado_choices': Vehiculo.ESTADO_CHOICES,
+        'colores_vehiculos': COLORES_VEHICULOS,
+        'año_maximo': año_maximo,
     })
 
 
@@ -5467,19 +5480,34 @@ def vehiculo_create_json(request):
 
     errors = []
     
+    # Validar patente: exactamente 6 caracteres
     if not patente:
         errors.append('La patente es obligatoria')
+    elif len(patente) != 6:
+        errors.append('La patente debe tener exactamente 6 caracteres')
     elif Vehiculo.objects.filter(patente=patente).exists():
         errors.append('Ya existe un vehículo con esa patente')
     
     if not tipo or tipo not in [choice[0] for choice in Vehiculo.TIPO_CHOICES]:
         errors.append('Tipo de vehículo inválido')
     
+    # Validar marca: máximo 15 caracteres
     if not marca:
         errors.append('La marca es obligatoria')
+    elif len(marca) > 15:
+        errors.append('La marca no puede exceder 15 caracteres')
     
+    # Validar modelo: máximo 10 caracteres
     if not modelo:
         errors.append('El modelo es obligatorio')
+    elif len(modelo) > 10:
+        errors.append('El modelo no puede exceder 10 caracteres')
+    
+    # Validar color: debe ser uno de los colores predefinidos
+    COLORES_VALIDOS = ['Blanco', 'Negro', 'Gris', 'Plata', 'Rojo', 'Azul', 'Verde', 'Amarillo', 'Naranja', 'Marrón', 'Beige', 'Dorado', 'Bordo', 'Celeste', 'Turquesa', 'Violeta', 'Rosa', 'Cobre', 'Champagne']
+    if color:
+        if color not in COLORES_VALIDOS:
+            errors.append(f'El color debe ser uno de los siguientes: {", ".join(COLORES_VALIDOS)}')
     
     año_int = None
     if not año:
@@ -5540,7 +5568,7 @@ def vehiculo_create_json(request):
             marca=marca,
             modelo=modelo,
             año=año_int,
-            color=color or None,
+            color=color,
             kilometraje_actual=kilometraje,
             estado=estado,
             fecha_ultimo_mantenimiento=fecha_mant,
@@ -5592,12 +5620,31 @@ def vehiculo_update_json(request, vehiculo_id: int):
 
     errors = []
     
-    if patente and patente != vehiculo.patente:
-        if Vehiculo.objects.filter(patente=patente).exists():
+    # Validar patente: exactamente 6 caracteres
+    if patente:
+        if len(patente) != 6:
+            errors.append('La patente debe tener exactamente 6 caracteres')
+        elif patente != vehiculo.patente and Vehiculo.objects.filter(patente=patente).exists():
             errors.append('Ya existe un vehículo con esa patente')
     
     if tipo and tipo not in [choice[0] for choice in Vehiculo.TIPO_CHOICES]:
         errors.append('Tipo de vehículo inválido')
+    
+    # Validar marca: máximo 15 caracteres
+    if marca:
+        if len(marca) > 15:
+            errors.append('La marca no puede exceder 15 caracteres')
+    
+    # Validar modelo: máximo 10 caracteres
+    if modelo:
+        if len(modelo) > 10:
+            errors.append('El modelo no puede exceder 10 caracteres')
+    
+    # Validar color: debe ser uno de los colores predefinidos
+    COLORES_VALIDOS = ['Blanco', 'Negro', 'Gris', 'Plata', 'Rojo', 'Azul', 'Verde', 'Amarillo', 'Naranja', 'Marrón', 'Beige', 'Dorado', 'Bordo', 'Celeste', 'Turquesa', 'Violeta', 'Rosa', 'Cobre', 'Champagne']
+    if color:
+        if color not in COLORES_VALIDOS:
+            errors.append(f'El color debe ser uno de los siguientes: {", ".join(COLORES_VALIDOS)}')
     
     if estado and estado not in [choice[0] for choice in Vehiculo.ESTADO_CHOICES]:
         errors.append('Estado inválido')

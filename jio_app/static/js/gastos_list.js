@@ -464,6 +464,18 @@
             selectVehiculoActual = selectTarget;
             if (formVehiculoRapido) {
                 formVehiculoRapido.reset();
+                // Establecer año máximo dinámicamente
+                const añoInput = document.getElementById('vehiculoRapidoAño');
+                if (añoInput) {
+                    const añoMaximo = new Date().getFullYear() + 1;
+                    añoInput.max = añoMaximo;
+                    añoInput.setAttribute('max', añoMaximo);
+                    // Actualizar el texto de ayuda
+                    const añoMaximoSpan = document.getElementById('añoMaximoVehiculoRapido');
+                    if (añoMaximoSpan) {
+                        añoMaximoSpan.textContent = añoMaximo;
+                    }
+                }
             }
             openModal(modalVehiculoRapido);
         }

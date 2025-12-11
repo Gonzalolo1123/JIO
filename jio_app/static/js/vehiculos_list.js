@@ -82,10 +82,26 @@
             });
         });
         
+        // Función para establecer año máximo dinámicamente
+        function establecerAñoMaximo(tipo) {
+            const añoInput = document.getElementById(tipo === 'create' ? 'createVehiculoAño' : 'editVehiculoAño');
+            if (añoInput) {
+                const añoMaximo = new Date().getFullYear() + 1;
+                añoInput.max = añoMaximo;
+                añoInput.setAttribute('max', añoMaximo);
+                // Actualizar el texto de ayuda
+                const añoMaximoSpan = document.getElementById(tipo === 'create' ? 'añoMaximoCreate' : 'añoMaximoEdit');
+                if (añoMaximoSpan) {
+                    añoMaximoSpan.textContent = añoMaximo;
+                }
+            }
+        }
+        
         // Abrir modal de creación
         if (btnOpenCreate) {
             btnOpenCreate.addEventListener('click', function() {
                 clearForm(formCreate);
+                establecerAñoMaximo('create');
                 openModal(modalCreate);
             });
         }
@@ -261,6 +277,7 @@
                     
                     if (response.ok) {
                         populateEditForm(vehiculo);
+                        establecerAñoMaximo('edit');
                         openModal(modalEdit);
                     } else {
                         mostrarErroresValidacion([vehiculo.error || 'Error al cargar el vehículo'], 'Error al Cargar Vehículo');
