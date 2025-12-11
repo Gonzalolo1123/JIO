@@ -5916,6 +5916,9 @@ def gasto_create_json(request):
     else:
         try:
             monto_decimal = Decimal(monto)
+            # Validar que sea un número entero (sin decimales)
+            if monto_decimal % 1 != 0:
+                errors.append('El monto debe ser un número entero (sin decimales)')
             if monto_decimal < 1:
                 errors.append('El monto debe ser al menos $1')
             
@@ -6050,10 +6053,38 @@ def gasto_update_json(request, gasto_id: int):
     if monto:
         try:
             monto_decimal = Decimal(monto)
+            # Validar que sea un número entero (sin decimales)
+            if monto_decimal % 1 != 0:
+                errors.append('El monto debe ser un número entero (sin decimales)')
             if monto_decimal < 1:
                 errors.append('El monto debe ser al menos $1')
-            elif monto_decimal > Decimal('20000000'):  # Máximo $20,000,000 CLP
-                errors.append('El monto no puede exceder $20,000,000')
+            
+            # Límites razonables por categoría
+            limites_categoria = {
+                'combustible': (10000, 30000, 'Combustible: entre $10,000 y $30,000'),
+                'mantenimiento': (20000, 2000000, 'Mantenimiento: entre $20,000 y $2,000,000'),
+                'publicidad': (10000, 500000, 'Publicidad: entre $10,000 y $500,000'),
+                'servicios': (10000, 100000, 'Servicios: entre $10,000 y $100,000'),
+                'materiales': (5000, 150000, 'Materiales: entre $5,000 y $150,000'),
+                'salarios': (200000, 2000000, 'Salarios: entre $200,000 y $2,000,000'),
+                'alquiler': (100000, 1000000, 'Alquiler: entre $100,000 y $1,000,000'),
+                'seguros': (50000, 500000, 'Seguros: entre $50,000 y $500,000'),
+                'impuestos': (10000, 500000, 'Impuestos: entre $10,000 y $500,000'),
+                'otros': (1000, 200000, 'Otros: entre $1,000 y $200,000'),
+            }
+            
+            # Usar la categoría del gasto existente si no se proporciona una nueva
+            categoria_validar = categoria or gasto.categoria
+            if categoria_validar in limites_categoria:
+                min_monto, max_monto, mensaje = limites_categoria[categoria_validar]
+                if monto_decimal < min_monto:
+                    errors.append(f'El monto es muy bajo para esta categoría. {mensaje}')
+                elif monto_decimal > max_monto:
+                    errors.append(f'El monto es muy alto para esta categoría. {mensaje}')
+            else:
+                # Límite general si la categoría no está en el diccionario
+                if monto_decimal > Decimal('2000000'):
+                    errors.append('El monto no puede exceder $2,000,000')
         except (ValueError, TypeError):
             errors.append('El monto debe ser un número válido')
     
@@ -7844,11 +7875,13 @@ def material_create_json(request):
     if stock_actual:
         try:
             stock_actual_int = int(stock_actual)
-            if stock_actual_int < 0:
-                errors.append('El stock actual no puede ser negativo')
+            if stock_actual_int < 1:
+                errors.append('El stock actual debe ser al menos 1 unidad (no se permite 0)')
             # Removemos el límite máximo de 100 unidades para permitir más flexibilidad
         except ValueError:
             errors.append('Stock actual inválido')
+    else:
+        errors.append('El stock actual es obligatorio y debe ser al menos 1')
     
     stock_minimo_int = 2  # Por defecto 2
     if stock_minimo:
@@ -7870,12 +7903,14 @@ def material_create_json(request):
             # Validar que sea un número entero (sin decimales)
             if precio_decimal % 1 != 0:
                 errors.append('El precio unitario debe ser un número entero (sin decimales)')
-            if precio_decimal < 0:
-                errors.append('El precio unitario debe ser mayor o igual a 0')
+            if precio_decimal < 1:
+                errors.append('El precio unitario debe ser al menos $1 (no se permite 0)')
             elif precio_decimal > Decimal('2000000'):  # Máximo $2,000,000 CLP
                 errors.append('El precio unitario no puede exceder $2,000,000')
         except (ValueError, TypeError):
             errors.append('Precio unitario inválido')
+    else:
+        errors.append('El precio unitario es obligatorio y debe ser al menos $1')
     
     fecha_compra = None
     if fecha_ultima_compra:
@@ -8026,8 +8061,8 @@ def material_update_json(request, material_id: int):
     if stock_actual:
         try:
             stock_actual_int = int(stock_actual)
-            if stock_actual_int < 0:
-                errors.append('El stock actual no puede ser negativo')
+            if stock_actual_int < 1:
+                errors.append('El stock actual debe ser al menos 1 unidad (no se permite 0)')
             # Removemos el límite máximo de 100 unidades para permitir más flexibilidad
             else:
                 material.stock_actual = stock_actual_int
@@ -8059,8 +8094,8 @@ def material_update_json(request, material_id: int):
             # Validar que sea un número entero (sin decimales)
             if precio_decimal % 1 != 0:
                 errors.append('El precio unitario debe ser un número entero (sin decimales)')
-            if precio_decimal < 0:
-                errors.append('El precio unitario debe ser mayor o igual a 0')
+            if precio_decimal < 1:
+                errors.append('El precio unitario debe ser al menos $1 (no se permite 0)')
             elif precio_decimal > Decimal('2000000'):  # Máximo $2,000,000 CLP
                 errors.append('El precio unitario no puede exceder $2,000,000')
             else:

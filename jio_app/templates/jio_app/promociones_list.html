@@ -152,7 +152,7 @@
       <thead>
         <tr>
           <th>ID</th>
-          <th>Código</th>
+          <th>Código Descuento</th>
           <th>Nombre</th>
           <th>Tipo</th>
           <th>Valor</th>
@@ -220,7 +220,7 @@
       <form id="formCreatePromocion" class="form-grid" data-endpoint="{% url 'jio_app:promocion_create_json' %}">
         {% csrf_token %}
         <label>
-          Código *
+          Código Descuento *
           <input type="text" name="codigo" required maxlength="50" style="text-transform:uppercase;">
         </label>
         <label>

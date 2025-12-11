@@ -41,11 +41,13 @@
         </label>
         <label>
           Stock actual
-          <input type="number" name="stock_actual" id="editMaterialStockActual" min="0" value="0">
+          <input type="number" name="stock_actual" id="editMaterialStockActual" min="1" required>
+          <small style="color:#666;">Mínimo 1 unidad (no se permite 0)</small>
         </label>
         <label>
           Stock mínimo
-          <input type="number" name="stock_minimo" id="editMaterialStockMinimo" min="0" value="0">
+          <input type="number" name="stock_minimo" id="editMaterialStockMinimo" min="2" value="2">
+          <small style="color:#666;">Mínimo 2 unidades</small>
         </label>
         <label>
           Unidad de medida
@@ -57,7 +59,8 @@
         </label>
         <label>
           Precio unitario ($)
-          <input type="number" name="precio_unitario" id="editMaterialPrecio" min="0" step="1" value="0">
+          <input type="number" name="precio_unitario" id="editMaterialPrecio" min="1" step="1" required>
+          <small style="color:#666;">Mínimo $1 (no se permite 0)</small>
           <small style="color:#666;">Solo valores enteros (sin decimales)</small>
         </label>
         <label>
@@ -218,12 +221,14 @@
           </div>
         </label>
         <label>
-          Stock actual
-          <input type="number" name="stock_actual" min="0" value="0">
+          Stock actual *
+          <input type="number" name="stock_actual" min="1" required>
+          <small style="color:#666;">Mínimo 1 unidad (no se permite 0)</small>
         </label>
         <label>
           Stock mínimo
-          <input type="number" name="stock_minimo" min="0" value="0">
+          <input type="number" name="stock_minimo" min="2" value="2">
+          <small style="color:#666;">Mínimo 2 unidades</small>
         </label>
         <label>
           Unidad de medida
@@ -235,7 +240,8 @@
         </label>
         <label>
           Precio unitario ($)
-          <input type="number" name="precio_unitario" min="0" step="1" value="0">
+          <input type="number" name="precio_unitario" min="1" step="1" required>
+          <small style="color:#666;">Mínimo $1 (no se permite 0)</small>
           <small style="color:#666;">Solo valores enteros (sin decimales)</small>
         </label>
         <label>
@@ -362,6 +368,9 @@
       const createCategoriaSelect = document.getElementById('createMaterialCategoria');
       const editCategoriaSelect = document.getElementById('editMaterialCategoria');
       
+      // Variables de estado para prevenir múltiples envíos
+      let isSubmittingCategoria = false;
+      
       // Función para abrir/cerrar modales
       function openModal(modal) {
         if (!modal) return;
@@ -388,13 +397,26 @@
         openModal(modalProveedorQuick);
       });
       
+      // Función para resetear el estado del modal de categoría
+      function resetCategoriaModalState() {
+        isSubmittingCategoria = false;
+        if (formCategoriaQuick) {
+          const submitBtn = formCategoriaQuick.querySelector('button[type="submit"]');
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Crear Categoría';
+          }
+          formCategoriaQuick.reset();
+        }
+      }
+      
       document.getElementById('btnAddCategoriaCreate')?.addEventListener('click', () => {
-        formCategoriaQuick.reset();
+        resetCategoriaModalState();
         openModal(modalCategoriaQuick);
       });
       
       document.getElementById('btnAddCategoriaEdit')?.addEventListener('click', () => {
-        formCategoriaQuick.reset();
+        resetCategoriaModalState();
         openModal(modalCategoriaQuick);
       });
       
@@ -406,10 +428,16 @@
           if (modal) {
             // Solo resetear el formulario si es el modal de categoría o proveedor rápido
             // NO resetear el formulario principal de material
-            if (modal === modalCategoriaQuick && formCategoriaQuick) {
-              formCategoriaQuick.reset();
+            if (modal === modalCategoriaQuick) {
+              resetCategoriaModalState();
             } else if (modal === modalProveedorQuick && formProveedorQuick) {
               formProveedorQuick.reset();
+            } else if (modal === document.getElementById('modalCreateMaterial') || modal === document.getElementById('modalEditMaterial')) {
+              // Si se cierra el modal de material, también resetear el estado de categoría si estaba abierto
+              if (modalCategoriaQuick && modalCategoriaQuick.getAttribute('aria-hidden') === 'false') {
+                resetCategoriaModalState();
+                closeModal(modalCategoriaQuick);
+              }
             }
             closeModal(modal);
           }
@@ -531,7 +559,6 @@
       }
       
       // Envío del formulario de categoría rápida
-      let isSubmittingCategoria = false;
       if (formCategoriaQuick && !formCategoriaQuick.dataset.listenerAttached) {
         formCategoriaQuick.dataset.listenerAttached = 'true';
         formCategoriaQuick.addEventListener('submit', async function(e) {
@@ -578,10 +605,9 @@
                 });
               }
               addCategoriaToSelect(data.categoria_value, data.categoria_label);
-              // Solo resetear el formulario de categoría, NO el formulario principal
-              formCategoriaQuick.reset();
+              // Resetear estado y cerrar modal
+              resetCategoriaModalState();
               closeModal(modalCategoriaQuick);
-              isSubmittingCategoria = false;
             } else {
               mostrarErroresValidacion(data.errors || ['Error al crear la categoría'], 'Error al Crear Categoría');
               isSubmittingCategoria = false;
