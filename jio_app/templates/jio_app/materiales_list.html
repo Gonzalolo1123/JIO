@@ -308,11 +308,13 @@
         </label>
         <label>
           <strong>Teléfono</strong>
-          <input type="text" name="telefono" maxlength="15" pattern="[\d\s\-\+\(\)]+" title="Solo números, espacios, guiones, paréntesis y +" placeholder="Ej: +56 9 1234 5678" style="margin-top: 0.5rem; width: 100%; padding: 0.75rem; font-size: 1rem;">
+          <input type="text" name="telefono" id="quickProveedorTelefono" maxlength="15" pattern="[\d\s\-\+\(\)]+" title="Solo números, espacios, guiones, paréntesis y +" placeholder="Ej: +56 9 1234 5678" style="margin-top: 0.5rem; width: 100%; padding: 0.75rem; font-size: 1rem;">
+          <small style="color: #666; margin-top: 0.25rem; display: block; font-size: 0.875rem;">Al menos teléfono o email es requerido</small>
         </label>
         <label>
           <strong>Email</strong>
-          <input type="email" name="email" maxlength="254" placeholder="correo@ejemplo.com" style="margin-top: 0.5rem; width: 100%; padding: 0.75rem; font-size: 1rem;">
+          <input type="email" name="email" id="quickProveedorEmail" maxlength="254" placeholder="correo@ejemplo.com" style="margin-top: 0.5rem; width: 100%; padding: 0.75rem; font-size: 1rem;">
+          <small style="color: #666; margin-top: 0.25rem; display: block; font-size: 0.875rem;">Al menos teléfono o email es requerido</small>
         </label>
         <label style="grid-column: 1 / -1;">
           <strong>Observaciones</strong>
@@ -370,6 +372,7 @@
       
       // Variables de estado para prevenir múltiples envíos
       let isSubmittingCategoria = false;
+      let isSubmittingProveedor = false;
       
       // Función para abrir/cerrar modales
       function openModal(modal) {
@@ -388,12 +391,12 @@
       
       // Botones para abrir modales de creación rápida
       document.getElementById('btnAddProveedorCreate')?.addEventListener('click', () => {
-        formProveedorQuick.reset();
+        resetProveedorModalState();
         openModal(modalProveedorQuick);
       });
       
       document.getElementById('btnAddProveedorEdit')?.addEventListener('click', () => {
-        formProveedorQuick.reset();
+        resetProveedorModalState();
         openModal(modalProveedorQuick);
       });
       
@@ -407,6 +410,19 @@
             submitBtn.textContent = 'Crear Categoría';
           }
           formCategoriaQuick.reset();
+        }
+      }
+      
+      // Función para resetear el estado del modal de proveedor
+      function resetProveedorModalState() {
+        isSubmittingProveedor = false;
+        if (formProveedorQuick) {
+          const submitBtn = formProveedorQuick.querySelector('button[type="submit"]');
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Crear Proveedor';
+          }
+          formProveedorQuick.reset();
         }
       }
       
@@ -430,13 +446,17 @@
             // NO resetear el formulario principal de material
             if (modal === modalCategoriaQuick) {
               resetCategoriaModalState();
-            } else if (modal === modalProveedorQuick && formProveedorQuick) {
-              formProveedorQuick.reset();
+            } else if (modal === modalProveedorQuick) {
+              resetProveedorModalState();
             } else if (modal === document.getElementById('modalCreateMaterial') || modal === document.getElementById('modalEditMaterial')) {
-              // Si se cierra el modal de material, también resetear el estado de categoría si estaba abierto
+              // Si se cierra el modal de material, también resetear el estado de categoría y proveedor si estaban abiertos
               if (modalCategoriaQuick && modalCategoriaQuick.getAttribute('aria-hidden') === 'false') {
                 resetCategoriaModalState();
                 closeModal(modalCategoriaQuick);
+              }
+              if (modalProveedorQuick && modalProveedorQuick.getAttribute('aria-hidden') === 'false') {
+                resetProveedorModalState();
+                closeModal(modalProveedorQuick);
               }
             }
             closeModal(modal);
@@ -487,7 +507,6 @@
       }
       
       // Envío del formulario de proveedor rápido
-      let isSubmittingProveedor = false;
       if (formProveedorQuick && !formProveedorQuick.dataset.listenerAttached) {
         formProveedorQuick.dataset.listenerAttached = 'true';
         formProveedorQuick.addEventListener('submit', async function(e) {
@@ -495,6 +514,15 @@
           
           // Prevenir múltiples envíos
           if (isSubmittingProveedor) {
+            return;
+          }
+          
+          // Validar que al menos email o teléfono esté presente
+          const telefono = document.getElementById('quickProveedorTelefono')?.value.trim();
+          const email = document.getElementById('quickProveedorEmail')?.value.trim();
+          
+          if (!telefono && !email) {
+            mostrarErroresValidacion(['Debe proporcionar al menos un teléfono o un email de contacto'], 'Error de Validación');
             return;
           }
           
@@ -534,10 +562,9 @@
                 });
               }
               addProveedorToSelect(data.proveedor_id, formData.get('nombre'));
-              // Solo resetear el formulario de proveedor, NO el formulario principal
-              formProveedorQuick.reset();
+              // Resetear estado y cerrar modal
+              resetProveedorModalState();
               closeModal(modalProveedorQuick);
-              isSubmittingProveedor = false;
             } else {
               mostrarErroresValidacion(data.errors || ['Error al crear el proveedor'], 'Error al Crear Proveedor');
               isSubmittingProveedor = false;

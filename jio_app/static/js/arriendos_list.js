@@ -1548,6 +1548,10 @@
                 
                 const endpoint = `${arriendosBase}${arriendoId}/update/`;
                 
+                // Variable para controlar si se debe recargar la página
+                let shouldReload = false;
+                let reloadTimeout = null;
+                
                 try {
                     const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value;
                     if (!csrfToken) {
@@ -1562,33 +1566,103 @@
                         }
                     });
                     
-                    if (!response.ok) {
-                        const errorData = await response.json().catch(() => ({ errors: [`Error ${response.status}`] }));
-                        throw new Error(JSON.stringify(errorData));
+                    // Verificar primero si la respuesta es exitosa antes de intentar parsear
+                    // Esto nos permite manejar mejor los casos donde el JSON falla pero la respuesta es exitosa
+                    const isResponseOk = response.ok;
+                    
+                    // Leer la respuesta
+                    let data = null;
+                    try {
+                        data = await response.json();
+                    } catch (jsonError) {
+                        console.error('Error al parsear JSON:', jsonError);
+                        // Si la respuesta es exitosa pero el JSON falla, asumir que el cambio se realizó correctamente
+                        if (isResponseOk) {
+                            console.warn('Respuesta exitosa pero JSON inválido, asumiendo éxito');
+                            // Tratar como éxito y salir del try-catch sin mostrar error
+                            mostrarExitoValidacion('Arriendo actualizado correctamente.', '¡Arriendo Actualizado!');
+                            closeModal(modalEdit);
+                            shouldReload = true;
+                            reloadTimeout = setTimeout(() => {
+                                if (shouldReload) {
+                                    window.location.reload();
+                                }
+                            }, 3000);
+                            return; // Salir temprano, no procesar más
+                        } else {
+                            // Si la respuesta no es exitosa, mostrar error
+                            throw new Error(JSON.stringify({ errors: ['Error al procesar la respuesta del servidor'] }));
+                        }
                     }
                     
-                    const data = await response.json();
+                    // Verificar si la respuesta es exitosa
+                    if (!isResponseOk) {
+                        // Si hay un error HTTP, mostrar los errores del servidor
+                        const errorMsg = data?.errors || data?.error || [`Error ${response.status}: ${response.statusText}`];
+                        console.error('Error HTTP:', response.status, errorMsg);
+                        throw new Error(JSON.stringify({ errors: Array.isArray(errorMsg) ? errorMsg : [errorMsg] }));
+                    }
                     
-                    if (data.success) {
-                        mostrarExitoValidacion(data.message, '¡Arriendo Actualizado!');
+                    // Verificar si data.success es false (aunque el status sea 200)
+                    if (data && data.success === false) {
+                        const errorMsg = data.errors || ['Error al actualizar el arriendo'];
+                        console.error('Error en respuesta (success=false):', errorMsg);
+                        throw new Error(JSON.stringify({ errors: Array.isArray(errorMsg) ? errorMsg : [errorMsg] }));
+                    }
+                    
+                    // Si llegamos aquí, todo está bien
+                    // Si data es null o undefined pero la respuesta es exitosa, también tratarlo como éxito
+                    if (!data || data.success !== false) {
+                        // Si data.success es true o data es null/undefined (pero la respuesta es 200), mostrar éxito
+                        mostrarExitoValidacion(data?.message || 'Arriendo actualizado correctamente.', '¡Arriendo Actualizado!');
                         closeModal(modalEdit);
-                        setTimeout(() => window.location.reload(), 1500);
+                        shouldReload = true;
+                        reloadTimeout = setTimeout(() => {
+                            if (shouldReload) {
+                                window.location.reload();
+                            }
+                        }, 3000);
                     } else {
-                        mostrarErroresValidacion(data.errors || ['Error al actualizar el arriendo'], 'Error al Actualizar Arriendo');
+                        // Caso inesperado: success es false explícitamente
+                        console.error('Respuesta inesperada:', data);
+                        mostrarErroresValidacion(data.errors || ['Error desconocido al actualizar el arriendo'], 'Error al Actualizar Arriendo');
                         isSubmittingEdit = false;
                         if (submitBtn) {
                             submitBtn.disabled = false;
                             submitBtn.textContent = originalText;
                         }
+                        shouldReload = false; // No recargar si hay error
                     }
                 } catch (error) {
-                    console.error('Error:', error);
+                    console.error('Error al actualizar arriendo:', error);
+                    let errorMessages = ['Error al actualizar el arriendo'];
+                    
                     try {
                         const errorObj = JSON.parse(error.message);
-                        mostrarErroresValidacion(errorObj.errors || ['Error al actualizar el arriendo'], 'Error al Actualizar Arriendo');
-                    } catch {
-                        mostrarErroresValidacion(['Error de conexión'], 'Error de Conexión');
+                        if (errorObj.errors && Array.isArray(errorObj.errors)) {
+                            errorMessages = errorObj.errors;
+                        } else if (errorObj.error) {
+                            errorMessages = [errorObj.error];
+                        } else if (typeof errorObj === 'string') {
+                            errorMessages = [errorObj];
+                        }
+                    } catch (parseError) {
+                        // Si no se puede parsear, usar el mensaje del error original
+                        if (error.message && error.message !== '') {
+                            errorMessages = [error.message];
+                        }
                     }
+                    
+                    // Cancelar la recarga si estaba programada
+                    shouldReload = false;
+                    if (reloadTimeout) {
+                        clearTimeout(reloadTimeout);
+                        reloadTimeout = null;
+                    }
+                    
+                    // Mostrar el error y NO recargar la página para que el usuario pueda ver el mensaje
+                    console.error('❌ Error al actualizar arriendo - Mensajes:', errorMessages);
+                    mostrarErroresValidacion(errorMessages, 'Error al Actualizar Arriendo');
                     isSubmittingEdit = false;
                     if (submitBtn) {
                         submitBtn.disabled = false;

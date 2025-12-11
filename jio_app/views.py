@@ -16,6 +16,8 @@ from django.conf import settings
 import re
 import secrets
 import string
+import os
+import logging
 from decimal import Decimal
 
 # Create your views here.
@@ -4997,8 +4999,7 @@ def arriendo_update_json(request, arriendo_id: int):
                 reserva.total_reserva = total_final
             except Exception as e:
                 # Si hay error al recalcular, mantener el total actual
-                import logging
-                logger = logging.getLogger(__name__)
+                logger = logging.getLogger(__name__)  # Usar el import global
                 logger.error(f'Error al recalcular total: {str(e)}')
     except json.JSONDecodeError:
         errors.append('Formato de juegos inválido')
@@ -5021,8 +5022,7 @@ def arriendo_update_json(request, arriendo_id: int):
             total_juegos = sum(detalle.subtotal for detalle in reserva.detalles.all())
             reserva.total_reserva = total_juegos + (reserva.precio_distancia or 0) + (reserva.precio_horas_extra or 0)
         except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
+            logger = logging.getLogger(__name__)  # Usar el import global
             logger.error(f'Error al calcular total_reserva: {str(e)}')
             reserva.total_reserva = 0
     
@@ -5038,6 +5038,8 @@ def arriendo_update_json(request, arriendo_id: int):
     
     try:
         reserva.save()
+        logger = logging.getLogger(__name__)
+        logger.info(f'Reserva #{reserva.id} guardada exitosamente')
         
         # Actualizar o crear instalación
         try:
@@ -5090,8 +5092,7 @@ def arriendo_update_json(request, arriendo_id: int):
             
             # Validación final: asegurar que todos los campos requeridos estén presentes
             if not instalacion.fecha_instalacion or not instalacion.hora_instalacion:
-                import logging
-                logger = logging.getLogger(__name__)
+                logger = logging.getLogger(__name__)  # Usar el import global
                 logger.error(f'Instalación sin fecha/hora requerida. Fecha: {instalacion.fecha_instalacion}, Hora: {instalacion.hora_instalacion}')
                 # Usar valores de la reserva como último recurso
                 if not instalacion.fecha_instalacion:
@@ -5103,9 +5104,8 @@ def arriendo_update_json(request, arriendo_id: int):
                 instalacion.save()
             except Exception as e:
                 # Si hay error al guardar la instalación, registrar pero no fallar
-                import logging
                 import traceback
-                logger = logging.getLogger(__name__)
+                logger = logging.getLogger(__name__)  # Usar el import global
                 logger.error(f'Error al guardar instalación: {str(e)}')
                 logger.error(f'Traceback: {traceback.format_exc()}')
                 logger.error(f'Datos instalación: fecha={instalacion.fecha_instalacion}, hora={instalacion.hora_instalacion}, direccion={instalacion.direccion_instalacion}')
@@ -5151,8 +5151,7 @@ def arriendo_update_json(request, arriendo_id: int):
                     )
                 except Exception as e:
                     # Si hay error al crear la instalación, registrar pero no fallar
-                    import logging
-                    logger = logging.getLogger(__name__)
+                    logger = logging.getLogger(__name__)  # Usar el import global
                     logger.error(f'Error al crear instalación: {str(e)}')
         
         # Actualizar o crear retiro
@@ -5191,8 +5190,7 @@ def arriendo_update_json(request, arriendo_id: int):
             
             # Validación final: asegurar que todos los campos requeridos estén presentes
             if not retiro.fecha_retiro or not retiro.hora_retiro:
-                import logging
-                logger = logging.getLogger(__name__)
+                logger = logging.getLogger(__name__)  # Usar el import global
                 logger.error(f'Retiro sin fecha/hora requerida. Fecha: {retiro.fecha_retiro}, Hora: {retiro.hora_retiro}')
                 # Usar valores de la reserva como último recurso
                 if not retiro.fecha_retiro:
@@ -5204,9 +5202,8 @@ def arriendo_update_json(request, arriendo_id: int):
                 retiro.save()
             except Exception as e:
                 # Si hay error al guardar el retiro, registrar pero no fallar
-                import logging
                 import traceback
-                logger = logging.getLogger(__name__)
+                logger = logging.getLogger(__name__)  # Usar el import global
                 logger.error(f'Error al guardar retiro: {str(e)}')
                 logger.error(f'Traceback: {traceback.format_exc()}')
                 logger.error(f'Datos retiro: fecha={retiro.fecha_retiro}, hora={retiro.hora_retiro}')
@@ -5245,14 +5242,12 @@ def arriendo_update_json(request, arriendo_id: int):
                     )
                 except Exception as e:
                     # Si hay error al crear el retiro, registrar pero no fallar
-                    import logging
-                    logger = logging.getLogger(__name__)
+                    logger = logging.getLogger(__name__)  # Usar el import global
                     logger.error(f'Error al crear retiro: {str(e)}')
         
         # Asegurar que la reserva tenga un ID antes de retornar
         if not reserva.id:
-            import logging
-            logger = logging.getLogger(__name__)
+            logger = logging.getLogger(__name__)  # Usar el import global
             logger.error('Reserva no tiene ID después de guardar')
             return JsonResponse({
                 'success': False, 
@@ -5260,16 +5255,22 @@ def arriendo_update_json(request, arriendo_id: int):
             }, status=500)
         
         try:
-            return JsonResponse({
+            # Log antes de retornar para verificar que llegamos aquí
+            logger = logging.getLogger(__name__)
+            logger.info(f'Preparando respuesta exitosa para arriendo #{reserva.id}')
+            
+            response_data = {
                 'success': True, 
                 'message': f'Arriendo #{reserva.id} actualizado correctamente.',
                 'arriendo_id': reserva.id
-            })
+            }
+            
+            logger.info(f'Retornando respuesta exitosa para arriendo #{reserva.id}')
+            return JsonResponse(response_data)
         except Exception as json_error:
             # Si hay error al crear la respuesta JSON, los cambios ya se guardaron
-            import logging
             import traceback
-            logger = logging.getLogger(__name__)
+            logger = logging.getLogger(__name__)  # Usar el import global, no importar logging aquí
             logger.error(f'Error al crear respuesta JSON (pero cambios guardados): {str(json_error)}\n{traceback.format_exc()}')
             # Retornar respuesta simple sin usar reserva.id
             return JsonResponse({
@@ -5279,8 +5280,7 @@ def arriendo_update_json(request, arriendo_id: int):
             })
     except Exception as e:
         import traceback
-        import logging
-        logger = logging.getLogger(__name__)
+        logger = logging.getLogger(__name__)  # Usar el import global
         error_trace = traceback.format_exc()
         error_msg = str(e)
         logger.error(f'Error al actualizar arriendo #{arriendo_id}: {error_msg}\n{error_trace}')
@@ -5307,10 +5307,15 @@ def arriendo_update_json(request, arriendo_id: int):
         except Exception as save_error:
             logger.error(f'Error al guardar reserva en catch: {str(save_error)}')
         
-        # Retornar error más descriptivo
+        # Retornar error más descriptivo con información del traceback
+        error_details = error_msg
+        if 'DEBUG' in os.environ or settings.DEBUG:
+            # En modo debug, incluir más detalles
+            error_details = f'{error_msg}\n\nTraceback:\n{error_trace[:500]}'  # Limitar a 500 caracteres
+        
         return JsonResponse({
             'success': False, 
-            'errors': [f'Error al actualizar el arriendo: {error_msg}']
+            'errors': [f'Error al actualizar el arriendo: {error_details}']
         }, status=500)
 
 
@@ -8396,6 +8401,10 @@ def proveedor_create_json(request):
             validate_email(email)
         except ValidationError:
             errors.append('Email inválido')
+    
+    # Validar que al menos email o teléfono esté presente
+    if not telefono and not email:
+        errors.append('Debe proporcionar al menos un teléfono o un email de contacto')
     
     activo_bool = activo.lower() in ['true', '1', 'yes', 'si', 'sí']
 

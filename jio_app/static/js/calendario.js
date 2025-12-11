@@ -229,6 +229,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     const distanciaInput = document.getElementById('distancia_km');
                     if (distanciaInput) {
                         distanciaInput.value = Math.round(distancia);
+                        // Disparar evento 'input' para actualizar el precio automáticamente
+                        distanciaInput.dispatchEvent(new Event('input', { bubbles: true }));
                     }
                     
                     // Mostrar información
