@@ -225,7 +225,11 @@ document.addEventListener('DOMContentLoaded', function() {
                     if (direccionCompletaInput) direccionCompletaInput.value = direccionCompleta;
                     
                     // Calcular distancia desde Osorno
-                    const distancia = calcularDistancia(OSORNO_LAT, OSORNO_LNG, lat, lng);
+                    let distancia = calcularDistancia(OSORNO_LAT, OSORNO_LNG, lat, lng);
+                    // Limitar a máximo 50 km
+                    if (distancia > 50) {
+                        distancia = 50;
+                    }
                     const distanciaInput = document.getElementById('distancia_km');
                     if (distanciaInput) {
                         distanciaInput.value = Math.round(distancia);
@@ -1299,7 +1303,21 @@ document.addEventListener('DOMContentLoaded', function() {
         const distanciaInput = document.getElementById('distancia_km');
         const precioDistanciaSpan = document.getElementById('precio-distancia');
         if (distanciaInput && precioDistanciaSpan) {
-            const km = parseInt(distanciaInput.value) || 0;
+            let km = parseInt(distanciaInput.value) || 0;
+            // Validar máximo de 50 km
+            if (km > 50) {
+                km = 50;
+                distanciaInput.value = 50;
+                if (typeof Swal !== 'undefined') {
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'Distancia máxima',
+                        text: 'La distancia no puede ser mayor a 50 km. Se ha ajustado a 50 km.',
+                        timer: 3000,
+                        showConfirmButton: false
+                    });
+                }
+            }
             const precio = calcularPrecioDistancia(km);
             precioDistanciaSpan.textContent = formatearPrecioChileno(precio);
         }

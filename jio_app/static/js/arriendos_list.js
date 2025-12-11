@@ -457,7 +457,22 @@
             
             if (!distanciaInput) return;
             
-            const distanciaKm = parseInt(distanciaInput.value) || 0;
+            let distanciaKm = parseInt(distanciaInput.value) || 0;
+            // Validar máximo de 50 km
+            if (distanciaKm > 50) {
+                distanciaKm = 50;
+                distanciaInput.value = 50;
+                if (typeof Swal !== 'undefined') {
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'Distancia máxima',
+                        text: 'La distancia no puede ser mayor a 50 km. Se ha ajustado a 50 km.',
+                        timer: 3000,
+                        showConfirmButton: false
+                    });
+                }
+            }
+            
             const precioDistancia = calcularPrecioDistancia(distanciaKm);
             
             if (precioSpan) {

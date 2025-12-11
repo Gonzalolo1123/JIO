@@ -595,6 +595,8 @@ def crear_reserva_publica(request):
             distancia_km_int = int(distancia_km)
             if distancia_km_int < 0:
                 errors.append('La distancia no puede ser negativa')
+            elif distancia_km_int > 50:
+                errors.append('La distancia no puede ser mayor a 50 km')
         except ValueError:
             errors.append('La distancia debe ser un número válido')
     
@@ -4590,6 +4592,8 @@ def arriendo_create_json(request):
             distancia_km_int = int(distancia_km)
             if distancia_km_int < 0:
                 errors.append('La distancia no puede ser negativa')
+            elif distancia_km_int > 50:
+                errors.append('La distancia no puede ser mayor a 50 km')
         except ValueError:
             errors.append('La distancia debe ser un número válido')
     
@@ -4910,6 +4914,8 @@ def arriendo_update_json(request, arriendo_id: int):
             distancia_km_int = int(distancia_km)
             if distancia_km_int < 0:
                 errors.append('La distancia no puede ser negativa')
+            elif distancia_km_int > 50:
+                errors.append('La distancia no puede ser mayor a 50 km')
             else:
                 PRECIO_POR_KM = 1000
                 reserva.distancia_km = distancia_km_int
