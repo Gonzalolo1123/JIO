@@ -5,7 +5,7 @@ from django.contrib import messages
 from django.http import JsonResponse
 from django.core.exceptions import PermissionDenied
 from django.urls import reverse
-from .models import Juego, Usuario, Repartidor, Cliente, Instalacion, Retiro, Reserva, DetalleReserva
+from .models import Juego, Usuario, Repartidor, Cliente, Instalacion, Retiro, Reserva, DetalleReserva, Vehiculo, GastoOperativo, Promocion, Evaluacion, PrecioTemporada, MantenimientoVehiculo, Proveedor, Material, CategoriaMaterial, UsoPromocion
 from django.views.decorators.http import require_http_methods
 from django.core import signing
 from django.utils import timezone
@@ -16,6 +16,9 @@ from django.conf import settings
 import re
 import secrets
 import string
+import os
+import logging
+from decimal import Decimal
 
 # Create your views here.
 
@@ -278,6 +281,173 @@ def disponibilidad_fecha_json(request):
 
 @require_http_methods(["POST"])
 @csrf_exempt
+def validar_codigo_descuento(request):
+    """
+    Valida un código de descuento para una fecha y email específicos
+    """
+    import json
+    
+    try:
+        if request.content_type == 'application/json':
+            data = json.loads(request.body)
+        else:
+            data = request.POST.dict()
+    except:
+        data = request.POST.dict()
+    
+    # Manejar datos que pueden venir como string o otros tipos
+    codigo_raw = data.get('codigo', '')
+    codigo = str(codigo_raw).strip().upper() if codigo_raw else ''
+    
+    fecha_evento_raw = data.get('fecha', '')
+    fecha_evento = str(fecha_evento_raw).strip() if fecha_evento_raw else ''
+    
+    email_raw = data.get('email', '')
+    email = str(email_raw).strip() if email_raw else ''
+    
+    # total_precio puede venir como int, float o string desde JSON
+    total_precio_raw = data.get('total_precio', '0')
+    if isinstance(total_precio_raw, (int, float)):
+        total_precio = str(total_precio_raw)
+    else:
+        total_precio = str(total_precio_raw).strip() if total_precio_raw else '0'
+    juegos_ids = data.get('juegos_ids', [])  # IDs de juegos seleccionados
+    
+    # Parsear juegos_ids si viene como string
+    if isinstance(juegos_ids, str):
+        try:
+            juegos_ids = json.loads(juegos_ids)
+        except:
+            juegos_ids = []
+    
+    if not codigo:
+        return JsonResponse({
+            'success': False,
+            'error': 'El código es obligatorio'
+        }, status=400)
+    
+    if not fecha_evento:
+        return JsonResponse({
+            'success': False,
+            'error': 'La fecha es obligatoria'
+        }, status=400)
+    
+    # Validar formato de fecha
+    try:
+        from datetime import datetime
+        fecha_obj = datetime.strptime(fecha_evento, '%Y-%m-%d').date()
+    except ValueError:
+        return JsonResponse({
+            'success': False,
+            'error': 'Formato de fecha inválido'
+        }, status=400)
+    
+    # Buscar la promoción
+    try:
+        promocion = Promocion.objects.get(codigo=codigo)
+    except Promocion.DoesNotExist:
+        return JsonResponse({
+            'success': False,
+            'error': 'Código de descuento no encontrado'
+        }, status=404)
+    
+    # Validar que esté vigente
+    if not promocion.esta_vigente:
+        return JsonResponse({
+            'success': False,
+            'error': 'Este código de descuento no está vigente'
+        }, status=400)
+    
+    # Validar que la fecha del evento esté dentro del rango de la promoción
+    if fecha_obj < promocion.fecha_inicio or fecha_obj > promocion.fecha_fin:
+        return JsonResponse({
+            'success': False,
+            'error': f'Este código solo es válido del {promocion.fecha_inicio.strftime("%d/%m/%Y")} al {promocion.fecha_fin.strftime("%d/%m/%Y")}'
+        }, status=400)
+    
+    # Validar que pueda usarse (límite de usos)
+    if not promocion.puede_usarse:
+        return JsonResponse({
+            'success': False,
+            'error': 'Este código ha alcanzado su límite de usos'
+        }, status=400)
+    
+    # Validar que el email no haya usado este código antes
+    if email:
+        if UsoPromocion.objects.filter(promocion=promocion, email=email).exists():
+            return JsonResponse({
+                'success': False,
+                'error': 'Ya has usado este código de descuento anteriormente'
+            }, status=400)
+    
+    # Validar monto mínimo
+    try:
+        total_precio_decimal = Decimal(str(total_precio))
+        if promocion.monto_minimo > 0 and total_precio_decimal < promocion.monto_minimo:
+            return JsonResponse({
+                'success': False,
+                'error': f'El monto mínimo para aplicar este descuento es ${promocion.monto_minimo:,.0f}'
+            }, status=400)
+    except (ValueError, TypeError):
+        pass  # Si no se puede parsear el total, continuamos
+    
+    # Validar que los juegos sean aplicables (si la promoción tiene juegos específicos)
+    if promocion.juegos.exists():
+        juegos_promocion = set(promocion.juegos.values_list('id', flat=True))
+        juegos_seleccionados = set([int(jid) for jid in juegos_ids if jid])
+        
+        if not juegos_seleccionados.intersection(juegos_promocion):
+            return JsonResponse({
+                'success': False,
+                'error': 'Este código no es aplicable a los juegos seleccionados'
+            }, status=400)
+    
+    # Calcular el descuento
+    try:
+        total_precio_decimal = Decimal(str(total_precio))
+    except (ValueError, TypeError):
+        total_precio_decimal = Decimal('0')
+    
+    monto_descuento = Decimal('0')
+    
+    if promocion.tipo_descuento == 'porcentaje':
+        monto_descuento = total_precio_decimal * (promocion.valor_descuento / Decimal('100'))
+    elif promocion.tipo_descuento == 'monto_fijo':
+        monto_descuento = promocion.valor_descuento
+        # Validar que quede al menos un 10% de margen de ganancia
+        margen_minimo = total_precio_decimal * Decimal('0.10')  # 10% mínimo
+        monto_maximo_descuento = total_precio_decimal - margen_minimo
+        if monto_descuento > monto_maximo_descuento:
+            monto_descuento = monto_maximo_descuento  # Limitar para mantener margen
+        if monto_descuento > total_precio_decimal:
+            monto_descuento = total_precio_decimal  # No puede descontar más del total
+    elif promocion.tipo_descuento == 'envio_gratis':
+        # Envío gratis: descontar el precio por distancia
+        # Esto se calculará en el frontend o en la creación de la reserva
+        monto_descuento = Decimal('0')  # Se aplicará después
+    # 2x1 se manejaría de forma especial, por ahora no lo implementamos
+    
+    total_con_descuento = total_precio_decimal - monto_descuento
+    if total_con_descuento < 0:
+        total_con_descuento = Decimal('0')
+    
+    return JsonResponse({
+        'success': True,
+        'promocion': {
+            'id': promocion.id,
+            'codigo': promocion.codigo,
+            'nombre': promocion.nombre,
+            'tipo_descuento': promocion.tipo_descuento,
+            'valor_descuento': float(promocion.valor_descuento),
+            'monto_descuento': float(monto_descuento),
+            'total_con_descuento': float(total_con_descuento),
+            'envio_gratis': promocion.tipo_descuento == 'envio_gratis'
+        }
+    })
+
+
+@require_http_methods(["POST"])
+@csrf_exempt
 def crear_reserva_publica(request):
     """
     Crea una reserva desde el calendario público (sin autenticación)
@@ -304,6 +474,7 @@ def crear_reserva_publica(request):
     observaciones = data.get('observaciones', '').strip()
     distancia_km = data.get('distancia_km', '0').strip()
     juegos_data = data.get('juegos', [])  # Array de juegos
+    codigo_descuento = data.get('codigo_descuento', '').strip().upper()  # Código de descuento
     
     # Debug: imprimir datos recibidos
     import logging
@@ -424,6 +595,8 @@ def crear_reserva_publica(request):
             distancia_km_int = int(distancia_km)
             if distancia_km_int < 0:
                 errors.append('La distancia no puede ser negativa')
+            elif distancia_km_int > 50:
+                errors.append('La distancia no puede ser mayor a 50 km')
         except ValueError:
             errors.append('La distancia debe ser un número válido')
     
@@ -579,7 +752,65 @@ def crear_reserva_publica(request):
         precio_horas_extra = horas_extra * PRECIO_POR_HORA_EXTRA
     
     # Calcular total (suma de todos los juegos + precio por distancia + horas extra)
-    total_final = total_juegos + precio_distancia + precio_horas_extra
+    total_sin_descuento = total_juegos + precio_distancia + precio_horas_extra
+    
+    # Validar y aplicar código de descuento si existe
+    promocion = None
+    monto_descuento = Decimal('0')
+    total_final = total_sin_descuento
+    
+    if codigo_descuento:
+        try:
+            promocion = Promocion.objects.get(codigo=codigo_descuento)
+            
+            # Validar que esté vigente
+            if not promocion.esta_vigente:
+                errors.append('El código de descuento no está vigente')
+            # Validar fecha
+            elif fecha_obj < promocion.fecha_inicio or fecha_obj > promocion.fecha_fin:
+                errors.append(f'Este código solo es válido del {promocion.fecha_inicio.strftime("%d/%m/%Y")} al {promocion.fecha_fin.strftime("%d/%m/%Y")}')
+            # Validar que pueda usarse
+            elif not promocion.puede_usarse:
+                errors.append('Este código ha alcanzado su límite de usos')
+            # Validar que el email no lo haya usado
+            elif UsoPromocion.objects.filter(promocion=promocion, email=email).exists():
+                errors.append('Ya has usado este código de descuento anteriormente')
+            # Validar monto mínimo
+            elif promocion.monto_minimo > 0 and total_sin_descuento < promocion.monto_minimo:
+                errors.append(f'El monto mínimo para aplicar este descuento es ${promocion.monto_minimo:,.0f}')
+            # Validar juegos aplicables
+            elif promocion.juegos.exists():
+                juegos_promocion_ids = set(promocion.juegos.values_list('id', flat=True))
+                juegos_seleccionados_ids = set([j['juego'].id for j in juegos_validos])
+                if not juegos_seleccionados_ids.intersection(juegos_promocion_ids):
+                    errors.append('Este código no es aplicable a los juegos seleccionados')
+            else:
+                # Calcular descuento
+                if promocion.tipo_descuento == 'porcentaje':
+                    monto_descuento = total_sin_descuento * (promocion.valor_descuento / Decimal('100'))
+                elif promocion.tipo_descuento == 'monto_fijo':
+                    monto_descuento = promocion.valor_descuento
+                    # Validar que quede al menos un 10% de margen de ganancia
+                    margen_minimo = total_sin_descuento * Decimal('0.10')  # 10% mínimo
+                    monto_maximo_descuento = total_sin_descuento - margen_minimo
+                    if monto_descuento > monto_maximo_descuento:
+                        monto_descuento = monto_maximo_descuento  # Limitar para mantener margen
+                    if monto_descuento > total_sin_descuento:
+                        monto_descuento = total_sin_descuento
+                elif promocion.tipo_descuento == 'envio_gratis':
+                    # Descontar el precio por distancia
+                    monto_descuento = precio_distancia
+                
+                total_final = total_sin_descuento - monto_descuento
+                if total_final < 0:
+                    total_final = Decimal('0')
+        except Promocion.DoesNotExist:
+            errors.append('Código de descuento no encontrado')
+        except Exception as e:
+            errors.append(f'Error al validar código de descuento: {str(e)}')
+    
+    if errors:
+        return JsonResponse({'success': False, 'errors': errors}, status=400)
     
     try:
         # Crear reserva
@@ -593,6 +824,8 @@ def crear_reserva_publica(request):
             precio_distancia=precio_distancia,
             horas_extra=horas_extra,
             precio_horas_extra=precio_horas_extra,
+            promocion=promocion,
+            monto_descuento=monto_descuento,
             estado='pendiente',
             observaciones=observaciones or None,
             total_reserva=total_final,
@@ -607,6 +840,17 @@ def crear_reserva_publica(request):
                 precio_unitario=juego_item['precio_unitario'],
                 subtotal=juego_item['subtotal'],
             )
+        
+        # Registrar el uso de la promoción si se aplicó
+        if promocion:
+            UsoPromocion.objects.create(
+                promocion=promocion,
+                email=email,
+                reserva=reserva
+            )
+            # Incrementar contador de usos
+            promocion.usos_actuales += 1
+            promocion.save()
         
         return JsonResponse({
             'success': True,
@@ -809,6 +1053,8 @@ def create_admin(request):
             errors.append('Email inválido o demasiado largo (máx 100).')
         if len(password) < 8:
             errors.append('La contraseña debe tener al menos 8 caracteres.')
+        if ' ' in password:
+            errors.append('La contraseña no puede contener espacios.')
         if Usuario.objects.filter(email=email).exists():
             errors.append('Ya existe un usuario con ese email.')
         # Generar username único basado en nombre y apellido
@@ -1094,6 +1340,8 @@ def invite_signup(request):
             errors.append('Usuario inválido. Use 3-30 caracteres: letras, números, . _ -')
         if len(password) < 8:
             errors.append('La contraseña debe tener al menos 8 caracteres.')
+        if ' ' in password:
+            errors.append('La contraseña no puede contener espacios.')
         if role == 'repartidor':
             if telefono and telefono_regex.match(telefono) is None:
                 errors.append('El teléfono no tiene un formato válido (8-15 dígitos, puede incluir +, -, (), espacios).')
@@ -1980,7 +2228,6 @@ def juego_create_json(request):
     dimension_largo = request.POST.get('dimension_largo', '').strip()
     dimension_ancho = request.POST.get('dimension_ancho', '').strip()
     dimension_alto = request.POST.get('dimension_alto', '').strip()
-    capacidad_personas = request.POST.get('capacidad_personas', '').strip()
     peso_maximo = request.POST.get('peso_maximo', '').strip()
     precio_base = request.POST.get('precio_base', '').strip()
     foto = request.FILES.get('foto')  # Cambio: Ahora recibimos un archivo
@@ -1988,7 +2235,9 @@ def juego_create_json(request):
     peso_excedido_confirmado = request.POST.get('peso_excedido_confirmado', 'false').strip().lower() == 'true'
 
     errors = []
-    capacidad = None
+    # Obtener límites de la categoría para asignar capacidad automáticamente
+    limites = obtener_limites_categoria(categoria)
+    capacidad = limites.get('capacidad_maxima', 10) if limites else 10  # Valor por defecto
     peso = None
     precio = None
     largo = None
@@ -2076,19 +2325,8 @@ def juego_create_json(request):
         except (ValueError, TypeError):
             errors.append('El alto debe ser un número válido')
     
-    if not capacidad_personas:
-        errors.append('La capacidad de personas es obligatoria')
-    else:
-        try:
-            capacidad = int(capacidad_personas)
-            if capacidad <= 0:
-                errors.append('La capacidad debe ser mayor a 0')
-            elif capacidad > 100:
-                errors.append('La capacidad de personas no puede exceder 100')
-            elif limites and capacidad != limites.get('capacidad_maxima'):
-                errors.append(f'Para la categoría {categoria}, la capacidad máxima debe ser {limites.get("capacidad_maxima")} personas')
-        except (ValueError, TypeError):
-            errors.append('La capacidad debe ser un número válido')
+    # La capacidad se asigna automáticamente según la categoría
+    # Ya está asignada arriba usando limites.get('capacidad_maxima')
     
     peso_excedido = False
     if not peso_maximo:
@@ -2834,7 +3072,6 @@ def juego_update_json(request, juego_id: int):
     dimension_largo = request.POST.get('dimension_largo', '').strip()
     dimension_ancho = request.POST.get('dimension_ancho', '').strip()
     dimension_alto = request.POST.get('dimension_alto', '').strip()
-    capacidad_personas = request.POST.get('capacidad_personas', '').strip()
     peso_maximo = request.POST.get('peso_maximo', '').strip()
     precio_base = request.POST.get('precio_base', '').strip()
     foto = request.FILES.get('foto')  # Cambio: Ahora recibimos un archivo
@@ -2930,16 +3167,11 @@ def juego_update_json(request, juego_id: int):
         except (ValueError, TypeError):
             errors.append('El alto debe ser un número válido')
     
-    try:
-        capacidad = int(capacidad_personas)
-        if capacidad <= 0:
-            errors.append('La capacidad debe ser mayor a 0')
-        elif capacidad > 100:
-            errors.append('La capacidad de personas no puede exceder 100')
-        elif limites and capacidad != limites.get('capacidad_maxima'):
-            errors.append(f'Para la categoría {categoria}, la capacidad máxima debe ser {limites.get("capacidad_maxima")} personas')
-    except (ValueError, TypeError):
-        errors.append('La capacidad debe ser un número válido')
+    # La capacidad se asigna automáticamente según la categoría
+    # Usar la categoría proporcionada o la actual del juego
+    categoria_actual = categoria if categoria else juego.categoria
+    limites_actual = obtener_limites_categoria(categoria_actual)
+    capacidad = limites_actual.get('capacidad_maxima', juego.capacidad_personas) if limites_actual else juego.capacidad_personas
     
     peso_excedido = False
     try:
@@ -4360,6 +4592,8 @@ def arriendo_create_json(request):
             distancia_km_int = int(distancia_km)
             if distancia_km_int < 0:
                 errors.append('La distancia no puede ser negativa')
+            elif distancia_km_int > 50:
+                errors.append('La distancia no puede ser mayor a 50 km')
         except ValueError:
             errors.append('La distancia debe ser un número válido')
     
@@ -4638,7 +4872,7 @@ def arriendo_update_json(request, arriendo_id: int):
     horas_extra = 0
     precio_horas_extra = 0
     if reserva.hora_instalacion and reserva.hora_retiro:
-        from datetime import timedelta
+        from datetime import datetime, timedelta
         # Convertir horas a datetime para calcular diferencia
         fecha_base = datetime(2000, 1, 1).date()
         datetime_inst = datetime.combine(fecha_base, reserva.hora_instalacion)
@@ -4680,6 +4914,8 @@ def arriendo_update_json(request, arriendo_id: int):
             distancia_km_int = int(distancia_km)
             if distancia_km_int < 0:
                 errors.append('La distancia no puede ser negativa')
+            elif distancia_km_int > 50:
+                errors.append('La distancia no puede ser mayor a 50 km')
             else:
                 PRECIO_POR_KM = 1000
                 reserva.distancia_km = distancia_km_int
@@ -4697,6 +4933,8 @@ def arriendo_update_json(request, arriendo_id: int):
         reserva.observaciones = observaciones.strip() or None
     
     # Validar y procesar juegos
+    # Solo procesar juegos si se proporcionan nuevos juegos
+    juegos_proporcionados = False
     try:
         import json
         if isinstance(juegos_json, str):
@@ -4704,7 +4942,9 @@ def arriendo_update_json(request, arriendo_id: int):
         else:
             juegos_data = juegos_json
         
+        # Verificar si se proporcionaron juegos (no vacío y no es solo un array vacío)
         if juegos_data and len(juegos_data) > 0:
+            juegos_proporcionados = True
             juegos_validos = []
             total = 0
             
@@ -4737,105 +4977,363 @@ def arriendo_update_json(request, arriendo_id: int):
                 except (ValueError, Juego.DoesNotExist):
                     errors.append(f'Juego con ID {juego_id} no encontrado')
             
-            if not errors:
-                # Eliminar detalles antiguos y crear nuevos
-                reserva.detalles.all().delete()
-                # Total incluye juegos + distancia + horas extra
-                total_final = total + reserva.precio_distancia + reserva.precio_horas_extra
-                reserva.total_reserva = total_final
+            if not errors and juegos_proporcionados:
+                # Comparar juegos proporcionados con los existentes para evitar recrear si no cambiaron
+                juegos_existentes_ids = set(reserva.detalles.values_list('juego_id', flat=True))
+                juegos_proporcionados_ids = set([j['juego'].id for j in juegos_validos])
                 
-                for juego_item in juegos_validos:
-                    DetalleReserva.objects.create(
-                        reserva=reserva,
-                        juego=juego_item['juego'],
-                        cantidad=juego_item['cantidad'],
-                        precio_unitario=juego_item['precio_unitario'],
-                        subtotal=juego_item['subtotal'],
-                    )
+                # Solo eliminar y recrear si los juegos realmente cambiaron
+                if juegos_existentes_ids != juegos_proporcionados_ids:
+                    # Eliminar detalles antiguos y crear nuevos solo si los juegos cambiaron
+                    reserva.detalles.all().delete()
+                    # Total incluye juegos + distancia + horas extra
+                    precio_distancia = reserva.precio_distancia or 0
+                    precio_horas_extra = reserva.precio_horas_extra or 0
+                    total_final = total + precio_distancia + precio_horas_extra
+                    reserva.total_reserva = total_final
+                    
+                    for juego_item in juegos_validos:
+                        DetalleReserva.objects.create(
+                            reserva=reserva,
+                            juego=juego_item['juego'],
+                            cantidad=juego_item['cantidad'],
+                            precio_unitario=juego_item['precio_unitario'],
+                            subtotal=juego_item['subtotal'],
+                        )
+                else:
+                    # Si los juegos no cambiaron, solo recalcular el total (por si cambió el precio)
+                    precio_distancia = reserva.precio_distancia or 0
+                    precio_horas_extra = reserva.precio_horas_extra or 0
+                    total_final = total + precio_distancia + precio_horas_extra
+                    reserva.total_reserva = total_final
+        # Si no se proporcionaron juegos, mantener los existentes y recalcular el total
+        elif not juegos_proporcionados:
+            # Recalcular el total con los juegos existentes
+            try:
+                total_juegos_existentes = sum(detalle.subtotal for detalle in reserva.detalles.all())
+                precio_distancia = reserva.precio_distancia or 0
+                precio_horas_extra = reserva.precio_horas_extra or 0
+                total_final = total_juegos_existentes + precio_distancia + precio_horas_extra
+                reserva.total_reserva = total_final
+            except Exception as e:
+                # Si hay error al recalcular, mantener el total actual
+                logger = logging.getLogger(__name__)  # Usar el import global
+                logger.error(f'Error al recalcular total: {str(e)}')
     except json.JSONDecodeError:
         errors.append('Formato de juegos inválido')
     
     if errors:
         return JsonResponse({'success': False, 'errors': errors}, status=400)
     
+    # Asegurar que los campos numéricos tengan valores por defecto (evitar None)
+    if reserva.precio_distancia is None:
+        reserva.precio_distancia = 0
+    if reserva.precio_horas_extra is None:
+        reserva.precio_horas_extra = 0
+    if reserva.horas_extra is None:
+        reserva.horas_extra = 0
+    if reserva.distancia_km is None:
+        reserva.distancia_km = 0
+    if reserva.total_reserva is None:
+        # Recalcular si es None
+        try:
+            total_juegos = sum(detalle.subtotal for detalle in reserva.detalles.all())
+            reserva.total_reserva = total_juegos + (reserva.precio_distancia or 0) + (reserva.precio_horas_extra or 0)
+        except Exception as e:
+            logger = logging.getLogger(__name__)  # Usar el import global
+            logger.error(f'Error al calcular total_reserva: {str(e)}')
+            reserva.total_reserva = 0
+    
+    # Validar que la reserva tenga los campos mínimos necesarios antes de guardar
+    if not reserva.cliente:
+        return JsonResponse({'success': False, 'errors': ['La reserva debe tener un cliente asociado']}, status=400)
+    if not reserva.fecha_evento:
+        return JsonResponse({'success': False, 'errors': ['La reserva debe tener una fecha de evento']}, status=400)
+    if not reserva.hora_instalacion:
+        return JsonResponse({'success': False, 'errors': ['La reserva debe tener una hora de instalación']}, status=400)
+    if not reserva.hora_retiro:
+        return JsonResponse({'success': False, 'errors': ['La reserva debe tener una hora de retiro']}, status=400)
+    
     try:
         reserva.save()
+        logger = logging.getLogger(__name__)
+        logger.info(f'Reserva #{reserva.id} guardada exitosamente')
         
         # Actualizar o crear instalación
         try:
             instalacion = Instalacion.objects.get(reserva=reserva)
             # Actualizar si ya existe
-            if fecha_evento:
-                from datetime import datetime
-                fecha_obj = datetime.strptime(fecha_evento, '%Y-%m-%d').date()
-                instalacion.fecha_instalacion = fecha_obj
-            if hora_instalacion:
-                from datetime import datetime
-                hora_inst_obj = datetime.strptime(hora_instalacion, '%H:%M').time()
-                instalacion.hora_instalacion = hora_inst_obj
+            # Siempre asegurar que tenga fecha y hora (usar valores de reserva si no se proporcionan)
+            if fecha_evento and fecha_evento.strip():
+                try:
+                    from datetime import datetime
+                    fecha_obj = datetime.strptime(fecha_evento, '%Y-%m-%d').date()
+                    instalacion.fecha_instalacion = fecha_obj
+                except (ValueError, AttributeError):
+                    # Si falla el parseo, usar la fecha de la reserva
+                    if reserva.fecha_evento:
+                        instalacion.fecha_instalacion = reserva.fecha_evento
+            elif not instalacion.fecha_instalacion and reserva.fecha_evento:
+                # Si no se proporciona fecha pero la instalación no tiene, usar la de la reserva
+                instalacion.fecha_instalacion = reserva.fecha_evento
+            
+            if hora_instalacion and hora_instalacion.strip():
+                try:
+                    from datetime import datetime
+                    hora_inst_obj = datetime.strptime(hora_instalacion, '%H:%M').time()
+                    instalacion.hora_instalacion = hora_inst_obj
+                except (ValueError, AttributeError):
+                    # Si falla el parseo, usar la hora de la reserva
+                    if reserva.hora_instalacion:
+                        instalacion.hora_instalacion = reserva.hora_instalacion
+            elif not instalacion.hora_instalacion and reserva.hora_instalacion:
+                # Si no se proporciona hora pero la instalación no tiene, usar la de la reserva
+                instalacion.hora_instalacion = reserva.hora_instalacion
+            
             if direccion_evento:
                 instalacion.direccion_instalacion = direccion_evento
+            elif not instalacion.direccion_instalacion and reserva.direccion_evento:
+                instalacion.direccion_instalacion = reserva.direccion_evento
+            
             if cliente_telefono:
                 instalacion.telefono_cliente = cliente_telefono
+            elif not instalacion.telefono_cliente:
+                # Intentar obtener del cliente si está disponible
+                try:
+                    if reserva.cliente and reserva.cliente.usuario and reserva.cliente.usuario.telefono:
+                        instalacion.telefono_cliente = reserva.cliente.usuario.telefono
+                except:
+                    instalacion.telefono_cliente = ''
+            
             if observaciones is not None:
                 instalacion.observaciones_instalacion = observaciones.strip() or None
-            instalacion.save()
+            
+            # Validación final: asegurar que todos los campos requeridos estén presentes
+            if not instalacion.fecha_instalacion or not instalacion.hora_instalacion:
+                logger = logging.getLogger(__name__)  # Usar el import global
+                logger.error(f'Instalación sin fecha/hora requerida. Fecha: {instalacion.fecha_instalacion}, Hora: {instalacion.hora_instalacion}')
+                # Usar valores de la reserva como último recurso
+                if not instalacion.fecha_instalacion:
+                    instalacion.fecha_instalacion = reserva.fecha_evento
+                if not instalacion.hora_instalacion:
+                    instalacion.hora_instalacion = reserva.hora_instalacion
+            
+            try:
+                instalacion.save()
+            except Exception as e:
+                # Si hay error al guardar la instalación, registrar pero no fallar
+                import traceback
+                logger = logging.getLogger(__name__)  # Usar el import global
+                logger.error(f'Error al guardar instalación: {str(e)}')
+                logger.error(f'Traceback: {traceback.format_exc()}')
+                logger.error(f'Datos instalación: fecha={instalacion.fecha_instalacion}, hora={instalacion.hora_instalacion}, direccion={instalacion.direccion_instalacion}')
         except Instalacion.DoesNotExist:
             # Crear instalación si no existe
             from datetime import datetime
-            fecha_obj_inst = datetime.strptime(fecha_evento, '%Y-%m-%d').date() if fecha_evento else reserva.fecha_evento
-            hora_inst_obj_inst = datetime.strptime(hora_instalacion, '%H:%M').time() if hora_instalacion else reserva.hora_instalacion
-            direccion_inst = direccion_evento if direccion_evento else reserva.direccion_evento
-            telefono_inst = cliente_telefono if cliente_telefono else (reserva.cliente.usuario.telefono or '')
+            fecha_obj_inst = None
+            hora_inst_obj_inst = None
             
-            Instalacion.objects.create(
-                reserva=reserva,
-                fecha_instalacion=fecha_obj_inst,
-                hora_instalacion=hora_inst_obj_inst,
-                direccion_instalacion=direccion_inst,
-                telefono_cliente=telefono_inst,
-                estado_instalacion='programada',
-                observaciones_instalacion=observaciones.strip() if observaciones else None,
-            )
+            try:
+                if fecha_evento and fecha_evento.strip():
+                    fecha_obj_inst = datetime.strptime(fecha_evento, '%Y-%m-%d').date()
+                elif reserva.fecha_evento:
+                    fecha_obj_inst = reserva.fecha_evento
+            except (ValueError, AttributeError):
+                fecha_obj_inst = reserva.fecha_evento if reserva.fecha_evento else None
+            
+            try:
+                if hora_instalacion and hora_instalacion.strip():
+                    hora_inst_obj_inst = datetime.strptime(hora_instalacion, '%H:%M').time()
+                elif reserva.hora_instalacion:
+                    hora_inst_obj_inst = reserva.hora_instalacion
+            except (ValueError, AttributeError):
+                hora_inst_obj_inst = reserva.hora_instalacion if reserva.hora_instalacion else None
+            
+            direccion_inst = direccion_evento if direccion_evento else (reserva.direccion_evento or '')
+            try:
+                telefono_inst = cliente_telefono if cliente_telefono else (reserva.cliente.usuario.telefono if reserva.cliente and reserva.cliente.usuario else '')
+            except (AttributeError, Exception):
+                telefono_inst = cliente_telefono if cliente_telefono else ''
+            
+            # Solo crear instalación si tenemos fecha y hora
+            if fecha_obj_inst and hora_inst_obj_inst:
+                try:
+                    Instalacion.objects.create(
+                        reserva=reserva,
+                        fecha_instalacion=fecha_obj_inst,
+                        hora_instalacion=hora_inst_obj_inst,
+                        direccion_instalacion=direccion_inst,
+                        telefono_cliente=telefono_inst,
+                        estado_instalacion='programada',
+                        observaciones_instalacion=observaciones.strip() if observaciones else None,
+                    )
+                except Exception as e:
+                    # Si hay error al crear la instalación, registrar pero no fallar
+                    logger = logging.getLogger(__name__)  # Usar el import global
+                    logger.error(f'Error al crear instalación: {str(e)}')
         
         # Actualizar o crear retiro
         try:
             retiro = Retiro.objects.get(reserva=reserva)
             # Actualizar si ya existe
-            if fecha_evento:
-                from datetime import datetime
-                fecha_obj = datetime.strptime(fecha_evento, '%Y-%m-%d').date()
-                retiro.fecha_retiro = fecha_obj
-            if hora_retiro:
-                from datetime import datetime
-                hora_ret_obj = datetime.strptime(hora_retiro, '%H:%M').time()
-                retiro.hora_retiro = hora_ret_obj
+            # Siempre asegurar que tenga fecha y hora (usar valores de reserva si no se proporcionan)
+            if fecha_evento and fecha_evento.strip():
+                try:
+                    from datetime import datetime
+                    fecha_obj = datetime.strptime(fecha_evento, '%Y-%m-%d').date()
+                    retiro.fecha_retiro = fecha_obj
+                except (ValueError, AttributeError):
+                    # Si falla el parseo, usar la fecha de la reserva
+                    if reserva.fecha_evento:
+                        retiro.fecha_retiro = reserva.fecha_evento
+            elif not retiro.fecha_retiro and reserva.fecha_evento:
+                # Si no se proporciona fecha pero el retiro no tiene, usar la de la reserva
+                retiro.fecha_retiro = reserva.fecha_evento
+            
+            if hora_retiro and hora_retiro.strip():
+                try:
+                    from datetime import datetime
+                    hora_ret_obj = datetime.strptime(hora_retiro, '%H:%M').time()
+                    retiro.hora_retiro = hora_ret_obj
+                except (ValueError, AttributeError):
+                    # Si falla el parseo, usar la hora de la reserva
+                    if reserva.hora_retiro:
+                        retiro.hora_retiro = reserva.hora_retiro
+            elif not retiro.hora_retiro and reserva.hora_retiro:
+                # Si no se proporciona hora pero el retiro no tiene, usar la de la reserva
+                retiro.hora_retiro = reserva.hora_retiro
+            
             if observaciones is not None:
                 retiro.observaciones_retiro = observaciones.strip() or None
-            retiro.save()
+            
+            # Validación final: asegurar que todos los campos requeridos estén presentes
+            if not retiro.fecha_retiro or not retiro.hora_retiro:
+                logger = logging.getLogger(__name__)  # Usar el import global
+                logger.error(f'Retiro sin fecha/hora requerida. Fecha: {retiro.fecha_retiro}, Hora: {retiro.hora_retiro}')
+                # Usar valores de la reserva como último recurso
+                if not retiro.fecha_retiro:
+                    retiro.fecha_retiro = reserva.fecha_evento
+                if not retiro.hora_retiro:
+                    retiro.hora_retiro = reserva.hora_retiro
+            
+            try:
+                retiro.save()
+            except Exception as e:
+                # Si hay error al guardar el retiro, registrar pero no fallar
+                import traceback
+                logger = logging.getLogger(__name__)  # Usar el import global
+                logger.error(f'Error al guardar retiro: {str(e)}')
+                logger.error(f'Traceback: {traceback.format_exc()}')
+                logger.error(f'Datos retiro: fecha={retiro.fecha_retiro}, hora={retiro.hora_retiro}')
         except Retiro.DoesNotExist:
             # Crear retiro si no existe
             from datetime import datetime
-            fecha_obj_ret = datetime.strptime(fecha_evento, '%Y-%m-%d').date() if fecha_evento else reserva.fecha_evento
-            hora_ret_obj_ret = datetime.strptime(hora_retiro, '%H:%M').time() if hora_retiro else reserva.hora_retiro
+            try:
+                if fecha_evento and fecha_evento.strip():
+                    fecha_obj_ret = datetime.strptime(fecha_evento, '%Y-%m-%d').date()
+                elif reserva.fecha_evento:
+                    fecha_obj_ret = reserva.fecha_evento
+                else:
+                    fecha_obj_ret = None
+            except (ValueError, AttributeError):
+                fecha_obj_ret = reserva.fecha_evento if reserva.fecha_evento else None
             
-            Retiro.objects.create(
-                reserva=reserva,
-                fecha_retiro=fecha_obj_ret,
-                hora_retiro=hora_ret_obj_ret,
-                estado_retiro='programado',
-                observaciones_retiro=observaciones.strip() if observaciones else None,
-            )
+            try:
+                if hora_retiro and hora_retiro.strip():
+                    hora_ret_obj_ret = datetime.strptime(hora_retiro, '%H:%M').time()
+                elif reserva.hora_retiro:
+                    hora_ret_obj_ret = reserva.hora_retiro
+                else:
+                    hora_ret_obj_ret = None
+            except (ValueError, AttributeError):
+                hora_ret_obj_ret = reserva.hora_retiro if reserva.hora_retiro else None
+            
+            # Solo crear retiro si tenemos fecha y hora
+            if fecha_obj_ret and hora_ret_obj_ret:
+                try:
+                    Retiro.objects.create(
+                        reserva=reserva,
+                        fecha_retiro=fecha_obj_ret,
+                        hora_retiro=hora_ret_obj_ret,
+                        estado_retiro='programado',
+                        observaciones_retiro=observaciones.strip() if observaciones else None,
+                    )
+                except Exception as e:
+                    # Si hay error al crear el retiro, registrar pero no fallar
+                    logger = logging.getLogger(__name__)  # Usar el import global
+                    logger.error(f'Error al crear retiro: {str(e)}')
+        
+        # Asegurar que la reserva tenga un ID antes de retornar
+        if not reserva.id:
+            logger = logging.getLogger(__name__)  # Usar el import global
+            logger.error('Reserva no tiene ID después de guardar')
+            return JsonResponse({
+                'success': False, 
+                'errors': ['Error: La reserva no se guardó correctamente']
+            }, status=500)
+        
+        try:
+            # Log antes de retornar para verificar que llegamos aquí
+            logger = logging.getLogger(__name__)
+            logger.info(f'Preparando respuesta exitosa para arriendo #{reserva.id}')
+            
+            response_data = {
+                'success': True, 
+                'message': f'Arriendo #{reserva.id} actualizado correctamente.',
+                'arriendo_id': reserva.id
+            }
+            
+            logger.info(f'Retornando respuesta exitosa para arriendo #{reserva.id}')
+            return JsonResponse(response_data)
+        except Exception as json_error:
+            # Si hay error al crear la respuesta JSON, los cambios ya se guardaron
+            import traceback
+            logger = logging.getLogger(__name__)  # Usar el import global, no importar logging aquí
+            logger.error(f'Error al crear respuesta JSON (pero cambios guardados): {str(json_error)}\n{traceback.format_exc()}')
+            # Retornar respuesta simple sin usar reserva.id
+            return JsonResponse({
+                'success': True, 
+                'message': 'Arriendo actualizado correctamente.',
+                'arriendo_id': arriendo_id
+            })
+    except Exception as e:
+        import traceback
+        logger = logging.getLogger(__name__)  # Usar el import global
+        error_trace = traceback.format_exc()
+        error_msg = str(e)
+        logger.error(f'Error al actualizar arriendo #{arriendo_id}: {error_msg}\n{error_trace}')
+        
+        # Intentar guardar la reserva si aún no se ha guardado
+        try:
+            if reserva and reserva.id:
+                # Asegurar valores por defecto antes de guardar
+                if reserva.precio_distancia is None:
+                    reserva.precio_distancia = 0
+                if reserva.precio_horas_extra is None:
+                    reserva.precio_horas_extra = 0
+                if reserva.horas_extra is None:
+                    reserva.horas_extra = 0
+                if reserva.distancia_km is None:
+                    reserva.distancia_km = 0
+                if reserva.total_reserva is None:
+                    try:
+                        total_juegos = sum(detalle.subtotal for detalle in reserva.detalles.all())
+                        reserva.total_reserva = total_juegos + (reserva.precio_distancia or 0) + (reserva.precio_horas_extra or 0)
+                    except:
+                        reserva.total_reserva = 0
+                reserva.save()
+        except Exception as save_error:
+            logger.error(f'Error al guardar reserva en catch: {str(save_error)}')
+        
+        # Retornar error más descriptivo con información del traceback
+        error_details = error_msg
+        if 'DEBUG' in os.environ or settings.DEBUG:
+            # En modo debug, incluir más detalles
+            error_details = f'{error_msg}\n\nTraceback:\n{error_trace[:500]}'  # Limitar a 500 caracteres
         
         return JsonResponse({
-            'success': True, 
-            'message': f'Arriendo #{reserva.id} actualizado correctamente.',
-            'arriendo_id': reserva.id
-        })
-    except Exception as e:
-        return JsonResponse({
             'success': False, 
-            'errors': [f'Error al actualizar el arriendo: {str(e)}']
+            'errors': [f'Error al actualizar el arriendo: {error_details}']
         }, status=500)
 
 
@@ -4864,4 +5362,3274 @@ def arriendo_delete_json(request, arriendo_id: int):
         return JsonResponse({
             'success': False, 
             'errors': [f'Error al eliminar el arriendo: {str(e)}']
+        }, status=500)
+
+
+# ========== CRUD DE VEHÍCULOS ==========
+
+@login_required
+def vehiculos_list(request):
+    """
+    Lista todos los vehículos con filtros de búsqueda
+    """
+    if not request.user.tipo_usuario == 'administrador':
+        raise PermissionDenied("Solo los administradores pueden acceder a este recurso.")
+
+    query = request.GET.get('q', '').strip()
+    tipo_filter = request.GET.get('tipo', '').strip()
+    estado_filter = request.GET.get('estado', '').strip()
+    
+    order_by = request.GET.get('order_by', 'patente').strip()
+    direction = request.GET.get('direction', 'asc').strip()
+    
+    valid_order_fields = {
+        'id': 'id',
+        'patente': 'patente',
+        'marca': 'marca',
+        'modelo': 'modelo',
+        'año': 'año',
+        'estado': 'estado',
+    }
+    
+    if order_by not in valid_order_fields:
+        order_by = 'patente'
+    
+    if direction not in ['asc', 'desc']:
+        direction = 'asc'
+    
+    order_field = valid_order_fields[order_by]
+    if direction == 'desc':
+        order_field = '-' + order_field
+    
+    base_qs = Vehiculo.objects.all().order_by(order_field)
+    
+    if query:
+        base_qs = base_qs.filter(
+            Q(patente__icontains=query) |
+            Q(marca__icontains=query) |
+            Q(modelo__icontains=query)
+        )
+    
+    if tipo_filter:
+        base_qs = base_qs.filter(tipo=tipo_filter)
+    
+    if estado_filter:
+        base_qs = base_qs.filter(estado=estado_filter)
+
+    # Lista de colores predefinidos para vehículos
+    COLORES_VEHICULOS = [
+        'Blanco', 'Negro', 'Gris', 'Plata', 'Rojo', 'Azul', 'Verde', 
+        'Amarillo', 'Naranja', 'Marrón', 'Beige', 'Dorado', 'Bordo', 
+        'Celeste', 'Turquesa', 'Violeta', 'Rosa', 'Cobre', 'Champagne'
+    ]
+    
+    # Calcular año máximo (año actual + 1)
+    from datetime import datetime
+    año_maximo = datetime.now().year + 1
+    
+    return render(request, 'jio_app/vehiculos_list.html', {
+        'vehiculos': base_qs,
+        'query': query,
+        'tipo_filter': tipo_filter,
+        'estado_filter': estado_filter,
+        'order_by': order_by,
+        'direction': direction,
+        'tipo_choices': Vehiculo.TIPO_CHOICES,
+        'estado_choices': Vehiculo.ESTADO_CHOICES,
+        'colores_vehiculos': COLORES_VEHICULOS,
+        'año_maximo': año_maximo,
+    })
+
+
+@login_required
+@require_http_methods(["GET"])
+def vehiculo_detail_json(request, vehiculo_id: int):
+    """
+    Obtiene los detalles de un vehículo en formato JSON
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    try:
+        vehiculo = Vehiculo.objects.get(id=vehiculo_id)
+        
+        return JsonResponse({
+            'id': vehiculo.id,
+            'patente': vehiculo.patente,
+            'tipo': vehiculo.tipo,
+            'marca': vehiculo.marca,
+            'modelo': vehiculo.modelo,
+            'año': vehiculo.año,
+            'color': vehiculo.color or '',
+            'kilometraje_actual': vehiculo.kilometraje_actual,
+            'estado': vehiculo.estado,
+            'fecha_ultimo_mantenimiento': vehiculo.fecha_ultimo_mantenimiento.strftime('%Y-%m-%d') if vehiculo.fecha_ultimo_mantenimiento else '',
+            'proximo_mantenimiento_km': vehiculo.proximo_mantenimiento_km or 0,
+            'seguro_vencimiento': vehiculo.seguro_vencimiento.strftime('%Y-%m-%d') if vehiculo.seguro_vencimiento else '',
+            'observaciones': vehiculo.observaciones or '',
+            'tipo_choices': Vehiculo.TIPO_CHOICES,
+            'estado_choices': Vehiculo.ESTADO_CHOICES,
+        })
+    except Vehiculo.DoesNotExist:
+        return JsonResponse({'error': 'Vehículo no encontrado'}, status=404)
+
+
+@login_required
+@require_http_methods(["POST"])
+def vehiculo_create_json(request):
+    """
+    Crea un nuevo vehículo
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+
+    patente = request.POST.get('patente', '').strip().upper()
+    tipo = request.POST.get('tipo', '').strip()
+    marca = request.POST.get('marca', '').strip()
+    modelo = request.POST.get('modelo', '').strip()
+    año = request.POST.get('año', '').strip()
+    color = request.POST.get('color', '').strip()
+    kilometraje_actual = request.POST.get('kilometraje_actual', '0').strip()
+    estado = request.POST.get('estado', 'disponible').strip()
+    fecha_ultimo_mantenimiento = request.POST.get('fecha_ultimo_mantenimiento', '').strip()
+    proximo_mantenimiento_km = request.POST.get('proximo_mantenimiento_km', '').strip()
+    seguro_vencimiento = request.POST.get('seguro_vencimiento', '').strip()
+    observaciones = request.POST.get('observaciones', '').strip()
+
+    errors = []
+    
+    # Validar patente: exactamente 6 caracteres
+    if not patente:
+        errors.append('La patente es obligatoria')
+    elif len(patente) != 6:
+        errors.append('La patente debe tener exactamente 6 caracteres')
+    elif Vehiculo.objects.filter(patente=patente).exists():
+        errors.append('Ya existe un vehículo con esa patente')
+    
+    if not tipo or tipo not in [choice[0] for choice in Vehiculo.TIPO_CHOICES]:
+        errors.append('Tipo de vehículo inválido')
+    
+    # Validar marca: máximo 15 caracteres
+    if not marca:
+        errors.append('La marca es obligatoria')
+    elif len(marca) > 15:
+        errors.append('La marca no puede exceder 15 caracteres')
+    
+    # Validar modelo: máximo 10 caracteres
+    if not modelo:
+        errors.append('El modelo es obligatorio')
+    elif len(modelo) > 10:
+        errors.append('El modelo no puede exceder 10 caracteres')
+    
+    # Validar color: debe ser uno de los colores predefinidos
+    COLORES_VALIDOS = ['Blanco', 'Negro', 'Gris', 'Plata', 'Rojo', 'Azul', 'Verde', 'Amarillo', 'Naranja', 'Marrón', 'Beige', 'Dorado', 'Bordo', 'Celeste', 'Turquesa', 'Violeta', 'Rosa', 'Cobre', 'Champagne']
+    if color:
+        if color not in COLORES_VALIDOS:
+            errors.append(f'El color debe ser uno de los siguientes: {", ".join(COLORES_VALIDOS)}')
+    
+    año_int = None
+    if not año:
+        errors.append('El año es obligatorio')
+    else:
+        try:
+            año_int = int(año)
+            año_actual = timezone.now().year
+            if año_int < 1900 or año_int > año_actual + 1:
+                errors.append(f'El año debe estar entre 1900 y {año_actual + 1}')
+        except (ValueError, TypeError):
+            errors.append('El año debe ser un número válido')
+    
+    kilometraje = 0
+    if kilometraje_actual:
+        try:
+            kilometraje = int(kilometraje_actual)
+            if kilometraje < 0:
+                errors.append('El kilometraje no puede ser negativo')
+        except (ValueError, TypeError):
+            errors.append('El kilometraje debe ser un número válido')
+    
+    if estado not in [choice[0] for choice in Vehiculo.ESTADO_CHOICES]:
+        errors.append('Estado inválido')
+    
+    fecha_mant = None
+    if fecha_ultimo_mantenimiento:
+        try:
+            from datetime import datetime
+            fecha_mant = datetime.strptime(fecha_ultimo_mantenimiento, '%Y-%m-%d').date()
+        except ValueError:
+            errors.append('Fecha de último mantenimiento inválida')
+    
+    prox_mant_km = None
+    if proximo_mantenimiento_km:
+        try:
+            prox_mant_km = int(proximo_mantenimiento_km)
+            if prox_mant_km < 0:
+                errors.append('El próximo mantenimiento en km no puede ser negativo')
+        except (ValueError, TypeError):
+            errors.append('El próximo mantenimiento en km debe ser un número válido')
+    
+    seguro_venc = None
+    if seguro_vencimiento:
+        try:
+            from datetime import datetime
+            seguro_venc = datetime.strptime(seguro_vencimiento, '%Y-%m-%d').date()
+        except ValueError:
+            errors.append('Fecha de vencimiento de seguro inválida')
+
+    if errors:
+        return JsonResponse({'success': False, 'errors': errors}, status=400)
+
+    try:
+        vehiculo = Vehiculo.objects.create(
+            patente=patente,
+            tipo=tipo,
+            marca=marca,
+            modelo=modelo,
+            año=año_int,
+            color=color,
+            kilometraje_actual=kilometraje,
+            estado=estado,
+            fecha_ultimo_mantenimiento=fecha_mant,
+            proximo_mantenimiento_km=prox_mant_km,
+            seguro_vencimiento=seguro_venc,
+            observaciones=observaciones or None,
+        )
+        return JsonResponse({
+            'success': True, 
+            'message': f'Vehículo "{vehiculo.patente}" creado correctamente.',
+            'vehiculo_id': vehiculo.id,
+            'patente': vehiculo.patente,
+            'marca': vehiculo.marca,
+            'modelo': vehiculo.modelo
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False, 
+            'errors': [f'Error al crear el vehículo: {str(e)}']
+        }, status=500)
+
+
+@login_required
+@require_http_methods(["POST"])
+def vehiculo_update_json(request, vehiculo_id: int):
+    """
+    Actualiza un vehículo existente
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    try:
+        vehiculo = Vehiculo.objects.get(id=vehiculo_id)
+    except Vehiculo.DoesNotExist:
+        return JsonResponse({'error': 'Vehículo no encontrado'}, status=404)
+
+    patente = request.POST.get('patente', '').strip().upper()
+    tipo = request.POST.get('tipo', '').strip()
+    marca = request.POST.get('marca', '').strip()
+    modelo = request.POST.get('modelo', '').strip()
+    año = request.POST.get('año', '').strip()
+    color = request.POST.get('color', '').strip()
+    kilometraje_actual = request.POST.get('kilometraje_actual', '').strip()
+    estado = request.POST.get('estado', '').strip()
+    fecha_ultimo_mantenimiento = request.POST.get('fecha_ultimo_mantenimiento', '').strip()
+    proximo_mantenimiento_km = request.POST.get('proximo_mantenimiento_km', '').strip()
+    seguro_vencimiento = request.POST.get('seguro_vencimiento', '').strip()
+    observaciones = request.POST.get('observaciones', '').strip()
+
+    errors = []
+    
+    # Validar patente: exactamente 6 caracteres
+    if patente:
+        if len(patente) != 6:
+            errors.append('La patente debe tener exactamente 6 caracteres')
+        elif patente != vehiculo.patente and Vehiculo.objects.filter(patente=patente).exists():
+            errors.append('Ya existe un vehículo con esa patente')
+    
+    if tipo and tipo not in [choice[0] for choice in Vehiculo.TIPO_CHOICES]:
+        errors.append('Tipo de vehículo inválido')
+    
+    # Validar marca: máximo 15 caracteres
+    if marca:
+        if len(marca) > 15:
+            errors.append('La marca no puede exceder 15 caracteres')
+    
+    # Validar modelo: máximo 10 caracteres
+    if modelo:
+        if len(modelo) > 10:
+            errors.append('El modelo no puede exceder 10 caracteres')
+    
+    # Validar color: debe ser uno de los colores predefinidos
+    COLORES_VALIDOS = ['Blanco', 'Negro', 'Gris', 'Plata', 'Rojo', 'Azul', 'Verde', 'Amarillo', 'Naranja', 'Marrón', 'Beige', 'Dorado', 'Bordo', 'Celeste', 'Turquesa', 'Violeta', 'Rosa', 'Cobre', 'Champagne']
+    if color:
+        if color not in COLORES_VALIDOS:
+            errors.append(f'El color debe ser uno de los siguientes: {", ".join(COLORES_VALIDOS)}')
+    
+    if estado and estado not in [choice[0] for choice in Vehiculo.ESTADO_CHOICES]:
+        errors.append('Estado inválido')
+    
+    año_int = None
+    if año:
+        try:
+            año_int = int(año)
+            año_actual = timezone.now().year
+            if año_int < 1900 or año_int > año_actual + 1:
+                errors.append(f'El año debe estar entre 1900 y {año_actual + 1}')
+        except (ValueError, TypeError):
+            errors.append('El año debe ser un número válido')
+    
+    kilometraje = None
+    if kilometraje_actual:
+        try:
+            kilometraje = int(kilometraje_actual)
+            if kilometraje < 0:
+                errors.append('El kilometraje no puede ser negativo')
+        except (ValueError, TypeError):
+            errors.append('El kilometraje debe ser un número válido')
+    
+    fecha_mant = None
+    if fecha_ultimo_mantenimiento:
+        try:
+            from datetime import datetime
+            fecha_mant = datetime.strptime(fecha_ultimo_mantenimiento, '%Y-%m-%d').date()
+        except ValueError:
+            errors.append('Fecha de último mantenimiento inválida')
+    
+    prox_mant_km = None
+    if proximo_mantenimiento_km:
+        try:
+            prox_mant_km = int(proximo_mantenimiento_km)
+            if prox_mant_km < 0:
+                errors.append('El próximo mantenimiento en km no puede ser negativo')
+        except (ValueError, TypeError):
+            errors.append('El próximo mantenimiento en km debe ser un número válido')
+    
+    seguro_venc = None
+    if seguro_vencimiento:
+        try:
+            from datetime import datetime
+            seguro_venc = datetime.strptime(seguro_vencimiento, '%Y-%m-%d').date()
+        except ValueError:
+            errors.append('Fecha de vencimiento de seguro inválida')
+
+    if errors:
+        return JsonResponse({'success': False, 'errors': errors}, status=400)
+
+    try:
+        if patente:
+            vehiculo.patente = patente
+        if tipo:
+            vehiculo.tipo = tipo
+        if marca:
+            vehiculo.marca = marca
+        if modelo:
+            vehiculo.modelo = modelo
+        if año_int:
+            vehiculo.año = año_int
+        if color is not None:
+            vehiculo.color = color or None
+        if kilometraje is not None:
+            vehiculo.kilometraje_actual = kilometraje
+        if estado:
+            vehiculo.estado = estado
+        if fecha_mant is not None:
+            vehiculo.fecha_ultimo_mantenimiento = fecha_mant
+        if proximo_mantenimiento_km is not None:
+            vehiculo.proximo_mantenimiento_km = prox_mant_km if prox_mant_km else None
+        if seguro_vencimiento is not None:
+            vehiculo.seguro_vencimiento = seguro_venc if seguro_venc else None
+        if observaciones is not None:
+            vehiculo.observaciones = observaciones or None
+        
+        vehiculo.save()
+        
+        return JsonResponse({
+            'success': True, 
+            'message': f'Vehículo "{vehiculo.patente}" actualizado correctamente.',
+            'vehiculo_id': vehiculo.id
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False, 
+            'errors': [f'Error al actualizar el vehículo: {str(e)}']
+        }, status=500)
+
+
+@login_required
+@require_http_methods(["POST"])
+def vehiculo_delete_json(request, vehiculo_id: int):
+    """
+    Elimina un vehículo
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    try:
+        vehiculo = Vehiculo.objects.get(id=vehiculo_id)
+    except Vehiculo.DoesNotExist:
+        return JsonResponse({'error': 'Vehículo no encontrado'}, status=404)
+
+    try:
+        patente = vehiculo.patente
+        vehiculo.delete()
+        return JsonResponse({
+            'success': True, 
+            'message': f'Vehículo "{patente}" eliminado correctamente.'
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False, 
+            'errors': [f'Error al eliminar el vehículo: {str(e)}']
+        }, status=500)
+
+
+# ========== CRUD DE GASTOS OPERATIVOS ==========
+
+@login_required
+def gastos_list(request):
+    """
+    Lista todos los gastos operativos con filtros de búsqueda
+    """
+    if not request.user.tipo_usuario == 'administrador':
+        raise PermissionDenied("Solo los administradores pueden acceder a este recurso.")
+
+    query = request.GET.get('q', '').strip()
+    categoria_filter = request.GET.get('categoria', '').strip()
+    fecha_desde = request.GET.get('fecha_desde', '').strip()
+    fecha_hasta = request.GET.get('fecha_hasta', '').strip()
+    
+    order_by = request.GET.get('order_by', 'fecha_gasto').strip()
+    direction = request.GET.get('direction', 'desc').strip()
+    
+    valid_order_fields = {
+        'id': 'id',
+        'fecha_gasto': 'fecha_gasto',
+        'monto': 'monto',
+        'categoria': 'categoria',
+    }
+    
+    if order_by not in valid_order_fields:
+        order_by = 'fecha_gasto'
+    
+    if direction not in ['asc', 'desc']:
+        direction = 'desc'
+    
+    order_field = valid_order_fields[order_by]
+    if direction == 'desc':
+        order_field = '-' + order_field
+    
+    base_qs = GastoOperativo.objects.all().order_by(order_field)
+    
+    if query:
+        base_qs = base_qs.filter(
+            Q(descripcion__icontains=query) |
+            Q(observaciones__icontains=query)
+        )
+    
+    if categoria_filter:
+        base_qs = base_qs.filter(categoria=categoria_filter)
+    
+    if fecha_desde:
+        try:
+            from datetime import datetime
+            fecha_desde_obj = datetime.strptime(fecha_desde, '%Y-%m-%d').date()
+            base_qs = base_qs.filter(fecha_gasto__gte=fecha_desde_obj)
+        except ValueError:
+            pass
+    
+    if fecha_hasta:
+        try:
+            from datetime import datetime
+            fecha_hasta_obj = datetime.strptime(fecha_hasta, '%Y-%m-%d').date()
+            base_qs = base_qs.filter(fecha_gasto__lte=fecha_hasta_obj)
+        except ValueError:
+            pass
+
+    # Calcular totales
+    from django.db.models import Sum, Avg, Count
+    from datetime import datetime, timedelta
+    from calendar import monthrange
+    
+    total_gastos = base_qs.aggregate(total=Sum('monto'))['total'] or 0
+    
+    # Calcular estadísticas adicionales (sin filtros aplicados, para ver el panorama general)
+    todos_gastos = GastoOperativo.objects.all()
+    hoy = timezone.now().date()
+    
+    # Total del mes actual
+    primer_dia_mes = hoy.replace(day=1)
+    ultimo_dia_mes = hoy.replace(day=monthrange(hoy.year, hoy.month)[1])
+    total_mes_actual = todos_gastos.filter(
+        fecha_gasto__gte=primer_dia_mes,
+        fecha_gasto__lte=ultimo_dia_mes
+    ).aggregate(total=Sum('monto'))['total'] or 0
+    
+    # Total del año actual
+    primer_dia_ano = hoy.replace(month=1, day=1)
+    ultimo_dia_ano = hoy.replace(month=12, day=31)
+    total_ano_actual = todos_gastos.filter(
+        fecha_gasto__gte=primer_dia_ano,
+        fecha_gasto__lte=ultimo_dia_ano
+    ).aggregate(total=Sum('monto'))['total'] or 0
+    
+    # Total de la semana actual (lunes a domingo)
+    dias_semana = hoy.weekday()  # 0 = lunes, 6 = domingo
+    inicio_semana = hoy - timedelta(days=dias_semana)
+    fin_semana = inicio_semana + timedelta(days=6)
+    total_semana_actual = todos_gastos.filter(
+        fecha_gasto__gte=inicio_semana,
+        fecha_gasto__lte=fin_semana
+    ).aggregate(total=Sum('monto'))['total'] or 0
+    
+    # Total general (todos los tiempos)
+    total_general = todos_gastos.aggregate(total=Sum('monto'))['total'] or 0
+    
+    # Promedio mensual del año actual
+    meses_transcurridos = hoy.month
+    promedio_mensual = total_ano_actual / meses_transcurridos if meses_transcurridos > 0 else 0
+    
+    # Gastos por categoría (año actual)
+    gastos_por_categoria = todos_gastos.filter(
+        fecha_gasto__gte=primer_dia_ano,
+        fecha_gasto__lte=ultimo_dia_ano
+    ).values('categoria').annotate(
+        total=Sum('monto'),
+        cantidad=Count('id')
+    ).order_by('-total')
+
+    return render(request, 'jio_app/gastos_list.html', {
+        'gastos': base_qs,
+        'query': query,
+        'categoria_filter': categoria_filter,
+        'fecha_desde': fecha_desde,
+        'fecha_hasta': fecha_hasta,
+        'order_by': order_by,
+        'direction': direction,
+        'total_gastos': total_gastos,
+        'total_mes_actual': total_mes_actual,
+        'total_ano_actual': total_ano_actual,
+        'total_semana_actual': total_semana_actual,
+        'total_general': total_general,
+        'promedio_mensual': promedio_mensual,
+        'gastos_por_categoria': gastos_por_categoria,
+        'categoria_choices': GastoOperativo.CATEGORIA_CHOICES,
+        'metodo_pago_choices': GastoOperativo.METODO_PAGO_CHOICES,
+        'vehiculos': Vehiculo.objects.all(),
+        'reservas': Reserva.objects.all()[:100],  # Limitar para no sobrecargar
+    })
+
+
+@login_required
+@require_http_methods(["GET"])
+def gasto_detail_json(request, gasto_id: int):
+    """
+    Obtiene los detalles de un gasto en formato JSON
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    try:
+        gasto = GastoOperativo.objects.get(id=gasto_id)
+        comprobante_url = request.build_absolute_uri(gasto.comprobante.url) if gasto.comprobante else ''
+        
+        return JsonResponse({
+            'id': gasto.id,
+            'categoria': gasto.categoria,
+            'descripcion': gasto.descripcion,
+            'monto': float(gasto.monto),
+            'fecha_gasto': gasto.fecha_gasto.strftime('%Y-%m-%d'),
+            'metodo_pago': gasto.metodo_pago,
+            'comprobante': comprobante_url,
+            'vehiculo_id': gasto.vehiculo.id if gasto.vehiculo else None,
+            'reserva_id': gasto.reserva.id if gasto.reserva else None,
+            'observaciones': gasto.observaciones or '',
+            'categoria_choices': GastoOperativo.CATEGORIA_CHOICES,
+            'metodo_pago_choices': GastoOperativo.METODO_PAGO_CHOICES,
+        })
+    except GastoOperativo.DoesNotExist:
+        return JsonResponse({'error': 'Gasto no encontrado'}, status=404)
+
+
+@login_required
+@require_http_methods(["POST"])
+def gasto_create_json(request):
+    """
+    Crea un nuevo gasto operativo
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+
+    categoria = request.POST.get('categoria', '').strip()
+    descripcion = request.POST.get('descripcion', '').strip()
+    monto = request.POST.get('monto', '').strip()
+    fecha_gasto = request.POST.get('fecha_gasto', '').strip()
+    metodo_pago = request.POST.get('metodo_pago', '').strip()
+    comprobante = request.FILES.get('comprobante')
+    vehiculo_id = request.POST.get('vehiculo_id', '').strip()
+    reserva_id = request.POST.get('reserva_id', '').strip()
+    observaciones = request.POST.get('observaciones', '').strip()
+
+    errors = []
+    
+    if not categoria or categoria not in [choice[0] for choice in GastoOperativo.CATEGORIA_CHOICES]:
+        errors.append('Categoría inválida o no seleccionada')
+    
+    if not descripcion:
+        errors.append('La descripción es obligatoria')
+    elif len(descripcion) < 3:
+        errors.append('La descripción debe tener al menos 3 caracteres')
+    elif len(descripcion) > 200:
+        errors.append('La descripción no puede exceder 200 caracteres')
+    
+    monto_decimal = None
+    if not monto:
+        errors.append('El monto es obligatorio')
+    else:
+        try:
+            monto_decimal = Decimal(monto)
+            # Validar que sea un número entero (sin decimales)
+            if monto_decimal % 1 != 0:
+                errors.append('El monto debe ser un número entero (sin decimales)')
+            if monto_decimal < 1:
+                errors.append('El monto debe ser al menos $1')
+            
+            # Límites razonables por categoría
+            limites_categoria = {
+                'combustible': (10000, 30000, 'Combustible: entre $10,000 y $30,000'),
+                'mantenimiento': (20000, 2000000, 'Mantenimiento: entre $20,000 y $2,000,000'),
+                'publicidad': (10000, 500000, 'Publicidad: entre $10,000 y $500,000'),
+                'servicios': (10000, 100000, 'Servicios: entre $10,000 y $100,000'),
+                'materiales': (5000, 150000, 'Materiales: entre $5,000 y $150,000'),
+                'salarios': (200000, 2000000, 'Salarios: entre $200,000 y $2,000,000'),
+                'alquiler': (100000, 1000000, 'Alquiler: entre $100,000 y $1,000,000'),
+                'seguros': (50000, 500000, 'Seguros: entre $50,000 y $500,000'),
+                'impuestos': (10000, 500000, 'Impuestos: entre $10,000 y $500,000'),
+                'otros': (1000, 200000, 'Otros: entre $1,000 y $200,000'),
+            }
+            
+            if categoria in limites_categoria:
+                min_monto, max_monto, mensaje = limites_categoria[categoria]
+                if monto_decimal < min_monto:
+                    errors.append(f'El monto es muy bajo para esta categoría. {mensaje}')
+                elif monto_decimal > max_monto:
+                    errors.append(f'El monto es muy alto para esta categoría. {mensaje}')
+            else:
+                # Límite general si la categoría no está en el diccionario
+                if monto_decimal > Decimal('2000000'):
+                    errors.append('El monto no puede exceder $2,000,000')
+        except (ValueError, TypeError):
+            errors.append('El monto debe ser un número válido')
+    
+    fecha_obj = None
+    if not fecha_gasto:
+        errors.append('La fecha del gasto es obligatoria')
+    else:
+        try:
+            from datetime import datetime, date
+            fecha_obj = datetime.strptime(fecha_gasto, '%Y-%m-%d').date()
+            hoy = date.today()
+            # La fecha no puede ser futura
+            if fecha_obj > hoy:
+                errors.append('La fecha del gasto no puede ser futura')
+            # La fecha no puede ser anterior a 1 semana
+            from datetime import timedelta
+            fecha_minima = hoy - timedelta(days=7)
+            if fecha_obj < fecha_minima:
+                errors.append('La fecha del gasto no puede ser anterior a 1 semana')
+        except ValueError:
+            errors.append('Fecha inválida. Use el formato YYYY-MM-DD')
+    
+    if not metodo_pago or metodo_pago not in [choice[0] for choice in GastoOperativo.METODO_PAGO_CHOICES]:
+        errors.append('Método de pago inválido o no seleccionado')
+    
+    vehiculo = None
+    if vehiculo_id:
+        try:
+            vehiculo = Vehiculo.objects.get(id=int(vehiculo_id))
+        except (Vehiculo.DoesNotExist, ValueError):
+            errors.append('Vehículo no encontrado')
+    
+    reserva = None
+    if reserva_id:
+        try:
+            reserva = Reserva.objects.get(id=int(reserva_id))
+        except (Reserva.DoesNotExist, ValueError):
+            errors.append('Reserva no encontrada')
+
+    if errors:
+        return JsonResponse({'success': False, 'errors': errors}, status=400)
+
+    try:
+        gasto = GastoOperativo.objects.create(
+            categoria=categoria,
+            descripcion=descripcion,
+            monto=monto_decimal,
+            fecha_gasto=fecha_obj,
+            metodo_pago=metodo_pago,
+            comprobante=comprobante if comprobante else None,
+            vehiculo=vehiculo,
+            reserva=reserva,
+            observaciones=observaciones or None,
+            registrado_por=request.user,
+        )
+        return JsonResponse({
+            'success': True, 
+            'message': f'Gasto operativo creado correctamente.',
+            'gasto_id': gasto.id
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False, 
+            'errors': [f'Error al crear el gasto: {str(e)}']
+        }, status=500)
+
+
+@login_required
+@require_http_methods(["POST"])
+def gasto_update_json(request, gasto_id: int):
+    """
+    Actualiza un gasto operativo existente
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    try:
+        gasto = GastoOperativo.objects.get(id=gasto_id)
+    except GastoOperativo.DoesNotExist:
+        return JsonResponse({'error': 'Gasto no encontrado'}, status=404)
+
+    categoria = request.POST.get('categoria', '').strip()
+    descripcion = request.POST.get('descripcion', '').strip()
+    monto = request.POST.get('monto', '').strip()
+    fecha_gasto = request.POST.get('fecha_gasto', '').strip()
+    metodo_pago = request.POST.get('metodo_pago', '').strip()
+    comprobante = request.FILES.get('comprobante')
+    eliminar_comprobante = request.POST.get('eliminar_comprobante', 'false').lower() == 'true'
+    vehiculo_id = request.POST.get('vehiculo_id', '').strip()
+    reserva_id = request.POST.get('reserva_id', '').strip()
+    observaciones = request.POST.get('observaciones', '').strip()
+
+    errors = []
+    
+    if categoria and categoria not in [choice[0] for choice in GastoOperativo.CATEGORIA_CHOICES]:
+        errors.append('Categoría inválida')
+    
+    if descripcion:
+        if len(descripcion) < 3:
+            errors.append('La descripción debe tener al menos 3 caracteres')
+        elif len(descripcion) > 200:
+            errors.append('La descripción no puede exceder 200 caracteres')
+    
+    monto_decimal = None
+    if monto:
+        try:
+            monto_decimal = Decimal(monto)
+            # Validar que sea un número entero (sin decimales)
+            if monto_decimal % 1 != 0:
+                errors.append('El monto debe ser un número entero (sin decimales)')
+            if monto_decimal < 1:
+                errors.append('El monto debe ser al menos $1')
+            
+            # Límites razonables por categoría
+            limites_categoria = {
+                'combustible': (10000, 30000, 'Combustible: entre $10,000 y $30,000'),
+                'mantenimiento': (20000, 2000000, 'Mantenimiento: entre $20,000 y $2,000,000'),
+                'publicidad': (10000, 500000, 'Publicidad: entre $10,000 y $500,000'),
+                'servicios': (10000, 100000, 'Servicios: entre $10,000 y $100,000'),
+                'materiales': (5000, 150000, 'Materiales: entre $5,000 y $150,000'),
+                'salarios': (200000, 2000000, 'Salarios: entre $200,000 y $2,000,000'),
+                'alquiler': (100000, 1000000, 'Alquiler: entre $100,000 y $1,000,000'),
+                'seguros': (50000, 500000, 'Seguros: entre $50,000 y $500,000'),
+                'impuestos': (10000, 500000, 'Impuestos: entre $10,000 y $500,000'),
+                'otros': (1000, 200000, 'Otros: entre $1,000 y $200,000'),
+            }
+            
+            # Usar la categoría del gasto existente si no se proporciona una nueva
+            categoria_validar = categoria or gasto.categoria
+            if categoria_validar in limites_categoria:
+                min_monto, max_monto, mensaje = limites_categoria[categoria_validar]
+                if monto_decimal < min_monto:
+                    errors.append(f'El monto es muy bajo para esta categoría. {mensaje}')
+                elif monto_decimal > max_monto:
+                    errors.append(f'El monto es muy alto para esta categoría. {mensaje}')
+            else:
+                # Límite general si la categoría no está en el diccionario
+                if monto_decimal > Decimal('2000000'):
+                    errors.append('El monto no puede exceder $2,000,000')
+        except (ValueError, TypeError):
+            errors.append('El monto debe ser un número válido')
+    
+    fecha_obj = None
+    if fecha_gasto:
+        try:
+            from datetime import datetime, date, timedelta
+            fecha_obj = datetime.strptime(fecha_gasto, '%Y-%m-%d').date()
+            hoy = date.today()
+            # La fecha no puede ser futura
+            if fecha_obj > hoy:
+                errors.append('La fecha del gasto no puede ser futura')
+            # La fecha no puede ser anterior a 1 semana
+            fecha_minima = hoy - timedelta(days=7)
+            if fecha_obj < fecha_minima:
+                errors.append('La fecha del gasto no puede ser anterior a 1 semana')
+        except ValueError:
+            errors.append('Fecha inválida. Use el formato YYYY-MM-DD')
+    
+    if metodo_pago and metodo_pago not in [choice[0] for choice in GastoOperativo.METODO_PAGO_CHOICES]:
+        errors.append('Método de pago inválido')
+    
+    vehiculo = None
+    if vehiculo_id:
+        try:
+            vehiculo = Vehiculo.objects.get(id=int(vehiculo_id))
+        except (Vehiculo.DoesNotExist, ValueError):
+            errors.append('Vehículo no encontrado')
+    elif vehiculo_id == '':
+        vehiculo = None
+    
+    reserva = None
+    if reserva_id:
+        try:
+            reserva = Reserva.objects.get(id=int(reserva_id))
+        except (Reserva.DoesNotExist, ValueError):
+            errors.append('Reserva no encontrada')
+    elif reserva_id == '':
+        reserva = None
+
+    if errors:
+        return JsonResponse({'success': False, 'errors': errors}, status=400)
+
+    try:
+        if categoria:
+            gasto.categoria = categoria
+        if descripcion:
+            gasto.descripcion = descripcion
+        if monto_decimal is not None:
+            gasto.monto = monto_decimal
+        if fecha_obj:
+            gasto.fecha_gasto = fecha_obj
+        if metodo_pago:
+            gasto.metodo_pago = metodo_pago
+        if comprobante:
+            gasto.comprobante = comprobante
+        if eliminar_comprobante and gasto.comprobante:
+            gasto.comprobante.delete()
+            gasto.comprobante = None
+        if vehiculo_id is not None:
+            gasto.vehiculo = vehiculo
+        if reserva_id is not None:
+            gasto.reserva = reserva
+        if observaciones is not None:
+            gasto.observaciones = observaciones or None
+        
+        gasto.save()
+        
+        return JsonResponse({
+            'success': True, 
+            'message': f'Gasto operativo actualizado correctamente.',
+            'gasto_id': gasto.id
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False, 
+            'errors': [f'Error al actualizar el gasto: {str(e)}']
+        }, status=500)
+
+
+@login_required
+@require_http_methods(["POST"])
+def gasto_delete_json(request, gasto_id: int):
+    """
+    Elimina un gasto operativo
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    try:
+        gasto = GastoOperativo.objects.get(id=gasto_id)
+    except GastoOperativo.DoesNotExist:
+        return JsonResponse({'error': 'Gasto no encontrado'}, status=404)
+
+    try:
+        gasto_id_str = str(gasto.id)
+        gasto.delete()
+        return JsonResponse({
+            'success': True, 
+            'message': f'Gasto #{gasto_id_str} eliminado correctamente.'
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False, 
+            'errors': [f'Error al eliminar el gasto: {str(e)}']
+        }, status=500)
+
+
+# ========== CRUD DE PROMOCIONES ==========
+
+@login_required
+def promociones_list(request):
+    """
+    Lista todas las promociones con filtros de búsqueda y secciones
+    """
+    if not request.user.tipo_usuario == 'administrador':
+        raise PermissionDenied("Solo los administradores pueden acceder a este recurso.")
+
+    query = request.GET.get('q', '').strip()
+    estado_filter = request.GET.get('estado', '').strip()
+    seccion = request.GET.get('seccion', 'todas').strip()  # todas, activas, desactivadas
+    
+    order_by = request.GET.get('order_by', 'fecha_creacion').strip()
+    direction = request.GET.get('direction', 'desc').strip()
+    
+    valid_order_fields = {
+        'id': 'id',
+        'codigo': 'codigo',
+        'nombre': 'nombre',
+        'fecha_inicio': 'fecha_inicio',
+        'fecha_fin': 'fecha_fin',
+        'estado': 'estado',
+        'fecha_creacion': 'fecha_creacion',
+    }
+    
+    if order_by not in valid_order_fields:
+        order_by = 'fecha_creacion'
+    
+    if direction not in ['asc', 'desc']:
+        direction = 'desc'
+    
+    order_field = valid_order_fields[order_by]
+    if direction == 'desc':
+        order_field = '-' + order_field
+    
+    base_qs = Promocion.objects.all().order_by(order_field)
+    
+    # Filtrar por sección
+    if seccion == 'activas':
+        base_qs = base_qs.filter(estado='activa')
+    elif seccion == 'desactivadas':
+        base_qs = base_qs.filter(estado='inactiva')
+    # 'todas' no aplica filtro de estado
+    
+    if query:
+        base_qs = base_qs.filter(
+            Q(codigo__icontains=query) |
+            Q(nombre__icontains=query) |
+            Q(descripcion__icontains=query)
+        )
+    
+    # El filtro de estado en el formulario solo aplica si estamos en 'todas'
+    if estado_filter and seccion == 'todas':
+        base_qs = base_qs.filter(estado=estado_filter)
+
+    return render(request, 'jio_app/promociones_list.html', {
+        'promociones': base_qs,
+        'query': query,
+        'estado_filter': estado_filter,
+        'seccion': seccion,
+        'order_by': order_by,
+        'direction': direction,
+        'tipo_descuento_choices': Promocion.TIPO_DESCUENTO_CHOICES,
+        'estado_choices': Promocion.ESTADO_CHOICES,
+        'juegos': Juego.objects.filter(estado='Habilitado'),
+    })
+
+
+@login_required
+@require_http_methods(["GET"])
+def promocion_detail_json(request, promocion_id: int):
+    """
+    Obtiene los detalles de una promoción en formato JSON
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    try:
+        promocion = Promocion.objects.get(id=promocion_id)
+        juegos_ids = list(promocion.juegos.values_list('id', flat=True))
+        
+        return JsonResponse({
+            'id': promocion.id,
+            'codigo': promocion.codigo,
+            'nombre': promocion.nombre,
+            'descripcion': promocion.descripcion or '',
+            'tipo_descuento': promocion.tipo_descuento,
+            'valor_descuento': float(promocion.valor_descuento),
+            'fecha_inicio': promocion.fecha_inicio.strftime('%Y-%m-%d'),
+            'fecha_fin': promocion.fecha_fin.strftime('%Y-%m-%d'),
+            'juegos_ids': juegos_ids,
+            'monto_minimo': float(promocion.monto_minimo),
+            'limite_usos': promocion.limite_usos,
+            'usos_actuales': promocion.usos_actuales,
+            'estado': promocion.estado,
+            'tipo_descuento_choices': Promocion.TIPO_DESCUENTO_CHOICES,
+            'estado_choices': Promocion.ESTADO_CHOICES,
+        })
+    except Promocion.DoesNotExist:
+        return JsonResponse({'error': 'Promoción no encontrada'}, status=404)
+
+
+@login_required
+@require_http_methods(["POST"])
+def promocion_create_json(request):
+    """
+    Crea una nueva promoción
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+
+    codigo = request.POST.get('codigo', '').strip().upper()
+    nombre = request.POST.get('nombre', '').strip()
+    descripcion = request.POST.get('descripcion', '').strip()
+    tipo_descuento = request.POST.get('tipo_descuento', '').strip()
+    valor_descuento = request.POST.get('valor_descuento', '').strip()
+    fecha_inicio = request.POST.get('fecha_inicio', '').strip()
+    fecha_fin = request.POST.get('fecha_fin', '').strip()
+    juegos_ids = request.POST.getlist('juegos_ids[]') or request.POST.getlist('juegos_ids')
+    monto_minimo = request.POST.get('monto_minimo', '0').strip()
+    limite_usos = request.POST.get('limite_usos', '0').strip()
+    estado = request.POST.get('estado', 'activa').strip()
+
+    errors = []
+    
+    if not codigo:
+        errors.append('El código es obligatorio')
+    elif len(codigo) < 3:
+        errors.append('El código debe tener al menos 3 caracteres')
+    elif len(codigo) > 50:
+        errors.append('El código no puede exceder 50 caracteres')
+    elif not re.match(r'^[A-Z0-9\-_]+$', codigo):
+        errors.append('El código solo puede contener letras mayúsculas, números, guiones y guiones bajos')
+    elif Promocion.objects.filter(codigo=codigo).exists():
+        errors.append('Ya existe una promoción con ese código')
+    
+    if not nombre:
+        errors.append('El nombre es obligatorio')
+    elif len(nombre) < 3:
+        errors.append('El nombre debe tener al menos 3 caracteres')
+    elif len(nombre) > 100:
+        errors.append('El nombre no puede exceder 100 caracteres')
+    elif not re.match(r'^[a-zA-Z0-9áéíóúÁÉÍÓÚñÑüÜ\s]+$', nombre):
+        errors.append('El nombre solo puede contener letras, números y espacios (sin caracteres especiales)')
+    
+    if not tipo_descuento or tipo_descuento not in [choice[0] for choice in Promocion.TIPO_DESCUENTO_CHOICES]:
+        errors.append('Tipo de descuento inválido o no seleccionado')
+    
+    valor_decimal = None
+    if not valor_descuento:
+        errors.append('El valor del descuento es obligatorio')
+    else:
+        try:
+            valor_decimal = Decimal(valor_descuento)
+            # Validar que sea un número entero (sin decimales)
+            if valor_decimal % 1 != 0:
+                errors.append('El valor del descuento debe ser un número entero (sin decimales)')
+            if valor_decimal < 0:
+                errors.append('El valor del descuento no puede ser negativo')
+            if tipo_descuento == 'porcentaje':
+                if valor_decimal < 1:
+                    errors.append('El porcentaje debe ser al menos 1%')
+                elif valor_decimal > 90:
+                    errors.append('El porcentaje no puede ser mayor a 90% (debe quedar un margen de ganancia)')
+            elif tipo_descuento == 'monto_fijo':
+                if valor_decimal > Decimal('15000'):  # Máximo $15,000 CLP
+                    errors.append('El monto fijo no puede exceder $15,000')
+                elif valor_decimal == 0:
+                    errors.append('El monto fijo debe ser mayor a $0')
+                # Nota: La validación de margen de ganancia se hace al aplicar la promoción
+                # para asegurar que siempre quede al menos un 10% de margen
+        except (ValueError, TypeError):
+            errors.append('El valor del descuento debe ser un número válido')
+    
+    fecha_inicio_obj = None
+    if not fecha_inicio:
+        errors.append('La fecha de inicio es obligatoria')
+    else:
+        try:
+            from datetime import datetime, date, timedelta
+            fecha_inicio_obj = datetime.strptime(fecha_inicio, '%Y-%m-%d').date()
+            hoy = date.today()
+            # La fecha de inicio no puede ser anterior a 1 año
+            fecha_minima = hoy - timedelta(days=365)
+            if fecha_inicio_obj < fecha_minima:
+                errors.append('La fecha de inicio no puede ser anterior a 1 año')
+        except ValueError:
+            errors.append('Fecha de inicio inválida. Use el formato YYYY-MM-DD')
+    
+    fecha_fin_obj = None
+    if not fecha_fin:
+        errors.append('La fecha de fin es obligatoria')
+    else:
+        try:
+            from datetime import datetime, date, timedelta
+            fecha_fin_obj = datetime.strptime(fecha_fin, '%Y-%m-%d').date()
+            hoy = date.today()
+            # La fecha de fin no puede ser más de 2 años en el futuro
+            fecha_maxima = hoy + timedelta(days=730)
+            if fecha_fin_obj > fecha_maxima:
+                errors.append('La fecha de fin no puede ser más de 2 años en el futuro')
+        except ValueError:
+            errors.append('Fecha de fin inválida. Use el formato YYYY-MM-DD')
+    
+    if fecha_inicio_obj and fecha_fin_obj:
+        if fecha_fin_obj < fecha_inicio_obj:
+            errors.append('La fecha de fin debe ser posterior a la fecha de inicio')
+        # La duración no puede ser mayor a 2 años
+        diferencia = (fecha_fin_obj - fecha_inicio_obj).days
+        if diferencia > 730:
+            errors.append('La promoción no puede durar más de 2 años')
+    
+    monto_min_decimal = Decimal('0')
+    if monto_minimo:
+        try:
+            monto_min_decimal = Decimal(monto_minimo)
+            # Validar que sea un número entero (sin decimales)
+            if monto_min_decimal % 1 != 0:
+                errors.append('El monto mínimo debe ser un número entero (sin decimales)')
+            if monto_min_decimal < 0:
+                errors.append('El monto mínimo no puede ser negativo')
+            elif monto_min_decimal > Decimal('100000000'):  # Máximo $100,000,000 CLP
+                errors.append('El monto mínimo no puede exceder $100,000,000')
+        except (ValueError, TypeError):
+            errors.append('El monto mínimo debe ser un número válido')
+    
+    limite_usos_int = 0
+    if limite_usos:
+        try:
+            limite_usos_int = int(limite_usos)
+            if limite_usos_int < 0:
+                errors.append('El límite de usos no puede ser negativo')
+            elif limite_usos_int > 100:  # Máximo 100 usos
+                errors.append('El límite de usos no puede exceder 100')
+        except (ValueError, TypeError):
+            errors.append('El límite de usos debe ser un número válido')
+    
+    if estado not in [choice[0] for choice in Promocion.ESTADO_CHOICES]:
+        errors.append('Estado inválido')
+    
+    juegos_validos = []
+    if juegos_ids:
+        # Filtrar strings vacíos y valores None antes de procesar
+        juegos_ids_clean = [j for j in juegos_ids if j and str(j).strip()]
+        for juego_id in juegos_ids_clean:
+            try:
+                juego = Juego.objects.get(id=int(juego_id))
+                juegos_validos.append(juego)
+            except (Juego.DoesNotExist, ValueError):
+                errors.append(f'Juego con ID {juego_id} no encontrado')
+
+    if errors:
+        return JsonResponse({'success': False, 'errors': errors}, status=400)
+
+    try:
+        promocion = Promocion.objects.create(
+            codigo=codigo,
+            nombre=nombre,
+            descripcion=descripcion or None,
+            tipo_descuento=tipo_descuento,
+            valor_descuento=valor_decimal,
+            fecha_inicio=fecha_inicio_obj,
+            fecha_fin=fecha_fin_obj,
+            monto_minimo=monto_min_decimal,
+            limite_usos=limite_usos_int,
+            estado=estado,
+        )
+        
+        # Asignar juegos si se proporcionaron
+        if juegos_validos:
+            promocion.juegos.set(juegos_validos)
+        
+        return JsonResponse({
+            'success': True, 
+            'message': f'Promoción "{promocion.codigo}" creada correctamente.',
+            'promocion_id': promocion.id
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False, 
+            'errors': [f'Error al crear la promoción: {str(e)}']
+        }, status=500)
+
+
+@login_required
+@require_http_methods(["POST"])
+def promocion_update_json(request, promocion_id: int):
+    """
+    Actualiza una promoción existente
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    try:
+        promocion = Promocion.objects.get(id=promocion_id)
+    except Promocion.DoesNotExist:
+        return JsonResponse({'error': 'Promoción no encontrada'}, status=404)
+
+    codigo = request.POST.get('codigo', '').strip().upper()
+    nombre = request.POST.get('nombre', '').strip()
+    descripcion = request.POST.get('descripcion', '').strip()
+    tipo_descuento = request.POST.get('tipo_descuento', '').strip()
+    valor_descuento = request.POST.get('valor_descuento', '').strip()
+    fecha_inicio = request.POST.get('fecha_inicio', '').strip()
+    fecha_fin = request.POST.get('fecha_fin', '').strip()
+    juegos_ids = request.POST.getlist('juegos_ids[]') or request.POST.getlist('juegos_ids')
+    monto_minimo = request.POST.get('monto_minimo', '').strip()
+    limite_usos = request.POST.get('limite_usos', '').strip()
+    estado = request.POST.get('estado', '').strip()
+
+    errors = []
+    
+    if codigo:
+        if len(codigo) < 3:
+            errors.append('El código debe tener al menos 3 caracteres')
+        elif len(codigo) > 50:
+            errors.append('El código no puede exceder 50 caracteres')
+        elif not re.match(r'^[A-Z0-9\-_]+$', codigo):
+            errors.append('El código solo puede contener letras mayúsculas, números, guiones y guiones bajos')
+        elif codigo != promocion.codigo and Promocion.objects.filter(codigo=codigo).exists():
+            errors.append('Ya existe una promoción con ese código')
+    
+    if nombre:
+        if len(nombre) < 3:
+            errors.append('El nombre debe tener al menos 3 caracteres')
+        elif len(nombre) > 100:
+            errors.append('El nombre no puede exceder 100 caracteres')
+        elif not re.match(r'^[a-zA-Z0-9áéíóúÁÉÍÓÚñÑüÜ\s]+$', nombre):
+            errors.append('El nombre solo puede contener letras, números y espacios (sin caracteres especiales)')
+    
+    if tipo_descuento and tipo_descuento not in [choice[0] for choice in Promocion.TIPO_DESCUENTO_CHOICES]:
+        errors.append('Tipo de descuento inválido')
+    
+    valor_decimal = None
+    if valor_descuento:
+        try:
+            valor_decimal = Decimal(valor_descuento)
+            # Validar que sea un número entero (sin decimales)
+            if valor_decimal % 1 != 0:
+                errors.append('El valor del descuento debe ser un número entero (sin decimales)')
+            if valor_decimal < 0:
+                errors.append('El valor del descuento no puede ser negativo')
+            tipo_desc = tipo_descuento or promocion.tipo_descuento
+            if tipo_desc == 'porcentaje':
+                if valor_decimal < 1:
+                    errors.append('El porcentaje debe ser al menos 1%')
+                elif valor_decimal > 90:
+                    errors.append('El porcentaje no puede ser mayor a 90% (debe quedar un margen de ganancia)')
+            elif tipo_desc == 'monto_fijo':
+                if valor_decimal > Decimal('15000'):  # Máximo $15,000 CLP
+                    errors.append('El monto fijo no puede exceder $15,000')
+                elif valor_decimal == 0:
+                    errors.append('El monto fijo debe ser mayor a $0')
+                # Nota: La validación de margen de ganancia se hace al aplicar la promoción
+                # para asegurar que siempre quede al menos un 10% de margen
+        except (ValueError, TypeError):
+            errors.append('El valor del descuento debe ser un número válido')
+    
+    fecha_inicio_obj = None
+    if fecha_inicio:
+        try:
+            from datetime import datetime, date, timedelta
+            fecha_inicio_obj = datetime.strptime(fecha_inicio, '%Y-%m-%d').date()
+            hoy = date.today()
+            # La fecha de inicio no puede ser anterior a 1 año
+            fecha_minima = hoy - timedelta(days=365)
+            if fecha_inicio_obj < fecha_minima:
+                errors.append('La fecha de inicio no puede ser anterior a 1 año')
+        except ValueError:
+            errors.append('Fecha de inicio inválida. Use el formato YYYY-MM-DD')
+    
+    fecha_fin_obj = None
+    if fecha_fin:
+        try:
+            from datetime import datetime, date, timedelta
+            fecha_fin_obj = datetime.strptime(fecha_fin, '%Y-%m-%d').date()
+            hoy = date.today()
+            # La fecha de fin no puede ser más de 2 años en el futuro
+            fecha_maxima = hoy + timedelta(days=730)
+            if fecha_fin_obj > fecha_maxima:
+                errors.append('La fecha de fin no puede ser más de 2 años en el futuro')
+        except ValueError:
+            errors.append('Fecha de fin inválida. Use el formato YYYY-MM-DD')
+    
+    if fecha_inicio_obj and fecha_fin_obj:
+        if fecha_fin_obj < fecha_inicio_obj:
+            errors.append('La fecha de fin debe ser posterior a la fecha de inicio')
+        # La duración no puede ser mayor a 2 años
+        diferencia = (fecha_fin_obj - fecha_inicio_obj).days
+        if diferencia > 730:
+            errors.append('La promoción no puede durar más de 2 años')
+    
+    monto_min_decimal = None
+    if monto_minimo:
+        try:
+            monto_min_decimal = Decimal(monto_minimo)
+            # Validar que sea un número entero (sin decimales)
+            if monto_min_decimal % 1 != 0:
+                errors.append('El monto mínimo debe ser un número entero (sin decimales)')
+            if monto_min_decimal < 0:
+                errors.append('El monto mínimo no puede ser negativo')
+            elif monto_min_decimal > Decimal('1000000'):  # Máximo $1,000,000 CLP
+                errors.append('El monto mínimo no puede exceder $1,000,000')
+        except (ValueError, TypeError):
+            errors.append('El monto mínimo debe ser un número válido')
+    
+    limite_usos_int = None
+    if limite_usos:
+        try:
+            limite_usos_int = int(limite_usos)
+            if limite_usos_int < 0:
+                errors.append('El límite de usos no puede ser negativo')
+            elif limite_usos_int > 100:  # Máximo 100 usos
+                errors.append('El límite de usos no puede exceder 100')
+        except (ValueError, TypeError):
+            errors.append('El límite de usos debe ser un número válido')
+    
+    if estado and estado not in [choice[0] for choice in Promocion.ESTADO_CHOICES]:
+        errors.append('Estado inválido')
+    
+    juegos_validos = []
+    if juegos_ids:
+        # Filtrar strings vacíos y valores None antes de procesar
+        juegos_ids_clean = [j for j in juegos_ids if j and str(j).strip()]
+        for juego_id in juegos_ids_clean:
+            try:
+                juego = Juego.objects.get(id=int(juego_id))
+                juegos_validos.append(juego)
+            except (Juego.DoesNotExist, ValueError):
+                errors.append(f'Juego con ID {juego_id} no encontrado')
+
+    if errors:
+        return JsonResponse({'success': False, 'errors': errors}, status=400)
+
+    try:
+        if codigo:
+            promocion.codigo = codigo
+        if nombre:
+            promocion.nombre = nombre
+        if descripcion is not None:
+            promocion.descripcion = descripcion or None
+        if tipo_descuento:
+            promocion.tipo_descuento = tipo_descuento
+        if valor_decimal is not None:
+            promocion.valor_descuento = valor_decimal
+        if fecha_inicio_obj:
+            promocion.fecha_inicio = fecha_inicio_obj
+        if fecha_fin_obj:
+            promocion.fecha_fin = fecha_fin_obj
+        if monto_min_decimal is not None:
+            promocion.monto_minimo = monto_min_decimal
+        if limite_usos_int is not None:
+            promocion.limite_usos = limite_usos_int
+        # Actualizar estado si se proporciona (siempre debe estar presente en el formulario)
+        # El estado es un campo requerido, por lo que siempre debe estar presente
+        if estado:
+            if estado in [choice[0] for choice in Promocion.ESTADO_CHOICES]:
+                promocion.estado = estado
+            # Si el estado no es válido, ya se validó antes y se agregó a errors
+        
+        promocion.save()
+        
+        # Actualizar juegos si se proporcionaron
+        # Si juegos_ids es una lista vacía o contiene solo strings vacíos, limpiar
+        if juegos_ids is not None:
+            juegos_ids_clean = [j for j in juegos_ids if j and j.strip()]
+            if juegos_ids_clean and juegos_validos:
+                promocion.juegos.set(juegos_validos)
+            elif not juegos_ids_clean:
+                promocion.juegos.clear()
+        
+        return JsonResponse({
+            'success': True, 
+            'message': f'Promoción "{promocion.codigo}" actualizada correctamente.',
+            'promocion_id': promocion.id
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False, 
+            'errors': [f'Error al actualizar la promoción: {str(e)}']
+        }, status=500)
+
+
+@login_required
+@require_http_methods(["POST"])
+def promocion_change_estado_json(request, promocion_id: int):
+    """
+    Cambia el estado de una promoción rápidamente
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'success': False, 'error': 'No autorizado'}, status=403)
+    
+    try:
+        promocion = Promocion.objects.get(id=promocion_id)
+    except Promocion.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Promoción no encontrada'}, status=404)
+    
+    nuevo_estado = request.POST.get('estado', '').strip()
+    
+    if not nuevo_estado:
+        return JsonResponse({'success': False, 'error': 'Estado no proporcionado'}, status=400)
+    
+    if nuevo_estado not in [choice[0] for choice in Promocion.ESTADO_CHOICES]:
+        return JsonResponse({'success': False, 'error': 'Estado inválido'}, status=400)
+    
+    try:
+        promocion.estado = nuevo_estado
+        promocion.save()
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'Estado de la promoción cambiado a "{promocion.get_estado_display()}" correctamente.',
+            'nuevo_estado': nuevo_estado,
+            'nuevo_estado_display': promocion.get_estado_display()
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': f'Error al cambiar el estado: {str(e)}'
+        }, status=500)
+
+
+@login_required
+@require_http_methods(["POST"])
+def promocion_delete_json(request, promocion_id: int):
+    """
+    Elimina una promoción
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    try:
+        promocion = Promocion.objects.get(id=promocion_id)
+    except Promocion.DoesNotExist:
+        return JsonResponse({'error': 'Promoción no encontrada'}, status=404)
+
+    try:
+        codigo = promocion.codigo
+        promocion.delete()
+        return JsonResponse({
+            'success': True, 
+            'message': f'Promoción "{codigo}" eliminada correctamente.'
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False, 
+            'errors': [f'Error al eliminar la promoción: {str(e)}']
+        }, status=500)
+
+
+# ========== CRUD DE EVALUACIONES ==========
+
+@login_required
+def evaluaciones_list(request):
+    """
+    Lista todas las evaluaciones con filtros de búsqueda
+    """
+    if not request.user.tipo_usuario == 'administrador':
+        raise PermissionDenied("Solo los administradores pueden acceder a este recurso.")
+
+    query = request.GET.get('q', '').strip()
+    calificacion_filter = request.GET.get('calificacion', '').strip()
+    estado_filter = request.GET.get('estado', '').strip()
+    
+    order_by = request.GET.get('order_by', 'fecha_evaluacion').strip()
+    direction = request.GET.get('direction', 'desc').strip()
+    
+    valid_order_fields = {
+        'id': 'id',
+        'fecha_evaluacion': 'fecha_evaluacion',
+        'calificacion': 'calificacion',
+        'estado': 'estado',
+    }
+    
+    if order_by not in valid_order_fields:
+        order_by = 'fecha_evaluacion'
+    
+    if direction not in ['asc', 'desc']:
+        direction = 'desc'
+    
+    order_field = valid_order_fields[order_by]
+    if direction == 'desc':
+        order_field = '-' + order_field
+    
+    base_qs = Evaluacion.objects.all().order_by(order_field)
+    
+    if query:
+        base_qs = base_qs.filter(
+            Q(cliente__usuario__first_name__icontains=query) |
+            Q(cliente__usuario__last_name__icontains=query) |
+            Q(comentario__icontains=query)
+        )
+    
+    if calificacion_filter:
+        try:
+            base_qs = base_qs.filter(calificacion=int(calificacion_filter))
+        except ValueError:
+            pass
+    
+    if estado_filter:
+        base_qs = base_qs.filter(estado=estado_filter)
+
+    # Calcular promedio
+    from django.db.models import Avg
+    promedio = base_qs.aggregate(avg=Avg('calificacion'))['avg'] or 0
+
+    return render(request, 'jio_app/evaluaciones_list.html', {
+        'evaluaciones': base_qs,
+        'query': query,
+        'calificacion_filter': calificacion_filter,
+        'estado_filter': estado_filter,
+        'order_by': order_by,
+        'direction': direction,
+        'promedio': round(promedio, 2),
+        'calificacion_choices': Evaluacion.CALIFICACION_CHOICES,
+        'estado_choices': Evaluacion.ESTADO_CHOICES,
+        'reservas': Reserva.objects.all()[:100],  # Limitar para no sobrecargar
+    })
+
+
+@login_required
+@require_http_methods(["GET"])
+def evaluacion_detail_json(request, evaluacion_id: int):
+    """
+    Obtiene los detalles de una evaluación en formato JSON
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    try:
+        evaluacion = Evaluacion.objects.get(id=evaluacion_id)
+        
+        return JsonResponse({
+            'id': evaluacion.id,
+            'reserva_id': evaluacion.reserva.id,
+            'cliente_id': evaluacion.cliente.id,
+            'cliente_nombre': evaluacion.cliente.usuario.get_full_name(),
+            'calificacion': evaluacion.calificacion,
+            'comentario': evaluacion.comentario or '',
+            'estado': evaluacion.estado,
+            'respuesta_admin': evaluacion.respuesta_admin or '',
+            'calificacion_choices': Evaluacion.CALIFICACION_CHOICES,
+            'estado_choices': Evaluacion.ESTADO_CHOICES,
+        })
+    except Evaluacion.DoesNotExist:
+        return JsonResponse({'error': 'Evaluación no encontrada'}, status=404)
+
+
+@login_required
+@require_http_methods(["POST"])
+def evaluacion_create_json(request):
+    """
+    Crea una nueva evaluación
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+
+    reserva_id = request.POST.get('reserva_id', '').strip()
+    cliente_id = request.POST.get('cliente_id', '').strip()
+    calificacion = request.POST.get('calificacion', '').strip()
+    comentario = request.POST.get('comentario', '').strip()
+    estado = request.POST.get('estado', 'pendiente').strip()
+
+    errors = []
+    
+    if not reserva_id:
+        errors.append('La reserva es obligatoria')
+    else:
+        try:
+            reserva = Reserva.objects.get(id=int(reserva_id))
+        except (Reserva.DoesNotExist, ValueError):
+            errors.append('Reserva no encontrada')
+    
+    if not cliente_id:
+        errors.append('El cliente es obligatorio')
+    else:
+        try:
+            cliente = Cliente.objects.get(id=int(cliente_id))
+        except (Cliente.DoesNotExist, ValueError):
+            errors.append('Cliente no encontrado')
+    
+    calificacion_int = None
+    if not calificacion:
+        errors.append('La calificación es obligatoria')
+    else:
+        try:
+            calificacion_int = int(calificacion)
+            if calificacion_int < 1 or calificacion_int > 5:
+                errors.append('La calificación debe estar entre 1 y 5')
+        except (ValueError, TypeError):
+            errors.append('La calificación debe ser un número válido')
+    
+    if estado not in [choice[0] for choice in Evaluacion.ESTADO_CHOICES]:
+        errors.append('Estado inválido')
+    
+    # Verificar que no exista ya una evaluación para esta reserva y cliente
+    if reserva_id and cliente_id:
+        try:
+            reserva = Reserva.objects.get(id=int(reserva_id))
+            cliente = Cliente.objects.get(id=int(cliente_id))
+            if Evaluacion.objects.filter(reserva=reserva, cliente=cliente).exists():
+                errors.append('Ya existe una evaluación para esta reserva y cliente')
+        except (Reserva.DoesNotExist, Cliente.DoesNotExist):
+            pass
+
+    if errors:
+        return JsonResponse({'success': False, 'errors': errors}, status=400)
+
+    try:
+        reserva = Reserva.objects.get(id=int(reserva_id))
+        cliente = Cliente.objects.get(id=int(cliente_id))
+        
+        evaluacion = Evaluacion.objects.create(
+            reserva=reserva,
+            cliente=cliente,
+            calificacion=calificacion_int,
+            comentario=comentario or None,
+            estado=estado,
+        )
+        return JsonResponse({
+            'success': True, 
+            'message': f'Evaluación creada correctamente.',
+            'evaluacion_id': evaluacion.id
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False, 
+            'errors': [f'Error al crear la evaluación: {str(e)}']
+        }, status=500)
+
+
+@login_required
+@require_http_methods(["POST"])
+def evaluacion_update_json(request, evaluacion_id: int):
+    """
+    Actualiza una evaluación existente
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    try:
+        evaluacion = Evaluacion.objects.get(id=evaluacion_id)
+    except Evaluacion.DoesNotExist:
+        return JsonResponse({'error': 'Evaluación no encontrada'}, status=404)
+
+    calificacion = request.POST.get('calificacion', '').strip()
+    comentario = request.POST.get('comentario', '').strip()
+    estado = request.POST.get('estado', '').strip()
+    respuesta_admin = request.POST.get('respuesta_admin', '').strip()
+
+    errors = []
+    
+    calificacion_int = None
+    if calificacion:
+        try:
+            calificacion_int = int(calificacion)
+            if calificacion_int < 1 or calificacion_int > 5:
+                errors.append('La calificación debe estar entre 1 y 5')
+        except (ValueError, TypeError):
+            errors.append('La calificación debe ser un número válido')
+    
+    if estado and estado not in [choice[0] for choice in Evaluacion.ESTADO_CHOICES]:
+        errors.append('Estado inválido')
+
+    if errors:
+        return JsonResponse({'success': False, 'errors': errors}, status=400)
+
+    try:
+        if calificacion_int is not None:
+            evaluacion.calificacion = calificacion_int
+        if comentario is not None:
+            evaluacion.comentario = comentario or None
+        if estado:
+            evaluacion.estado = estado
+        if respuesta_admin is not None:
+            evaluacion.respuesta_admin = respuesta_admin or None
+        
+        evaluacion.save()
+        
+        return JsonResponse({
+            'success': True, 
+            'message': f'Evaluación actualizada correctamente.',
+            'evaluacion_id': evaluacion.id
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False, 
+            'errors': [f'Error al actualizar la evaluación: {str(e)}']
+        }, status=500)
+
+
+@login_required
+@require_http_methods(["POST"])
+def evaluacion_delete_json(request, evaluacion_id: int):
+    """
+    Elimina una evaluación
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    try:
+        evaluacion = Evaluacion.objects.get(id=evaluacion_id)
+    except Evaluacion.DoesNotExist:
+        return JsonResponse({'error': 'Evaluación no encontrada'}, status=404)
+
+    try:
+        evaluacion_id_str = str(evaluacion.id)
+        evaluacion.delete()
+        return JsonResponse({
+            'success': True, 
+            'message': f'Evaluación #{evaluacion_id_str} eliminada correctamente.'
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False, 
+            'errors': [f'Error al eliminar la evaluación: {str(e)}']
+        }, status=500)
+
+
+# ========== CRUD DE MANTENIMIENTO DE VEHÍCULOS ==========
+
+@login_required
+def mantenimientos_list(request):
+    """
+    Lista todos los mantenimientos con filtros de búsqueda
+    """
+    if not request.user.tipo_usuario == 'administrador':
+        raise PermissionDenied("Solo los administradores pueden acceder a este recurso.")
+
+    query = request.GET.get('q', '').strip()
+    vehiculo_filter = request.GET.get('vehiculo', '').strip()
+    tipo_filter = request.GET.get('tipo', '').strip()
+    estado_filter = request.GET.get('estado', '').strip()
+    
+    order_by = request.GET.get('order_by', 'fecha_programada').strip()
+    direction = request.GET.get('direction', 'desc').strip()
+    
+    valid_order_fields = {
+        'id': 'id',
+        'fecha_programada': 'fecha_programada',
+        'fecha_realizada': 'fecha_realizada',
+        'costo': 'costo',
+        'tipo_mantenimiento': 'tipo_mantenimiento',
+        'estado': 'estado',
+    }
+    
+    if order_by not in valid_order_fields:
+        order_by = 'fecha_programada'
+    
+    if direction not in ['asc', 'desc']:
+        direction = 'desc'
+    
+    order_field = valid_order_fields[order_by]
+    if direction == 'desc':
+        order_field = '-' + order_field
+    
+    base_qs = MantenimientoVehiculo.objects.all().order_by(order_field)
+    
+    if query:
+        base_qs = base_qs.filter(
+            Q(descripcion__icontains=query) |
+            Q(observaciones__icontains=query) |
+            Q(vehiculo__patente__icontains=query)
+        )
+    
+    if vehiculo_filter:
+        try:
+            base_qs = base_qs.filter(vehiculo_id=int(vehiculo_filter))
+        except ValueError:
+            pass
+    
+    if tipo_filter:
+        base_qs = base_qs.filter(tipo_mantenimiento=tipo_filter)
+    
+    if estado_filter:
+        base_qs = base_qs.filter(estado=estado_filter)
+
+    return render(request, 'jio_app/mantenimientos_list.html', {
+        'mantenimientos': base_qs,
+        'query': query,
+        'vehiculo_filter': vehiculo_filter,
+        'tipo_filter': tipo_filter,
+        'estado_filter': estado_filter,
+        'order_by': order_by,
+        'direction': direction,
+        'tipo_choices': MantenimientoVehiculo.TIPO_MANTENIMIENTO_CHOICES,
+        'estado_choices': MantenimientoVehiculo.ESTADO_CHOICES,
+        'vehiculos': Vehiculo.objects.all().order_by('patente'),
+        'proveedores': Proveedor.objects.filter(activo=True).order_by('nombre'),
+    })
+
+
+@login_required
+@require_http_methods(["GET"])
+def mantenimiento_detail_json(request, mantenimiento_id: int):
+    """
+    Obtiene los detalles de un mantenimiento en formato JSON
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    try:
+        mantenimiento = MantenimientoVehiculo.objects.get(id=mantenimiento_id)
+        
+        return JsonResponse({
+            'id': mantenimiento.id,
+            'vehiculo_id': mantenimiento.vehiculo.id,
+            'tipo_mantenimiento': mantenimiento.tipo_mantenimiento,
+            'fecha_programada': mantenimiento.fecha_programada.strftime('%Y-%m-%d'),
+            'fecha_realizada': mantenimiento.fecha_realizada.strftime('%Y-%m-%d') if mantenimiento.fecha_realizada else '',
+            'kilometraje': mantenimiento.kilometraje,
+            'descripcion': mantenimiento.descripcion,
+            'costo': str(mantenimiento.costo),
+            'proveedor_id': mantenimiento.proveedor.id if mantenimiento.proveedor else None,
+            'observaciones': mantenimiento.observaciones or '',
+            'estado': mantenimiento.estado,
+            'realizado_por_id': mantenimiento.realizado_por.id if mantenimiento.realizado_por else None,
+            'tipo_choices': MantenimientoVehiculo.TIPO_MANTENIMIENTO_CHOICES,
+            'estado_choices': MantenimientoVehiculo.ESTADO_CHOICES,
+        })
+    except MantenimientoVehiculo.DoesNotExist:
+        return JsonResponse({'error': 'Mantenimiento no encontrado'}, status=404)
+
+
+@login_required
+@require_http_methods(["POST"])
+def mantenimiento_create_json(request):
+    """
+    Crea un nuevo mantenimiento
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+
+    vehiculo_id = request.POST.get('vehiculo_id', '').strip()
+    tipo_mantenimiento = request.POST.get('tipo_mantenimiento', '').strip()
+    fecha_programada = request.POST.get('fecha_programada', '').strip()
+    fecha_realizada = request.POST.get('fecha_realizada', '').strip()
+    kilometraje = request.POST.get('kilometraje', '0').strip()
+    descripcion = request.POST.get('descripcion', '').strip()
+    costo = request.POST.get('costo', '0').strip()
+    proveedor_id = request.POST.get('proveedor_id', '').strip()
+    observaciones = request.POST.get('observaciones', '').strip()
+    estado = request.POST.get('estado', 'programado').strip()
+
+    errors = []
+    
+    if not vehiculo_id:
+        errors.append('El vehículo es obligatorio')
+    else:
+        try:
+            vehiculo = Vehiculo.objects.get(id=int(vehiculo_id))
+        except (ValueError, Vehiculo.DoesNotExist):
+            errors.append('Vehículo no válido')
+    
+    if not tipo_mantenimiento or tipo_mantenimiento not in [choice[0] for choice in MantenimientoVehiculo.TIPO_MANTENIMIENTO_CHOICES]:
+        errors.append('Tipo de mantenimiento inválido')
+    
+    if not fecha_programada:
+        errors.append('La fecha programada es obligatoria')
+    
+    if not descripcion:
+        errors.append('La descripción es obligatoria')
+    
+    kilometraje_int = 0
+    if kilometraje:
+        try:
+            kilometraje_int = int(kilometraje)
+            if kilometraje_int < 0:
+                errors.append('El kilometraje debe ser mayor o igual a 0')
+        except ValueError:
+            errors.append('Kilometraje inválido')
+    
+    costo_decimal = 0
+    if costo:
+        try:
+            costo_decimal = float(costo)
+            if costo_decimal < 0:
+                errors.append('El costo debe ser mayor o igual a 0')
+        except ValueError:
+            errors.append('Costo inválido')
+    
+    fecha_prog = None
+    if fecha_programada:
+        try:
+            from datetime import datetime
+            fecha_prog = datetime.strptime(fecha_programada, '%Y-%m-%d').date()
+        except ValueError:
+            errors.append('Fecha programada inválida')
+    
+    fecha_real = None
+    if fecha_realizada:
+        try:
+            from datetime import datetime
+            fecha_real = datetime.strptime(fecha_realizada, '%Y-%m-%d').date()
+        except ValueError:
+            errors.append('Fecha realizada inválida')
+    
+    proveedor_obj = None
+    if proveedor_id:
+        try:
+            proveedor_obj = Proveedor.objects.get(id=int(proveedor_id))
+        except (ValueError, Proveedor.DoesNotExist):
+            pass
+
+    if errors:
+        return JsonResponse({'success': False, 'errors': errors}, status=400)
+
+    try:
+        mantenimiento = MantenimientoVehiculo.objects.create(
+            vehiculo=vehiculo,
+            tipo_mantenimiento=tipo_mantenimiento,
+            fecha_programada=fecha_prog,
+            fecha_realizada=fecha_real,
+            kilometraje=kilometraje_int,
+            descripcion=descripcion,
+            costo=costo_decimal,
+            proveedor=proveedor_obj,
+            observaciones=observaciones or None,
+            estado=estado,
+            realizado_por=request.user,
+        )
+        return JsonResponse({
+            'success': True, 
+            'message': f'Mantenimiento #{mantenimiento.id} creado correctamente.',
+            'mantenimiento_id': mantenimiento.id
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False, 
+            'errors': [f'Error al crear el mantenimiento: {str(e)}']
+        }, status=500)
+
+
+@login_required
+@require_http_methods(["POST"])
+def mantenimiento_update_json(request, mantenimiento_id: int):
+    """
+    Actualiza un mantenimiento existente
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    try:
+        mantenimiento = MantenimientoVehiculo.objects.get(id=mantenimiento_id)
+    except MantenimientoVehiculo.DoesNotExist:
+        return JsonResponse({'error': 'Mantenimiento no encontrado'}, status=404)
+
+    vehiculo_id = request.POST.get('vehiculo_id', '').strip()
+    tipo_mantenimiento = request.POST.get('tipo_mantenimiento', '').strip()
+    fecha_programada = request.POST.get('fecha_programada', '').strip()
+    fecha_realizada = request.POST.get('fecha_realizada', '').strip()
+    kilometraje = request.POST.get('kilometraje', '0').strip()
+    descripcion = request.POST.get('descripcion', '').strip()
+    costo = request.POST.get('costo', '0').strip()
+    proveedor_id = request.POST.get('proveedor_id', '').strip()
+    observaciones = request.POST.get('observaciones', '').strip()
+    estado = request.POST.get('estado', 'programado').strip()
+
+    errors = []
+    
+    if vehiculo_id:
+        try:
+            vehiculo = Vehiculo.objects.get(id=int(vehiculo_id))
+            mantenimiento.vehiculo = vehiculo
+        except (ValueError, Vehiculo.DoesNotExist):
+            errors.append('Vehículo no válido')
+    
+    if tipo_mantenimiento and tipo_mantenimiento in [choice[0] for choice in MantenimientoVehiculo.TIPO_MANTENIMIENTO_CHOICES]:
+        mantenimiento.tipo_mantenimiento = tipo_mantenimiento
+    
+    if fecha_programada:
+        try:
+            from datetime import datetime
+            mantenimiento.fecha_programada = datetime.strptime(fecha_programada, '%Y-%m-%d').date()
+        except ValueError:
+            errors.append('Fecha programada inválida')
+    
+    if fecha_realizada:
+        try:
+            from datetime import datetime
+            mantenimiento.fecha_realizada = datetime.strptime(fecha_realizada, '%Y-%m-%d').date()
+        except ValueError:
+            errors.append('Fecha realizada inválida')
+    
+    if kilometraje:
+        try:
+            kilometraje_int = int(kilometraje)
+            if kilometraje_int >= 0:
+                mantenimiento.kilometraje = kilometraje_int
+            else:
+                errors.append('El kilometraje debe ser mayor o igual a 0')
+        except ValueError:
+            errors.append('Kilometraje inválido')
+    
+    if descripcion:
+        mantenimiento.descripcion = descripcion
+    
+    if costo:
+        try:
+            costo_decimal = float(costo)
+            if costo_decimal >= 0:
+                mantenimiento.costo = costo_decimal
+            else:
+                errors.append('El costo debe ser mayor o igual a 0')
+        except ValueError:
+            errors.append('Costo inválido')
+    
+    if proveedor_id:
+        try:
+            mantenimiento.proveedor = Proveedor.objects.get(id=int(proveedor_id))
+        except (ValueError, Proveedor.DoesNotExist):
+            mantenimiento.proveedor = None
+    elif proveedor_id == '':
+        mantenimiento.proveedor = None
+    
+    if observaciones is not None:
+        mantenimiento.observaciones = observaciones or None
+    
+    if estado and estado in [choice[0] for choice in MantenimientoVehiculo.ESTADO_CHOICES]:
+        mantenimiento.estado = estado
+
+    if errors:
+        return JsonResponse({'success': False, 'errors': errors}, status=400)
+
+    try:
+        mantenimiento.save()
+        return JsonResponse({
+            'success': True, 
+            'message': f'Mantenimiento #{mantenimiento.id} actualizado correctamente.'
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False, 
+            'errors': [f'Error al actualizar el mantenimiento: {str(e)}']
+        }, status=500)
+
+
+@login_required
+@require_http_methods(["POST"])
+def mantenimiento_delete_json(request, mantenimiento_id: int):
+    """
+    Elimina un mantenimiento
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    try:
+        mantenimiento = MantenimientoVehiculo.objects.get(id=mantenimiento_id)
+    except MantenimientoVehiculo.DoesNotExist:
+        return JsonResponse({'error': 'Mantenimiento no encontrado'}, status=404)
+
+    try:
+        mantenimiento_id_str = str(mantenimiento.id)
+        mantenimiento.delete()
+        return JsonResponse({
+            'success': True, 
+            'message': f'Mantenimiento #{mantenimiento_id_str} eliminado correctamente.'
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False, 
+            'errors': [f'Error al eliminar el mantenimiento: {str(e)}']
+        }, status=500)
+
+
+# ========== CRUD DE PRECIOS POR TEMPORADA ==========
+
+@login_required
+def precios_temporada_list(request):
+    """
+    Lista todos los precios por temporada con filtros de búsqueda
+    """
+    if not request.user.tipo_usuario == 'administrador':
+        raise PermissionDenied("Solo los administradores pueden acceder a este recurso.")
+
+    query = request.GET.get('q', '').strip()
+    juego_filter = request.GET.get('juego', '').strip()
+    temporada_filter = request.GET.get('temporada', '').strip()
+    
+    order_by = request.GET.get('order_by', 'mes_inicio').strip()
+    direction = request.GET.get('direction', 'desc').strip()
+    
+    valid_order_fields = {
+        'id': 'id',
+        'mes_inicio': 'mes_inicio',
+        'mes_fin': 'mes_fin',
+        'precio_arriendo': 'precio_arriendo',
+        'temporada': 'temporada',
+    }
+    
+    if order_by not in valid_order_fields:
+        order_by = 'mes_inicio'
+    
+    if direction not in ['asc', 'desc']:
+        direction = 'desc'
+    
+    order_field = valid_order_fields[order_by]
+    if direction == 'desc':
+        order_field = '-' + order_field
+    
+    base_qs = PrecioTemporada.objects.all().order_by(order_field)
+    
+    if query:
+        base_qs = base_qs.filter(
+            Q(juego__nombre__icontains=query)
+        )
+    
+    if juego_filter:
+        try:
+            base_qs = base_qs.filter(juego_id=int(juego_filter))
+        except ValueError:
+            pass
+    
+    if temporada_filter:
+        base_qs = base_qs.filter(temporada=temporada_filter)
+
+    # Crear un diccionario con los precios base de los juegos para JavaScript
+    from django.utils.safestring import mark_safe
+    import json
+    juegos_list = Juego.objects.filter(estado='Habilitado').order_by('nombre')
+    juegos_precios = {str(juego.id): juego.precio_base for juego in juegos_list}
+    
+    return render(request, 'jio_app/precios_temporada_list.html', {
+        'precios_temporada': base_qs,
+        'query': query,
+        'juego_filter': juego_filter,
+        'temporada_filter': temporada_filter,
+        'order_by': order_by,
+        'direction': direction,
+        'temporada_choices': PrecioTemporada.TEMPORADA_CHOICES,
+        'mes_choices': PrecioTemporada.MES_CHOICES,
+        'juegos': juegos_list,
+        'juegos_precios_json': mark_safe(json.dumps(juegos_precios)),
+    })
+
+
+@login_required
+@require_http_methods(["GET"])
+def precio_temporada_detail_json(request, precio_id: int):
+    """
+    Obtiene los detalles de un precio por temporada en formato JSON
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    try:
+        precio = PrecioTemporada.objects.get(id=precio_id)
+        
+        return JsonResponse({
+            'id': precio.id,
+            'juego_id': precio.juego.id,
+            'temporada': precio.temporada,
+            'precio_arriendo': precio.precio_arriendo,
+            'mes_inicio': precio.mes_inicio,
+            'mes_fin': precio.mes_fin,
+            'descuento_porcentaje': precio.descuento_porcentaje,
+            'temporada_choices': PrecioTemporada.TEMPORADA_CHOICES,
+            'mes_choices': PrecioTemporada.MES_CHOICES,
+        })
+    except PrecioTemporada.DoesNotExist:
+        return JsonResponse({'error': 'Precio por temporada no encontrado'}, status=404)
+
+
+@login_required
+@require_http_methods(["POST"])
+def precio_temporada_create_json(request):
+    """
+    Crea un nuevo precio por temporada
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+
+    juego_id = request.POST.get('juego_id', '').strip()
+    temporada = request.POST.get('temporada', '').strip()
+    precio_arriendo = request.POST.get('precio_arriendo', '0').strip()
+    mes_inicio = request.POST.get('mes_inicio', '').strip()
+    mes_fin = request.POST.get('mes_fin', '').strip()
+    descuento_porcentaje = request.POST.get('descuento_porcentaje', '0').strip()
+
+    errors = []
+    
+    if not juego_id:
+        errors.append('El juego es obligatorio')
+    else:
+        try:
+            juego = Juego.objects.get(id=int(juego_id))
+        except (ValueError, Juego.DoesNotExist):
+            errors.append('Juego no válido')
+    
+    if not temporada or temporada not in [choice[0] for choice in PrecioTemporada.TEMPORADA_CHOICES]:
+        errors.append('Temporada inválida')
+    
+    precio_arriendo_int = None
+    if not precio_arriendo:
+        errors.append('El precio de arriendo es obligatorio')
+    else:
+        try:
+            precio_arriendo_int = int(precio_arriendo)
+            if precio_arriendo_int < 40000:  # Mínimo $40,000 CLP
+                errors.append('El precio mínimo de arriendo es de $40,000 pesos chilenos. Por favor, ingrese un valor igual o superior a este monto.')
+            elif precio_arriendo_int > 200000:  # Máximo $200,000 CLP
+                errors.append('El precio de arriendo no puede exceder $200,000')
+        except (ValueError, TypeError):
+            errors.append('Precio inválido')
+    
+    mes_inicio_int = None
+    if not mes_inicio:
+        errors.append('El mes de inicio es obligatorio')
+    else:
+        try:
+            mes_inicio_int = int(mes_inicio)
+            if mes_inicio_int < 1 or mes_inicio_int > 12:
+                errors.append('El mes de inicio debe ser un número entre 1 y 12')
+        except ValueError:
+            errors.append('Mes de inicio inválido')
+    
+    mes_fin_int = None
+    if not mes_fin:
+        errors.append('El mes de fin es obligatorio')
+    else:
+        try:
+            mes_fin_int = int(mes_fin)
+            if mes_fin_int < 1 or mes_fin_int > 12:
+                errors.append('El mes de fin debe ser un número entre 1 y 12')
+        except ValueError:
+            errors.append('Mes de fin inválido')
+    
+    # Validar rango de meses (mínimo 1 mes, máximo 6 meses)
+    if mes_inicio_int and mes_fin_int:
+        # Calcular diferencia de meses considerando que puede cruzar año nuevo
+        if mes_fin_int >= mes_inicio_int:
+            diferencia_meses = mes_fin_int - mes_inicio_int + 1
+        else:
+            # Cruza año nuevo (ej: noviembre a enero)
+            diferencia_meses = (12 - mes_inicio_int + 1) + mes_fin_int
+        
+        if diferencia_meses < 1:
+            errors.append('El período de temporada debe durar al menos 1 mes')
+        elif diferencia_meses > 6:
+            errors.append('El período de temporada no puede durar más de 6 meses')
+    
+    descuento_int = 0
+    if descuento_porcentaje:
+        try:
+            descuento_int = int(descuento_porcentaje)
+            if descuento_int < 10:
+                errors.append('El descuento debe ser al menos 10%')
+            elif descuento_int > 90:
+                errors.append('El descuento no puede ser mayor a 90%')
+        except ValueError:
+            errors.append('Descuento inválido')
+    
+    # Verificar unique_together
+    if juego_id and temporada and mes_inicio_int:
+        if PrecioTemporada.objects.filter(juego_id=int(juego_id), temporada=temporada, mes_inicio=mes_inicio_int).exists():
+            errors.append('Ya existe un precio para este juego, temporada y mes de inicio')
+
+    if errors:
+        return JsonResponse({'success': False, 'errors': errors}, status=400)
+
+    try:
+        precio = PrecioTemporada.objects.create(
+            juego=juego,
+            temporada=temporada,
+            precio_arriendo=precio_arriendo_int,
+            mes_inicio=mes_inicio_int,
+            mes_fin=mes_fin_int,
+            descuento_porcentaje=descuento_int,
+        )
+        return JsonResponse({
+            'success': True, 
+            'message': f'Precio por temporada #{precio.id} creado correctamente.',
+            'precio_id': precio.id
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False, 
+            'errors': [f'Error al crear el precio por temporada: {str(e)}']
+        }, status=500)
+
+
+@login_required
+@require_http_methods(["POST"])
+def precio_temporada_update_json(request, precio_id: int):
+    """
+    Actualiza un precio por temporada existente
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    try:
+        precio = PrecioTemporada.objects.get(id=precio_id)
+    except PrecioTemporada.DoesNotExist:
+        return JsonResponse({'error': 'Precio por temporada no encontrado'}, status=404)
+
+    juego_id = request.POST.get('juego_id', '').strip()
+    temporada = request.POST.get('temporada', '').strip()
+    precio_arriendo = request.POST.get('precio_arriendo', '').strip()
+    mes_inicio = request.POST.get('mes_inicio', '').strip()
+    mes_fin = request.POST.get('mes_fin', '').strip()
+    descuento_porcentaje = request.POST.get('descuento_porcentaje', '').strip()
+
+    errors = []
+    
+    if juego_id:
+        try:
+            precio.juego = Juego.objects.get(id=int(juego_id))
+        except (ValueError, Juego.DoesNotExist):
+            errors.append('Juego no válido')
+    
+    if temporada and temporada in [choice[0] for choice in PrecioTemporada.TEMPORADA_CHOICES]:
+        precio.temporada = temporada
+    
+    if precio_arriendo:
+        try:
+            precio_arriendo_int = int(precio_arriendo)
+            if precio_arriendo_int < 40000:  # Mínimo $40,000 CLP
+                errors.append('El precio mínimo de arriendo es de $40,000 pesos chilenos. Por favor, ingrese un valor igual o superior a este monto.')
+            elif precio_arriendo_int > 200000:  # Máximo $200,000 CLP
+                errors.append('El precio de arriendo no puede exceder $200,000')
+            else:
+                precio.precio_arriendo = precio_arriendo_int
+        except (ValueError, TypeError):
+            errors.append('Precio inválido')
+    
+    mes_inicio_int = None
+    if mes_inicio:
+        try:
+            mes_inicio_int = int(mes_inicio)
+            if mes_inicio_int < 1 or mes_inicio_int > 12:
+                errors.append('El mes de inicio debe ser un número entre 1 y 12')
+            else:
+                precio.mes_inicio = mes_inicio_int
+        except ValueError:
+            errors.append('Mes de inicio inválido')
+    
+    mes_fin_int = None
+    if mes_fin:
+        try:
+            mes_fin_int = int(mes_fin)
+            if mes_fin_int < 1 or mes_fin_int > 12:
+                errors.append('El mes de fin debe ser un número entre 1 y 12')
+            else:
+                precio.mes_fin = mes_fin_int
+        except ValueError:
+            errors.append('Mes de fin inválido')
+    
+    # Validar rango de meses (mínimo 1 mes, máximo 6 meses)
+    mes_inicio_final = mes_inicio_int if mes_inicio_int else precio.mes_inicio
+    mes_fin_final = mes_fin_int if mes_fin_int else precio.mes_fin
+    if mes_inicio_final and mes_fin_final:
+        # Calcular diferencia de meses considerando que puede cruzar año nuevo
+        if mes_fin_final >= mes_inicio_final:
+            diferencia_meses = mes_fin_final - mes_inicio_final + 1
+        else:
+            # Cruza año nuevo (ej: noviembre a enero)
+            diferencia_meses = (12 - mes_inicio_final + 1) + mes_fin_final
+        
+        if diferencia_meses < 1:
+            errors.append('El período de temporada debe durar al menos 1 mes')
+        elif diferencia_meses > 6:
+            errors.append('El período de temporada no puede durar más de 6 meses')
+    
+    if descuento_porcentaje:
+        try:
+            descuento_int = int(descuento_porcentaje)
+            if descuento_int < 10:
+                errors.append('El descuento debe ser al menos 10%')
+            elif descuento_int > 90:
+                errors.append('El descuento no puede ser mayor a 90%')
+            else:
+                precio.descuento_porcentaje = descuento_int
+        except ValueError:
+            errors.append('Descuento inválido')
+    
+    # Verificar unique_together al actualizar
+    mes_inicio_check = mes_inicio_int if mes_inicio_int else precio.mes_inicio
+    if juego_id and temporada and mes_inicio_check:
+        existing = PrecioTemporada.objects.filter(juego_id=int(juego_id), temporada=temporada, mes_inicio=mes_inicio_check).exclude(id=precio.id)
+        if existing.exists():
+            errors.append('Ya existe un precio para este juego, temporada y mes de inicio')
+
+    if errors:
+        return JsonResponse({'success': False, 'errors': errors}, status=400)
+
+    try:
+        precio.save()
+        return JsonResponse({
+            'success': True, 
+            'message': f'Precio por temporada #{precio.id} actualizado correctamente.'
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False, 
+            'errors': [f'Error al actualizar el precio por temporada: {str(e)}']
+        }, status=500)
+
+
+@login_required
+@require_http_methods(["POST"])
+def precio_temporada_delete_json(request, precio_id: int):
+    """
+    Elimina un precio por temporada
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    try:
+        precio = PrecioTemporada.objects.get(id=precio_id)
+    except PrecioTemporada.DoesNotExist:
+        return JsonResponse({'error': 'Precio por temporada no encontrado'}, status=404)
+
+    try:
+        precio_id_str = str(precio.id)
+        precio.delete()
+        return JsonResponse({
+            'success': True, 
+            'message': f'Precio por temporada #{precio_id_str} eliminado correctamente.'
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False, 
+            'errors': [f'Error al eliminar el precio por temporada: {str(e)}']
+        }, status=500)
+
+
+# ========== CRUD DE MATERIALES/INVENTARIO ==========
+
+@login_required
+def materiales_list(request):
+    """
+    Lista todos los materiales con filtros de búsqueda
+    """
+    if not request.user.tipo_usuario == 'administrador':
+        raise PermissionDenied("Solo los administradores pueden acceder a este recurso.")
+
+    query = request.GET.get('q', '').strip()
+    categoria_filter = request.GET.get('categoria', '').strip()
+    estado_filter = request.GET.get('estado', '').strip()
+    
+    order_by = request.GET.get('order_by', 'nombre').strip()
+    direction = request.GET.get('direction', 'asc').strip()
+    
+    valid_order_fields = {
+        'id': 'id',
+        'nombre': 'nombre',
+        'categoria': 'categoria',
+        'stock_actual': 'stock_actual',
+        'estado': 'estado',
+    }
+    
+    if order_by not in valid_order_fields:
+        order_by = 'nombre'
+    
+    if direction not in ['asc', 'desc']:
+        direction = 'asc'
+    
+    order_field = valid_order_fields[order_by]
+    if direction == 'desc':
+        order_field = '-' + order_field
+    
+    base_qs = Material.objects.all().order_by(order_field)
+    
+    if query:
+        base_qs = base_qs.filter(
+            Q(nombre__icontains=query) |
+            Q(descripcion__icontains=query)
+        )
+    
+    if categoria_filter:
+        # Si es una categoría personalizada, filtrar por "otro" (ya que las personalizadas se guardan como "otro")
+        if categoria_filter.startswith('custom_'):
+            base_qs = base_qs.filter(categoria='otro')
+        else:
+            base_qs = base_qs.filter(categoria=categoria_filter)
+    
+    if estado_filter:
+        base_qs = base_qs.filter(estado=estado_filter)
+
+    # Combinar categorías predefinidas con categorías personalizadas
+    categorias_personalizadas = CategoriaMaterial.objects.filter(activa=True).order_by('nombre')
+    categoria_choices_combined = list(Material.CATEGORIA_CHOICES)
+    for cat in categorias_personalizadas:
+        categoria_choices_combined.append((f'custom_{cat.id}', cat.nombre))
+    
+    return render(request, 'jio_app/materiales_list.html', {
+        'materiales': base_qs,
+        'query': query,
+        'unidad_medida_choices': Material.UNIDAD_MEDIDA_CHOICES,
+        'categoria_filter': categoria_filter,
+        'estado_filter': estado_filter,
+        'order_by': order_by,
+        'direction': direction,
+        'categoria_choices': categoria_choices_combined,
+        'estado_choices': Material.ESTADO_CHOICES,
+        'proveedores': Proveedor.objects.filter(activo=True).order_by('nombre'),
+    })
+
+
+@login_required
+@require_http_methods(["GET"])
+def material_detail_json(request, material_id: int):
+    """
+    Obtiene los detalles de un material en formato JSON
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    try:
+        material = Material.objects.get(id=material_id)
+        
+        return JsonResponse({
+            'id': material.id,
+            'nombre': material.nombre,
+            'categoria': material.categoria,
+            'descripcion': material.descripcion or '',
+            'stock_actual': material.stock_actual,
+            'stock_minimo': material.stock_minimo,
+            'unidad_medida': material.unidad_medida,
+            'precio_unitario': str(material.precio_unitario),
+            'estado': material.estado,
+            'ubicacion': material.ubicacion or '',
+            'proveedor_id': material.proveedor.id if material.proveedor else None,
+            'fecha_ultima_compra': material.fecha_ultima_compra.strftime('%Y-%m-%d') if material.fecha_ultima_compra else '',
+            'observaciones': material.observaciones or '',
+            'categoria_choices': Material.CATEGORIA_CHOICES,
+            'estado_choices': Material.ESTADO_CHOICES,
+            'unidad_medida_choices': Material.UNIDAD_MEDIDA_CHOICES,
+        })
+    except Material.DoesNotExist:
+        return JsonResponse({'error': 'Material no encontrado'}, status=404)
+
+
+@login_required
+@require_http_methods(["POST"])
+def material_create_json(request):
+    """
+    Crea un nuevo material
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+
+    nombre = request.POST.get('nombre', '').strip()
+    categoria = request.POST.get('categoria', '').strip()
+    descripcion = request.POST.get('descripcion', '').strip()
+    stock_actual = request.POST.get('stock_actual', '0').strip()
+    stock_minimo = request.POST.get('stock_minimo', '0').strip()
+    unidad_medida = request.POST.get('unidad_medida', 'unidad').strip()
+    # Validar unidad de medida
+    unidades_validas = [choice[0] for choice in Material.UNIDAD_MEDIDA_CHOICES]
+    if unidad_medida and unidad_medida not in unidades_validas:
+        errors.append('Unidad de medida inválida')
+    precio_unitario = request.POST.get('precio_unitario', '0').strip()
+    estado = request.POST.get('estado', 'disponible').strip()
+    ubicacion = request.POST.get('ubicacion', '').strip()
+    proveedor_id = request.POST.get('proveedor_id', '').strip()
+    fecha_ultima_compra = request.POST.get('fecha_ultima_compra', '').strip()
+    observaciones = request.POST.get('observaciones', '').strip()
+
+    errors = []
+    
+    if not nombre:
+        errors.append('El nombre es obligatorio')
+    elif len(nombre) < 3:
+        errors.append('El nombre debe tener al menos 3 caracteres')
+    elif len(nombre) > 100:
+        errors.append('El nombre no puede exceder 100 caracteres')
+    
+    # Validar categoría (puede ser predefinida o personalizada)
+    categorias_validas = [choice[0] for choice in Material.CATEGORIA_CHOICES]
+    categorias_personalizadas = [f'custom_{cat.id}' for cat in CategoriaMaterial.objects.filter(activa=True)]
+    todas_categorias = categorias_validas + categorias_personalizadas
+    
+    if not categoria or categoria not in todas_categorias:
+        errors.append('Categoría inválida')
+    
+    stock_actual_int = 0
+    if stock_actual:
+        try:
+            stock_actual_int = int(stock_actual)
+            if stock_actual_int < 1:
+                errors.append('El stock actual debe ser al menos 1 unidad (no se permite 0)')
+            # Removemos el límite máximo de 100 unidades para permitir más flexibilidad
+        except ValueError:
+            errors.append('Stock actual inválido')
+    else:
+        errors.append('El stock actual es obligatorio y debe ser al menos 1')
+    
+    stock_minimo_int = 2  # Por defecto 2
+    if stock_minimo:
+        try:
+            stock_minimo_int = int(stock_minimo)
+            if stock_minimo_int < 2:
+                errors.append('El stock mínimo debe ser al menos 2 unidades')
+        except ValueError:
+            errors.append('Stock mínimo inválido')
+    
+    # Validar que stock mínimo no sea mayor que stock actual
+    if stock_actual_int > 0 and stock_minimo_int > stock_actual_int:
+        errors.append('El stock mínimo no puede ser mayor que el stock actual')
+    
+    precio_decimal = 0
+    if precio_unitario:
+        try:
+            precio_decimal = Decimal(precio_unitario)
+            # Validar que sea un número entero (sin decimales)
+            if precio_decimal % 1 != 0:
+                errors.append('El precio unitario debe ser un número entero (sin decimales)')
+            if precio_decimal < 1:
+                errors.append('El precio unitario debe ser al menos $1 (no se permite 0)')
+            elif precio_decimal > Decimal('2000000'):  # Máximo $2,000,000 CLP
+                errors.append('El precio unitario no puede exceder $2,000,000')
+        except (ValueError, TypeError):
+            errors.append('Precio unitario inválido')
+    else:
+        errors.append('El precio unitario es obligatorio y debe ser al menos $1')
+    
+    fecha_compra = None
+    if fecha_ultima_compra:
+        try:
+            from datetime import datetime, date, timedelta
+            fecha_compra = datetime.strptime(fecha_ultima_compra, '%Y-%m-%d').date()
+            hoy = date.today()
+            # La fecha no puede ser futura
+            if fecha_compra > hoy:
+                errors.append('La fecha de última compra no puede ser futura')
+            # La fecha no puede ser anterior a 5 años (validación para evitar errores)
+            fecha_minima = hoy - timedelta(days=365*5)
+            if fecha_compra < fecha_minima:
+                errors.append('La fecha de última compra no puede ser anterior a 5 años. Por favor, verifique la fecha ingresada.')
+        except ValueError:
+            errors.append('Fecha de última compra inválida')
+    
+    proveedor_obj = None
+    if proveedor_id:
+        try:
+            proveedor_obj = Proveedor.objects.get(id=int(proveedor_id))
+        except (ValueError, Proveedor.DoesNotExist):
+            pass
+
+    if errors:
+        return JsonResponse({'success': False, 'errors': errors}, status=400)
+
+    try:
+        # Buscar si ya existe un material con el mismo nombre
+        material_existente = Material.objects.filter(nombre__iexact=nombre).first()
+        
+        if material_existente:
+            # Si existe, sumar al stock existente en lugar de crear uno nuevo
+            material_existente.stock_actual += stock_actual_int
+            # Actualizar otros campos si se proporcionan
+            if categoria and categoria in todas_categorias:
+                if categoria.startswith('custom_'):
+                    material_existente.categoria = 'otro'
+                else:
+                    material_existente.categoria = categoria
+            if descripcion:
+                material_existente.descripcion = descripcion
+            if precio_decimal > 0:
+                # Actualizar precio unitario si es mayor (asumiendo que el nuevo precio es más reciente)
+                material_existente.precio_unitario = precio_decimal
+            if estado:
+                material_existente.estado = estado
+            if ubicacion:
+                material_existente.ubicacion = ubicacion
+            if proveedor_obj:
+                material_existente.proveedor = proveedor_obj
+            if fecha_compra:
+                material_existente.fecha_ultima_compra = fecha_compra
+            if observaciones:
+                material_existente.observaciones = observaciones
+            material_existente.save()
+            
+            return JsonResponse({
+                'success': True, 
+                'message': f'Stock del material "{material_existente.nombre}" actualizado. Stock actual: {material_existente.stock_actual} {material_existente.unidad_medida}.',
+                'material_id': material_existente.id
+            })
+        else:
+            # Si no existe, crear uno nuevo
+            material = Material.objects.create(
+                nombre=nombre,
+                categoria=categoria,
+                descripcion=descripcion or None,
+                stock_actual=stock_actual_int,
+                stock_minimo=stock_minimo_int,
+                unidad_medida=unidad_medida,
+                precio_unitario=precio_decimal,
+                estado=estado,
+                ubicacion=ubicacion or None,
+                proveedor=proveedor_obj,
+                fecha_ultima_compra=fecha_compra,
+                observaciones=observaciones or None,
+            )
+            return JsonResponse({
+                'success': True, 
+                'message': f'Material "{material.nombre}" creado correctamente.',
+                'material_id': material.id
+            })
+    except Exception as e:
+        return JsonResponse({
+            'success': False, 
+            'errors': [f'Error al crear el material: {str(e)}']
+        }, status=500)
+
+
+@login_required
+@require_http_methods(["POST"])
+def material_update_json(request, material_id: int):
+    """
+    Actualiza un material existente
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    try:
+        material = Material.objects.get(id=material_id)
+    except Material.DoesNotExist:
+        return JsonResponse({'error': 'Material no encontrado'}, status=404)
+
+    nombre = request.POST.get('nombre', '').strip()
+    categoria = request.POST.get('categoria', '').strip()
+    descripcion = request.POST.get('descripcion', '').strip()
+    stock_actual = request.POST.get('stock_actual', '').strip()
+    stock_minimo = request.POST.get('stock_minimo', '').strip()
+    unidad_medida = request.POST.get('unidad_medida', '').strip()
+    # Validar unidad de medida si se proporciona
+    if unidad_medida:
+        unidades_validas = [choice[0] for choice in Material.UNIDAD_MEDIDA_CHOICES]
+        if unidad_medida not in unidades_validas:
+            errors.append('Unidad de medida inválida')
+    precio_unitario = request.POST.get('precio_unitario', '').strip()
+    estado = request.POST.get('estado', '').strip()
+    ubicacion = request.POST.get('ubicacion', '').strip()
+    proveedor_id = request.POST.get('proveedor_id', '').strip()
+    fecha_ultima_compra = request.POST.get('fecha_ultima_compra', '').strip()
+    observaciones = request.POST.get('observaciones', '').strip()
+
+    errors = []
+    
+    if nombre:
+        if len(nombre) < 3:
+            errors.append('El nombre debe tener al menos 3 caracteres')
+        elif len(nombre) > 100:
+            errors.append('El nombre no puede exceder 100 caracteres')
+        else:
+            material.nombre = nombre
+    
+    # Validar y asignar categoría (puede ser predefinida o personalizada)
+    categorias_validas = [choice[0] for choice in Material.CATEGORIA_CHOICES]
+    categorias_personalizadas = [f'custom_{cat.id}' for cat in CategoriaMaterial.objects.filter(activa=True)]
+    todas_categorias = categorias_validas + categorias_personalizadas
+    
+    if categoria and categoria in todas_categorias:
+        # Si es una categoría personalizada, usar "otro" como valor base
+        if categoria.startswith('custom_'):
+            material.categoria = 'otro'  # Usar "otro" como valor base para categorías personalizadas
+        else:
+            material.categoria = categoria
+    
+    if descripcion is not None:
+        material.descripcion = descripcion or None
+    
+    if stock_actual:
+        try:
+            stock_actual_int = int(stock_actual)
+            if stock_actual_int < 1:
+                errors.append('El stock actual debe ser al menos 1 unidad (no se permite 0)')
+            # Removemos el límite máximo de 100 unidades para permitir más flexibilidad
+            else:
+                material.stock_actual = stock_actual_int
+        except ValueError:
+            errors.append('Stock actual inválido')
+    
+    if stock_minimo:
+        try:
+            stock_minimo_int = int(stock_minimo)
+            if stock_minimo_int < 2:
+                errors.append('El stock mínimo debe ser al menos 2 unidades')
+            else:
+                material.stock_minimo = stock_minimo_int
+        except ValueError:
+            errors.append('Stock mínimo inválido')
+    
+    # Validar que stock mínimo no sea mayor que stock actual
+    stock_actual_final = material.stock_actual if not stock_actual else stock_actual_int
+    stock_minimo_final = material.stock_minimo if not stock_minimo else stock_minimo_int
+    if stock_actual_final > 0 and stock_minimo_final > stock_actual_final:
+        errors.append('El stock mínimo no puede ser mayor que el stock actual')
+    
+    if unidad_medida:
+        material.unidad_medida = unidad_medida
+    
+    if precio_unitario:
+        try:
+            precio_decimal = Decimal(precio_unitario)
+            # Validar que sea un número entero (sin decimales)
+            if precio_decimal % 1 != 0:
+                errors.append('El precio unitario debe ser un número entero (sin decimales)')
+            if precio_decimal < 1:
+                errors.append('El precio unitario debe ser al menos $1 (no se permite 0)')
+            elif precio_decimal > Decimal('2000000'):  # Máximo $2,000,000 CLP
+                errors.append('El precio unitario no puede exceder $2,000,000')
+            else:
+                material.precio_unitario = precio_decimal
+        except (ValueError, TypeError):
+            errors.append('Precio unitario inválido')
+    
+    if estado and estado in [choice[0] for choice in Material.ESTADO_CHOICES]:
+        material.estado = estado
+    
+    if ubicacion is not None:
+        material.ubicacion = ubicacion or None
+    
+    if proveedor_id:
+        try:
+            material.proveedor = Proveedor.objects.get(id=int(proveedor_id))
+        except (ValueError, Proveedor.DoesNotExist):
+            material.proveedor = None
+    elif proveedor_id == '':
+        material.proveedor = None
+    
+    if fecha_ultima_compra:
+        try:
+            from datetime import datetime, date, timedelta
+            fecha_compra = datetime.strptime(fecha_ultima_compra, '%Y-%m-%d').date()
+            hoy = date.today()
+            # La fecha no puede ser futura
+            if fecha_compra > hoy:
+                errors.append('La fecha de última compra no puede ser futura')
+            # La fecha no puede ser anterior a 5 años (validación para evitar errores)
+            fecha_minima = hoy - timedelta(days=365*5)
+            if fecha_compra < fecha_minima:
+                errors.append('La fecha de última compra no puede ser anterior a 5 años. Por favor, verifique la fecha ingresada.')
+            else:
+                material.fecha_ultima_compra = fecha_compra
+        except ValueError:
+            errors.append('Fecha de última compra inválida')
+    elif fecha_ultima_compra == '':
+        material.fecha_ultima_compra = None
+    
+    if observaciones is not None:
+        material.observaciones = observaciones or None
+
+    if errors:
+        return JsonResponse({'success': False, 'errors': errors}, status=400)
+
+    try:
+        material.save()
+        return JsonResponse({
+            'success': True, 
+            'message': f'Material "{material.nombre}" actualizado correctamente.'
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False, 
+            'errors': [f'Error al actualizar el material: {str(e)}']
+        }, status=500)
+
+
+@login_required
+@require_http_methods(["POST"])
+def material_delete_json(request, material_id: int):
+    """
+    Elimina un material
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    try:
+        material = Material.objects.get(id=material_id)
+    except Material.DoesNotExist:
+        return JsonResponse({'error': 'Material no encontrado'}, status=404)
+
+    try:
+        material_nombre = material.nombre
+        material.delete()
+        return JsonResponse({
+            'success': True, 
+            'message': f'Material "{material_nombre}" eliminado correctamente.'
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False, 
+            'errors': [f'Error al eliminar el material: {str(e)}']
+        }, status=500)
+
+
+# ========== CRUD DE CATEGORÍAS DE MATERIALES ==========
+
+@login_required
+@require_http_methods(["POST"])
+def categoria_material_create_json(request):
+    """
+    Crea una nueva categoría de material personalizada
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+
+    nombre = request.POST.get('nombre_categoria', '').strip()
+
+    errors = []
+    
+    if not nombre:
+        errors.append('El nombre de la categoría es obligatorio')
+    elif len(nombre) < 2:
+        errors.append('El nombre debe tener al menos 2 caracteres')
+    elif len(nombre) > 50:
+        errors.append('El nombre no puede exceder 50 caracteres')
+    elif CategoriaMaterial.objects.filter(nombre__iexact=nombre, activa=True).exists():
+        errors.append('Ya existe una categoría con ese nombre')
+
+    if errors:
+        return JsonResponse({'success': False, 'errors': errors}, status=400)
+
+    try:
+        # Verificar nuevamente antes de crear para evitar condiciones de carrera
+        if CategoriaMaterial.objects.filter(nombre__iexact=nombre, activa=True).exists():
+            return JsonResponse({
+                'success': False, 
+                'errors': ['Ya existe una categoría con ese nombre']
+            }, status=400)
+        
+        categoria = CategoriaMaterial.objects.create(nombre=nombre)
+        return JsonResponse({
+            'success': True, 
+            'message': f'Categoría "{categoria.nombre}" creada correctamente.',
+            'categoria_id': categoria.id,
+            'categoria_value': f'custom_{categoria.id}',
+            'categoria_label': categoria.nombre
+        })
+    except Exception as e:
+        # Manejar errores de duplicado de base de datos
+        error_str = str(e)
+        if 'unique' in error_str.lower() or 'duplicate' in error_str.lower() or 'llave duplicada' in error_str.lower():
+            # Si ya existe, intentar obtenerla
+            try:
+                categoria_existente = CategoriaMaterial.objects.filter(nombre__iexact=nombre, activa=True).first()
+                if categoria_existente:
+                    return JsonResponse({
+                        'success': True, 
+                        'message': f'Categoría "{categoria_existente.nombre}" ya existe.',
+                        'categoria_id': categoria_existente.id,
+                        'categoria_value': f'custom_{categoria_existente.id}',
+                        'categoria_label': categoria_existente.nombre
+                    })
+            except:
+                pass
+            return JsonResponse({
+                'success': False, 
+                'errors': ['Ya existe una categoría con ese nombre']
+            }, status=400)
+        return JsonResponse({
+            'success': False, 
+            'errors': [f'Error al crear la categoría: {str(e)}']
+        }, status=500)
+
+
+# ========== CRUD DE PROVEEDORES ==========
+
+@login_required
+def proveedores_list(request):
+    """
+    Lista todos los proveedores con filtros de búsqueda
+    """
+    if not request.user.tipo_usuario == 'administrador':
+        raise PermissionDenied("Solo los administradores pueden acceder a este recurso.")
+
+    query = request.GET.get('q', '').strip()
+    tipo_filter = request.GET.get('tipo', '').strip()
+    activo_filter = request.GET.get('activo', '').strip()
+    
+    order_by = request.GET.get('order_by', 'nombre').strip()
+    direction = request.GET.get('direction', 'asc').strip()
+    
+    valid_order_fields = {
+        'id': 'id',
+        'nombre': 'nombre',
+        'tipo_proveedor': 'tipo_proveedor',
+        'fecha_creacion': 'fecha_creacion',
+    }
+    
+    if order_by not in valid_order_fields:
+        order_by = 'nombre'
+    
+    if direction not in ['asc', 'desc']:
+        direction = 'asc'
+    
+    order_field = valid_order_fields[order_by]
+    if direction == 'desc':
+        order_field = '-' + order_field
+    
+    base_qs = Proveedor.objects.all().order_by(order_field)
+    
+    if query:
+        base_qs = base_qs.filter(
+            Q(nombre__icontains=query) |
+            Q(contacto_nombre__icontains=query) |
+            Q(telefono__icontains=query) |
+            Q(email__icontains=query) |
+            Q(servicios_ofrecidos__icontains=query)
+        )
+    
+    if tipo_filter:
+        base_qs = base_qs.filter(tipo_proveedor=tipo_filter)
+    
+    if activo_filter:
+        if activo_filter == 'si':
+            base_qs = base_qs.filter(activo=True)
+        elif activo_filter == 'no':
+            base_qs = base_qs.filter(activo=False)
+
+    return render(request, 'jio_app/proveedores_list.html', {
+        'proveedores': base_qs,
+        'query': query,
+        'tipo_filter': tipo_filter,
+        'activo_filter': activo_filter,
+        'order_by': order_by,
+        'direction': direction,
+        'tipo_choices': Proveedor.TIPO_PROVEEDOR_CHOICES,
+    })
+
+
+@login_required
+@require_http_methods(["GET"])
+def proveedor_detail_json(request, proveedor_id: int):
+    """
+    Obtiene los detalles de un proveedor en formato JSON
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    try:
+        proveedor = Proveedor.objects.get(id=proveedor_id)
+        
+        return JsonResponse({
+            'id': proveedor.id,
+            'nombre': proveedor.nombre,
+            'tipo_proveedor': proveedor.tipo_proveedor,
+            'rut': proveedor.rut or '',
+            'contacto_nombre': proveedor.contacto_nombre or '',
+            'telefono': proveedor.telefono or '',
+            'email': proveedor.email or '',
+            'direccion': proveedor.direccion or '',
+            'servicios_ofrecidos': proveedor.servicios_ofrecidos or '',
+            'activo': proveedor.activo,
+            'observaciones': proveedor.observaciones or '',
+            'tipo_choices': Proveedor.TIPO_PROVEEDOR_CHOICES,
+        })
+    except Proveedor.DoesNotExist:
+        return JsonResponse({'error': 'Proveedor no encontrado'}, status=404)
+
+
+@login_required
+@require_http_methods(["POST"])
+def proveedor_create_json(request):
+    """
+    Crea un nuevo proveedor
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+
+    nombre = request.POST.get('nombre', '').strip()
+    tipo_proveedor = request.POST.get('tipo_proveedor', '').strip()
+    rut = request.POST.get('rut', '').strip()
+    contacto_nombre = request.POST.get('contacto_nombre', '').strip()
+    telefono = request.POST.get('telefono', '').strip()
+    email = request.POST.get('email', '').strip()
+    direccion = request.POST.get('direccion', '').strip()
+    servicios_ofrecidos = request.POST.get('servicios_ofrecidos', '').strip()
+    activo = request.POST.get('activo', 'true').strip()
+    observaciones = request.POST.get('observaciones', '').strip()
+
+    errors = []
+    
+    if not nombre:
+        errors.append('El nombre es obligatorio')
+    elif len(nombre) < 2:
+        errors.append('El nombre debe tener al menos 2 caracteres')
+    elif len(nombre) > 100:
+        errors.append('El nombre no puede exceder 100 caracteres')
+    elif not re.match(r'^[a-zA-Z0-9áéíóúÁÉÍÓÚñÑüÜ\s\-.,()&]+$', nombre):
+        errors.append('El nombre contiene caracteres no permitidos')
+    
+    if not tipo_proveedor or tipo_proveedor not in [choice[0] for choice in Proveedor.TIPO_PROVEEDOR_CHOICES]:
+        errors.append('Tipo de proveedor inválido')
+    
+    if telefono:
+        # Validar formato de teléfono (solo números, espacios, guiones, paréntesis y +)
+        if not re.match(r'^[\d\s\-\+\(\)]+$', telefono):
+            errors.append('El teléfono contiene caracteres no permitidos')
+        elif len(telefono) > 15:
+            errors.append('El teléfono no puede exceder 15 caracteres')
+    
+    if email:
+        from django.core.validators import validate_email
+        from django.core.exceptions import ValidationError
+        try:
+            validate_email(email)
+        except ValidationError:
+            errors.append('Email inválido')
+    
+    # Validar que al menos email o teléfono esté presente
+    if not telefono and not email:
+        errors.append('Debe proporcionar al menos un teléfono o un email de contacto')
+    
+    activo_bool = activo.lower() in ['true', '1', 'yes', 'si', 'sí']
+
+    if errors:
+        return JsonResponse({'success': False, 'errors': errors}, status=400)
+
+    try:
+        # Verificar nuevamente antes de crear para evitar condiciones de carrera
+        if Proveedor.objects.filter(nombre__iexact=nombre, activo=True).exists():
+            return JsonResponse({
+                'success': False, 
+                'errors': ['Ya existe un proveedor con ese nombre']
+            }, status=400)
+        
+        proveedor = Proveedor.objects.create(
+            nombre=nombre,
+            tipo_proveedor=tipo_proveedor,
+            rut=rut or None,
+            contacto_nombre=contacto_nombre or None,
+            telefono=telefono or None,
+            email=email or None,
+            direccion=direccion or None,
+            servicios_ofrecidos=servicios_ofrecidos or None,
+            activo=activo_bool,
+            observaciones=observaciones or None,
+        )
+        return JsonResponse({
+            'success': True, 
+            'message': f'Proveedor "{proveedor.nombre}" creado correctamente.',
+            'proveedor_id': proveedor.id
+        })
+    except Exception as e:
+        # Manejar errores de duplicado de base de datos
+        error_str = str(e)
+        if 'unique' in error_str.lower() or 'duplicate' in error_str.lower() or 'llave duplicada' in error_str.lower():
+            # Si ya existe, intentar obtenerlo
+            try:
+                proveedor_existente = Proveedor.objects.filter(nombre__iexact=nombre, activo=True).first()
+                if proveedor_existente:
+                    return JsonResponse({
+                        'success': True, 
+                        'message': f'Proveedor "{proveedor_existente.nombre}" ya existe.',
+                        'proveedor_id': proveedor_existente.id
+                    })
+            except:
+                pass
+            return JsonResponse({
+                'success': False, 
+                'errors': ['Ya existe un proveedor con ese nombre']
+            }, status=400)
+        return JsonResponse({
+            'success': False, 
+            'errors': [f'Error al crear el proveedor: {str(e)}']
+        }, status=500)
+
+
+@login_required
+@require_http_methods(["POST"])
+def proveedor_update_json(request, proveedor_id: int):
+    """
+    Actualiza un proveedor existente
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    try:
+        proveedor = Proveedor.objects.get(id=proveedor_id)
+    except Proveedor.DoesNotExist:
+        return JsonResponse({'error': 'Proveedor no encontrado'}, status=404)
+
+    nombre = request.POST.get('nombre', '').strip()
+    tipo_proveedor = request.POST.get('tipo_proveedor', '').strip()
+    rut = request.POST.get('rut', '').strip()
+    contacto_nombre = request.POST.get('contacto_nombre', '').strip()
+    telefono = request.POST.get('telefono', '').strip()
+    email = request.POST.get('email', '').strip()
+    direccion = request.POST.get('direccion', '').strip()
+    servicios_ofrecidos = request.POST.get('servicios_ofrecidos', '').strip()
+    activo = request.POST.get('activo', '').strip()
+    observaciones = request.POST.get('observaciones', '').strip()
+
+    errors = []
+    
+    if nombre:
+        proveedor.nombre = nombre
+    
+    if tipo_proveedor and tipo_proveedor in [choice[0] for choice in Proveedor.TIPO_PROVEEDOR_CHOICES]:
+        proveedor.tipo_proveedor = tipo_proveedor
+    
+    if rut is not None:
+        proveedor.rut = rut or None
+    
+    if contacto_nombre is not None:
+        proveedor.contacto_nombre = contacto_nombre or None
+    
+    if telefono is not None:
+        proveedor.telefono = telefono or None
+    
+    if email:
+        from django.core.validators import validate_email
+        from django.core.exceptions import ValidationError
+        try:
+            validate_email(email)
+            proveedor.email = email or None
+        except ValidationError:
+            errors.append('Email inválido')
+    elif email == '':
+        proveedor.email = None
+    
+    if direccion is not None:
+        proveedor.direccion = direccion or None
+    
+    if servicios_ofrecidos is not None:
+        proveedor.servicios_ofrecidos = servicios_ofrecidos or None
+    
+    if activo:
+        proveedor.activo = activo.lower() in ['true', '1', 'yes', 'si', 'sí']
+    
+    if observaciones is not None:
+        proveedor.observaciones = observaciones or None
+
+    if errors:
+        return JsonResponse({'success': False, 'errors': errors}, status=400)
+
+    try:
+        proveedor.save()
+        return JsonResponse({
+            'success': True, 
+            'message': f'Proveedor "{proveedor.nombre}" actualizado correctamente.'
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False, 
+            'errors': [f'Error al actualizar el proveedor: {str(e)}']
+        }, status=500)
+
+
+@login_required
+@require_http_methods(["POST"])
+def proveedor_delete_json(request, proveedor_id: int):
+    """
+    Elimina un proveedor
+    """
+    if request.user.tipo_usuario != 'administrador':
+        return JsonResponse({'error': 'No autorizado'}, status=403)
+    
+    try:
+        proveedor = Proveedor.objects.get(id=proveedor_id)
+    except Proveedor.DoesNotExist:
+        return JsonResponse({'error': 'Proveedor no encontrado'}, status=404)
+
+    try:
+        proveedor_nombre = proveedor.nombre
+        proveedor.delete()
+        return JsonResponse({
+            'success': True, 
+            'message': f'Proveedor "{proveedor_nombre}" eliminado correctamente.'
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False, 
+            'errors': [f'Error al eliminar el proveedor: {str(e)}']
         }, status=500)

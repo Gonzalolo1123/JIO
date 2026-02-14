@@ -1,0 +1,556 @@
+{% extends 'jio_app/base_admin.html' %}
+{% load static %}
+{% load jio_filters %}
+{% load humanize %}
+
+{% block title %}Promociones - JIO{% endblock %}
+
+{% block content %}
+<div class="panel-container" style="max-width: 95%; margin: 0 auto; padding: 0 1rem;">
+  <div class="panel-header">
+    <h1 class="panel-title">Promociones y Descuentos</h1>
+  </div>
+
+  <!-- Modal de edición -->
+  <div id="modalEditPromocion" class="modal" aria-hidden="true">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Editar promoción</h2>
+        <button class="modal-close" data-modal-close>&times;</button>
+      </div>
+      <form id="formEditPromocion" class="form-grid" data-endpoint-base="/panel/promociones/">
+        {% csrf_token %}
+        <input type="hidden" name="promocion_id" id="editPromocionId">
+        <label>
+          Código *
+          <input type="text" name="codigo" id="editPromocionCodigo" required maxlength="50" style="text-transform:uppercase;">
+        </label>
+        <label>
+          Nombre *
+          <input type="text" name="nombre" id="editPromocionNombre" required maxlength="100" pattern="[a-zA-Z0-9áéíóúÁÉÍÓÚñÑüÜ\s]+" title="Solo se permiten letras, números y espacios (sin caracteres especiales)">
+        </label>
+        <label>
+          Tipo de descuento *
+          <select name="tipo_descuento" id="editPromocionTipoDescuento" required>
+            <option value="">Seleccionar tipo</option>
+            {% for value, label in tipo_descuento_choices %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Valor descuento *
+          <input type="number" name="valor_descuento" id="editPromocionValorDescuento" required min="1" step="1" max="15000">
+          <small id="editPromocionValorHelp" style="color:#666;">Porcentaje o monto según tipo</small>
+        </label>
+        <label>
+          Fecha inicio *
+          <input type="date" name="fecha_inicio" id="editPromocionFechaInicio" required>
+        </label>
+        <label>
+          Fecha fin *
+          <input type="date" name="fecha_fin" id="editPromocionFechaFin" required>
+        </label>
+        <label>
+          Monto mínimo
+          <input type="number" name="monto_minimo" id="editPromocionMontoMinimo" min="0" step="1" value="0">
+          <small style="color:#666;">Monto mínimo de compra para aplicar la promoción (solo enteros)</small>
+        </label>
+        <label>
+          Límite de usos
+          <input type="number" name="limite_usos" id="editPromocionLimiteUsos" min="0" value="0">
+          <small style="color:#666;">0 = ilimitado</small>
+        </label>
+        <label>
+          Estado *
+          <select name="estado" id="editPromocionEstado" required>
+            {% for value, label in estado_choices %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label style="grid-column: 1 / -1;">
+          Descripción
+          <textarea name="descripcion" id="editPromocionDescripcion" rows="3"></textarea>
+        </label>
+        <label style="grid-column: 1 / -1;">
+          <strong>Juegos aplicables</strong>
+          <small style="display:block;color:#666;margin-bottom:0.5rem;">Si no selecciona ninguno, aplica a todos los juegos</small>
+          <div id="editPromocionJuegosContainer" style="max-height:200px;overflow-y:auto;border:1px solid #ddd;padding:0.5rem;border-radius:4px;">
+            {% for juego in juegos %}
+            <label style="display:block;margin-bottom:0.5rem;">
+              <input type="checkbox" name="juegos_ids" value="{{ juego.id }}" class="juego-checkbox">
+              {{ juego.nombre }}
+            </label>
+            {% endfor %}
+          </div>
+        </label>
+        <div class="form-actions" style="grid-column: 1 / -1;">
+          <button type="button" class="btn btn-secondary" data-modal-close>Cancelar</button>
+          <button type="submit" class="btn btn-primary">Guardar</button>
+        </div>
+      </form>
+    </div>
+    <div class="modal-backdrop" data-modal-close></div>
+  </div>
+
+  <!-- Tabs de secciones -->
+  <div class="form-card" style="margin-bottom: 1rem; padding: 0;">
+    <div style="display: flex; border-bottom: 2px solid #e0e0e0;">
+      <button class="tab-button {% if seccion == 'todas' %}active{% endif %}" data-seccion="todas" style="flex: 1; padding: 1rem; background: none; border: none; border-bottom: 3px solid {% if seccion == 'todas' %}#2E7D32{% else %}transparent{% endif %}; color: {% if seccion == 'todas' %}#2E7D32{% else %}#666{% endif %}; font-weight: {% if seccion == 'todas' %}bold{% else %}normal{% endif %}; cursor: pointer; transition: all 0.3s;">
+        Todas las Promociones
+      </button>
+      <button class="tab-button {% if seccion == 'activas' %}active{% endif %}" data-seccion="activas" style="flex: 1; padding: 1rem; background: none; border: none; border-bottom: 3px solid {% if seccion == 'activas' %}#2E7D32{% else %}transparent{% endif %}; color: {% if seccion == 'activas' %}#2E7D32{% else %}#666{% endif %}; font-weight: {% if seccion == 'activas' %}bold{% else %}normal{% endif %}; cursor: pointer; transition: all 0.3s;">
+        Promociones Activas
+      </button>
+      <button class="tab-button {% if seccion == 'desactivadas' %}active{% endif %}" data-seccion="desactivadas" style="flex: 1; padding: 1rem; background: none; border: none; border-bottom: 3px solid {% if seccion == 'desactivadas' %}#2E7D32{% else %}transparent{% endif %}; color: {% if seccion == 'desactivadas' %}#2E7D32{% else %}#666{% endif %}; font-weight: {% if seccion == 'desactivadas' %}bold{% else %}normal{% endif %}; cursor: pointer; transition: all 0.3s;">
+        Promociones Desactivadas
+      </button>
+    </div>
+  </div>
+
+  <!-- Filtros de búsqueda -->
+  <div class="form-card" id="promocionesPage" data-promociones-base="/panel/promociones/">
+    <form method="get" class="form-grid" id="filterForm" style="grid-template-columns: {% if seccion == 'todas' %}1fr 1fr auto{% else %}1fr auto{% endif %};align-items: end;gap:1rem;">
+      <input type="hidden" name="order_by" value="{{ order_by }}">
+      <input type="hidden" name="direction" value="{{ direction }}">
+      <input type="hidden" name="seccion" id="seccionInput" value="{{ seccion }}">
+      <label>Buscar
+        <input type="text" name="q" value="{{ query }}" placeholder="Código, nombre o descripción">
+      </label>
+      {% if seccion == 'todas' %}
+      <label id="estadoFilterLabel">Estado
+        <select name="estado" id="estadoFilterSelect">
+          <option value="">Todos los estados</option>
+          {% for value, label in estado_choices %}
+          <option value="{{ value }}" {% if estado_filter == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      {% endif %}
+      <button class="btn btn-secondary" type="submit">Filtrar</button>
+    </form>
+  </div>
+
+  <!-- Lista de promociones -->
+  <div class="form-card" style="overflow:auto;">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:.75rem;">
+      <h2 class="panel-title" style="font-size:1.25rem; color:#2E7D32; margin:0;">
+        {% if seccion == 'activas' %}
+          Promociones Activas
+        {% elif seccion == 'desactivadas' %}
+          Promociones Desactivadas
+        {% else %}
+          Todas las Promociones
+        {% endif %}
+      </h2>
+      <div class="actions-wrap" style="gap:.5rem;">
+        <button type="button" id="btnOpenCreatePromocion" class="btn btn-primary"><i class="fas fa-plus"></i> Agregar Promoción</button>
+      </div>
+    </div>
+    <table class="table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Código Descuento</th>
+          <th>Nombre</th>
+          <th>Tipo</th>
+          <th>Valor</th>
+          <th>Vigencia</th>
+          <th>Usos</th>
+          <th>Estado</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for promocion in promociones %}
+        <tr>
+          <td>{{ promocion.id }}</td>
+          <td><strong>{{ promocion.codigo }}</strong></td>
+          <td>{{ promocion.nombre }}</td>
+          <td>{{ promocion.get_tipo_descuento_display }}</td>
+          <td>
+            {% if promocion.tipo_descuento == 'porcentaje' %}
+              {{ promocion.valor_descuento|floatformat:0 }}%
+            {% else %}
+              {{ promocion.valor_descuento|precio_chileno }}
+            {% endif %}
+          </td>
+          <td>
+            {{ promocion.fecha_inicio|date:"d/m/Y" }} - {{ promocion.fecha_fin|date:"d/m/Y" }}
+          </td>
+          <td>
+            {% if promocion.limite_usos > 0 %}
+              {{ promocion.usos_actuales }} / {{ promocion.limite_usos }}
+            {% else %}
+              {{ promocion.usos_actuales }} / ∞
+            {% endif %}
+          </td>
+          <td>
+            <span class="status-badge status-{{ promocion.estado }}">
+              {{ promocion.get_estado_display }}
+            </span>
+          </td>
+          <td style="white-space:nowrap;">
+            <select class="estado-select" data-change-estado="{{ promocion.id }}" style="margin-right: 0.5rem; padding: 0.4rem 0.6rem; font-size: 0.875rem; border: 1px solid #3498db; border-radius: 4px; background: white; color: #3498db; cursor: pointer; font-weight: 500;">
+              <option value="activa" {% if promocion.estado == 'activa' %}selected{% endif %}>Activar</option>
+              <option value="inactiva" {% if promocion.estado == 'inactiva' %}selected{% endif %}>Desactivar</option>
+              <option value="expirada" {% if promocion.estado == 'expirada' %}selected{% endif %}>Marcar Expirada</option>
+            </select>
+            <button class="btn btn-secondary" data-edit-promocion="{{ promocion.id }}">Editar</button>
+            <button class="btn btn-danger" data-delete-promocion="{{ promocion.id }}">Eliminar</button>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="9">No hay promociones que coincidan con los filtros.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  
+  <!-- Modal de creación -->
+  <div id="modalCreatePromocion" class="modal" aria-hidden="true">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Nueva promoción</h2>
+        <button class="modal-close" data-modal-close>&times;</button>
+      </div>
+      <form id="formCreatePromocion" class="form-grid" data-endpoint="{% url 'jio_app:promocion_create_json' %}">
+        {% csrf_token %}
+        <label>
+          Código Descuento *
+          <input type="text" name="codigo" required maxlength="50" style="text-transform:uppercase;">
+        </label>
+        <label>
+          Nombre *
+          <input type="text" name="nombre" required maxlength="100" pattern="[a-zA-Z0-9áéíóúÁÉÍÓÚñÑüÜ\s]+" title="Solo se permiten letras, números y espacios (sin caracteres especiales)">
+        </label>
+        <label>
+          Tipo de descuento *
+          <select name="tipo_descuento" id="createPromocionTipoDescuento" required>
+            <option value="">Seleccionar tipo</option>
+            {% for value, label in tipo_descuento_choices %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Valor descuento *
+          <input type="number" name="valor_descuento" id="createPromocionValorDescuento" required min="1" step="1" max="15000">
+          <small id="createPromocionValorHelp" style="color:#666;">Porcentaje o monto según tipo</small>
+        </label>
+        <label>
+          Fecha inicio *
+          <input type="date" name="fecha_inicio" required>
+        </label>
+        <label>
+          Fecha fin *
+          <input type="date" name="fecha_fin" required>
+        </label>
+        <label>
+          Monto mínimo
+          <input type="number" name="monto_minimo" min="0" step="1" value="0">
+          <small style="color:#666;">Monto mínimo de compra para aplicar la promoción (solo enteros)</small>
+        </label>
+        <label>
+          Límite de usos
+          <input type="number" name="limite_usos" min="0" value="0">
+          <small style="color:#666;">0 = ilimitado</small>
+        </label>
+        <label>
+          Estado *
+          <select name="estado" required>
+            {% for value, label in estado_choices %}
+            <option value="{{ value }}" {% if value == 'activa' %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label style="grid-column: 1 / -1;">
+          Descripción
+          <textarea name="descripcion" rows="3"></textarea>
+        </label>
+        <label style="grid-column: 1 / -1;">
+          <strong>Juegos aplicables</strong>
+          <small style="display:block;color:#666;margin-bottom:0.5rem;">Si no selecciona ninguno, aplica a todos los juegos</small>
+          <div style="max-height:200px;overflow-y:auto;border:1px solid #ddd;padding:0.5rem;border-radius:4px;">
+            {% for juego in juegos %}
+            <label style="display:block;margin-bottom:0.5rem;">
+              <input type="checkbox" name="juegos_ids" value="{{ juego.id }}">
+              {{ juego.nombre }}
+            </label>
+            {% endfor %}
+          </div>
+        </label>
+        <div class="form-actions" style="grid-column: 1 / -1;">
+          <button type="button" class="btn btn-secondary" data-modal-close>Cancelar</button>
+          <button type="submit" class="btn btn-primary">Crear</button>
+        </div>
+      </form>
+    </div>
+    <div class="modal-backdrop" data-modal-close></div>
+  </div>
+  
+  {% block extra_scripts %}
+  <script src="{% static 'js/validaciones.js' %}"></script>
+  <script src="{% static 'js/promociones_list.js' %}"></script>
+  <script>
+    // Manejo de tabs/secciones
+    document.addEventListener('DOMContentLoaded', function() {
+      const tabButtons = document.querySelectorAll('.tab-button');
+      const seccionInput = document.getElementById('seccionInput');
+      const estadoFilterSelect = document.getElementById('estadoFilterSelect');
+      const estadoFilterLabel = document.getElementById('estadoFilterLabel');
+      const filterForm = document.getElementById('filterForm');
+      
+      tabButtons.forEach(button => {
+        button.addEventListener('click', function() {
+          const seccion = this.getAttribute('data-seccion');
+          seccionInput.value = seccion;
+          
+          // Recargar la página con la nueva sección (el servidor manejará mostrar/ocultar el filtro)
+          filterForm.submit();
+        });
+      });
+      
+       // Manejo de cambio de estado
+       const estadoSelects = document.querySelectorAll('[data-change-estado]');
+       estadoSelects.forEach(select => {
+         // Guardar el valor inicial
+         let valorAnterior = select.value;
+         let procesando = false;
+         let cambioProgramatico = false; // Bandera para ignorar cambios programáticos
+         
+         select.addEventListener('change', function(e) {
+           // Debug: verificar el estado de las banderas
+           console.log('=== Evento change disparado ===');
+           console.log('cambioProgramatico:', cambioProgramatico);
+           console.log('procesando:', procesando);
+           console.log('valorAnterior:', valorAnterior);
+           console.log('this.value:', this.value);
+           console.log('e.target.value:', e.target.value);
+           
+           // Ignorar si es un cambio programático (cuando restauramos el valor)
+           // ESTO DEBE SER LO PRIMERO, antes de cualquier procesamiento
+           if (cambioProgramatico) {
+             console.log('=== IGNORADO: Cambio programático ===');
+             cambioProgramatico = false;
+             return;
+           }
+           
+           // Prevenir múltiples ejecuciones
+           if (procesando) {
+             console.log('=== IGNORADO: Ya procesando ===');
+             cambioProgramatico = true;
+             this.value = valorAnterior;
+             return;
+           }
+           
+           e.preventDefault();
+           e.stopPropagation();
+           
+           const promocionId = this.getAttribute('data-change-estado');
+           // Capturar el nuevo estado y su texto ANTES de hacer cualquier cambio
+           // Usar e.target.value para asegurar que capturamos el valor correcto del elemento que disparó el evento
+           const nuevoEstado = e.target.value || this.value;
+           
+           // Verificar si el nuevo estado es diferente al anterior
+           // Si no es diferente, podría ser un cambio programático que no fue detectado
+           if (nuevoEstado === valorAnterior) {
+             console.log('=== IGNORADO: Mismo valor que el anterior (probable cambio programático) ===');
+             return;
+           }
+           
+           // Buscar la opción que corresponde al nuevo estado por su valor
+           // Esto es más confiable que usar selectedIndex
+           const opcionSeleccionada = Array.from(this.options).find(opt => opt.value === nuevoEstado);
+           const textoCorrecto = opcionSeleccionada ? opcionSeleccionada.text : nuevoEstado;
+           
+           // Debug: verificar que estamos capturando el valor correcto
+           console.log('=== Cambio de estado DEBUG (USUARIO) ===');
+           console.log('Valor anterior:', valorAnterior);
+           console.log('Nuevo estado (value):', nuevoEstado);
+           console.log('e.target.value:', e.target.value);
+           console.log('this.value:', this.value);
+           console.log('selectedIndex:', this.selectedIndex);
+           console.log('Opciones disponibles:', Array.from(this.options).map(opt => ({value: opt.value, text: opt.text})));
+           console.log('Opción seleccionada encontrada:', opcionSeleccionada);
+           console.log('Texto correcto:', textoCorrecto);
+           console.log('==========================================');
+           
+           // Guardar el texto correcto en una variable que no se sobrescriba
+           const textoParaMostrar = textoCorrecto;
+           const estadoParaEnviar = nuevoEstado;
+           
+           // Restaurar el valor anterior inmediatamente para evitar que el select cambie visualmente
+           // Usar la bandera para evitar que este cambio dispare otro evento
+           // IMPORTANTE: Establecer la bandera ANTES de cambiar el valor
+           cambioProgramatico = true;
+           this.value = valorAnterior;
+           procesando = true;
+           
+           console.log('Valores guardados - textoParaMostrar:', textoParaMostrar, 'estadoParaEnviar:', estadoParaEnviar);
+          
+          // Mostrar confirmación con SweetAlert2
+          // Usar las variables guardadas antes de restaurar el valor
+          if (typeof Swal !== 'undefined' && Swal.fire) {
+            Swal.fire({
+              title: '¿Está seguro?',
+              text: `¿Desea cambiar el estado de esta promoción a "${textoParaMostrar}"?`,
+              icon: 'warning',
+              showCancelButton: true,
+              confirmButtonColor: '#2E7D32',
+              cancelButtonColor: '#3085d6',
+              confirmButtonText: 'Sí, cambiar estado',
+              cancelButtonText: 'Cancelar',
+              reverseButtons: true,
+              allowOutsideClick: false,
+              allowEscapeKey: true,
+              focusConfirm: false,
+              focusCancel: true
+            }).then((result) => {
+              if (result.isConfirmed) {
+                // Obtener token CSRF del formulario
+                const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value || '{{ csrf_token }}';
+                
+                // Crear FormData
+                // Usar el estado guardado antes de restaurar el valor
+                const formData = new FormData();
+                formData.append('estado', estadoParaEnviar);
+                formData.append('csrfmiddlewaretoken', csrfToken);
+                
+                // Enviar petición
+                fetch(`/panel/promociones/${promocionId}/change-estado/`, {
+                  method: 'POST',
+                  body: formData,
+                  headers: {
+                    'X-CSRFToken': csrfToken
+                  }
+                })
+                .then(response => {
+                  // Verificar si la respuesta es exitosa
+                  if (!response.ok) {
+                    return response.json().then(data => {
+                      throw new Error(data.error || `Error ${response.status}: ${response.statusText}`);
+                    });
+                  }
+                  return response.json();
+                })
+                 .then(data => {
+                   if (data.success) {
+                     // Actualizar el valor anterior para reflejar el nuevo estado
+                     valorAnterior = estadoParaEnviar;
+                    // Mostrar mensaje de éxito
+                    Swal.fire({
+                      icon: 'success',
+                      title: 'Estado actualizado',
+                      text: data.message,
+                      confirmButtonColor: '#2E7D32',
+                      confirmButtonText: 'Aceptar',
+                      allowOutsideClick: false
+                    }).then(() => {
+                      // Recargar la página para actualizar las secciones
+                      location.reload();
+                    });
+                  } else {
+                    // Mostrar error
+                    Swal.fire({
+                      icon: 'error',
+                      title: 'Error',
+                      text: data.error || 'Error al cambiar el estado',
+                      confirmButtonColor: '#d33',
+                      confirmButtonText: 'Aceptar',
+                      allowOutsideClick: false
+                    }).then(() => {
+                      location.reload();
+                    });
+                  }
+                  procesando = false;
+                })
+                .catch(error => {
+                  console.error('Error:', error);
+                  procesando = false;
+                  Swal.fire({
+                    icon: 'error',
+                    title: 'Error',
+                    text: error.message || 'Error al cambiar el estado de la promoción',
+                    confirmButtonColor: '#d33',
+                    confirmButtonText: 'Aceptar',
+                    allowOutsideClick: false
+                  }).then(() => {
+                    location.reload();
+                  });
+                });
+              } else {
+                // Usuario canceló, el valor ya está restaurado
+                procesando = false;
+                // No hacer nada, el select ya tiene su valor anterior
+              }
+            });
+          } else {
+            // Fallback si SweetAlert2 no está disponible
+            this.value = valorAnterior; // Restaurar valor
+            procesando = false;
+            if (confirm(`¿Está seguro de cambiar el estado de esta promoción a "${textoParaMostrar}"?`)) {
+              // Obtener token CSRF del formulario
+              const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value || '{{ csrf_token }}';
+              
+              // Crear FormData
+              // Usar el estado guardado antes de restaurar el valor
+              const formData = new FormData();
+              formData.append('estado', estadoParaEnviar);
+              formData.append('csrfmiddlewaretoken', csrfToken);
+              
+              // Enviar petición
+              fetch(`/panel/promociones/${promocionId}/change-estado/`, {
+                method: 'POST',
+                body: formData,
+                headers: {
+                  'X-CSRFToken': csrfToken
+                }
+              })
+              .then(response => {
+                // Verificar si la respuesta es exitosa
+                if (!response.ok) {
+                  return response.json().then(data => {
+                    throw new Error(data.error || `Error ${response.status}: ${response.statusText}`);
+                  });
+                }
+                return response.json();
+              })
+               .then(data => {
+                 if (data.success) {
+                   valorAnterior = estadoParaEnviar;
+                   alert(data.message);
+                   location.reload();
+                } else {
+                  alert(data.error || 'Error al cambiar el estado');
+                  location.reload();
+                }
+                procesando = false;
+              })
+              .catch(error => {
+                console.error('Error:', error);
+                procesando = false;
+                alert(error.message || 'Error al cambiar el estado de la promoción');
+                location.reload();
+              });
+            }
+          }
+        });
+        
+        // Actualizar el valor anterior cuando se carga la página o después de recargar
+        // Esto se hace para mantener el valor correcto después de recargas
+        setTimeout(() => {
+          valorAnterior = select.value;
+        }, 100);
+      });
+    });
+  </script>
+  {% endblock %}
+</div>
+{% endblock %}
+
+
+

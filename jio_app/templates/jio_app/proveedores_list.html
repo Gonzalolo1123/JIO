@@ -1,0 +1,229 @@
+{% extends 'jio_app/base_admin.html' %}
+{% load static %}
+{% load jio_filters %}
+{% load humanize %}
+
+{% block title %}Proveedores - JIO{% endblock %}
+
+{% block content %}
+<div class="panel-container">
+  <div class="panel-header">
+    <h1 class="panel-title">Proveedores</h1>
+  </div>
+
+  <!-- Modal de edición -->
+  <div id="modalEditProveedor" class="modal" aria-hidden="true">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Editar proveedor</h2>
+        <button class="modal-close" data-modal-close>&times;</button>
+      </div>
+      <form id="formEditProveedor" class="form-grid" data-endpoint-base="/panel/proveedores/">
+        {% csrf_token %}
+        <input type="hidden" name="proveedor_id" id="editProveedorId">
+        <label>
+          Nombre *
+          <input type="text" name="nombre" id="editProveedorNombre" required maxlength="100">
+        </label>
+        <label>
+          Tipo de proveedor *
+          <select name="tipo_proveedor" id="editProveedorTipo" required>
+            <option value="">Seleccionar tipo</option>
+            {% for value, label in tipo_choices %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          RUT
+          <input type="text" name="rut" id="editProveedorRut" maxlength="12">
+        </label>
+        <label>
+          Nombre de contacto
+          <input type="text" name="contacto_nombre" id="editProveedorContacto" maxlength="100">
+        </label>
+        <label>
+          Teléfono
+          <input type="text" name="telefono" id="editProveedorTelefono" maxlength="15">
+        </label>
+        <label>
+          Email
+          <input type="email" name="email" id="editProveedorEmail" maxlength="254">
+        </label>
+        <label>
+          Dirección
+          <input type="text" name="direccion" id="editProveedorDireccion" maxlength="200">
+        </label>
+        <label>
+          Activo
+          <select name="activo" id="editProveedorActivo" required>
+            <option value="true">Sí</option>
+            <option value="false">No</option>
+          </select>
+        </label>
+        <label style="grid-column: 1 / -1;">
+          Servicios ofrecidos
+          <textarea name="servicios_ofrecidos" id="editProveedorServicios" rows="3"></textarea>
+        </label>
+        <label style="grid-column: 1 / -1;">
+          Observaciones
+          <textarea name="observaciones" id="editProveedorObservaciones" rows="3"></textarea>
+        </label>
+        <div class="form-actions" style="grid-column: 1 / -1;">
+          <button type="button" class="btn btn-secondary" data-modal-close>Cancelar</button>
+          <button type="submit" class="btn btn-primary">Guardar</button>
+        </div>
+      </form>
+    </div>
+    <div class="modal-backdrop" data-modal-close></div>
+  </div>
+
+  <!-- Filtros de búsqueda -->
+  <div class="form-card" id="proveedoresPage" data-proveedores-base="/panel/proveedores/">
+    <form method="get" class="form-grid" style="grid-template-columns: 1fr 1fr 1fr auto;align-items: end;gap:1rem;">
+      <input type="hidden" name="order_by" value="{{ order_by }}">
+      <input type="hidden" name="direction" value="{{ direction }}">
+      <label>Buscar
+        <input type="text" name="q" value="{{ query }}" placeholder="Nombre, contacto, teléfono o email">
+      </label>
+      <label>Tipo
+        <select name="tipo">
+          <option value="">Todos los tipos</option>
+          {% for value, label in tipo_choices %}
+          <option value="{{ value }}" {% if tipo_filter == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Activo
+        <select name="activo">
+          <option value="">Todos</option>
+          <option value="si" {% if activo_filter == 'si' %}selected{% endif %}>Sí</option>
+          <option value="no" {% if activo_filter == 'no' %}selected{% endif %}>No</option>
+        </select>
+      </label>
+      <button class="btn btn-secondary" type="submit">Filtrar</button>
+    </form>
+  </div>
+
+  <!-- Lista de proveedores -->
+  <div class="form-card" style="overflow:auto;">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:.75rem;">
+      <h2 class="panel-title" style="font-size:1.25rem; color:#2E7D32; margin:0;">Base de Datos de Proveedores</h2>
+      <div class="actions-wrap" style="gap:.5rem;">
+        <button type="button" id="btnOpenCreateProveedor" class="btn btn-primary"><i class="fas fa-plus"></i> Agregar Proveedor</button>
+      </div>
+    </div>
+    <table class="table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Nombre</th>
+          <th>Tipo</th>
+          <th>Contacto</th>
+          <th>Teléfono</th>
+          <th>Email</th>
+          <th>Estado</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for proveedor in proveedores %}
+        <tr>
+          <td>{{ proveedor.id }}</td>
+          <td><strong>{{ proveedor.nombre }}</strong></td>
+          <td>{{ proveedor.get_tipo_proveedor_display }}</td>
+          <td>{{ proveedor.contacto_nombre|default:"-" }}</td>
+          <td>{{ proveedor.telefono|default:"-" }}</td>
+          <td>{{ proveedor.email|default:"-" }}</td>
+          <td>
+            <span class="status-badge {% if proveedor.activo %}status-activo{% else %}status-inactivo{% endif %}">
+              {% if proveedor.activo %}Activo{% else %}Inactivo{% endif %}
+            </span>
+          </td>
+          <td style="white-space:nowrap;">
+            <button class="btn btn-secondary" data-edit-proveedor="{{ proveedor.id }}">Editar</button>
+            <button class="btn btn-danger" data-delete-proveedor="{{ proveedor.id }}">Eliminar</button>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="8">No hay proveedores que coincidan con los filtros.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  
+  <!-- Modal de creación -->
+  <div id="modalCreateProveedor" class="modal" aria-hidden="true">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Nuevo proveedor</h2>
+        <button class="modal-close" data-modal-close>&times;</button>
+      </div>
+      <form id="formCreateProveedor" class="form-grid" data-endpoint="{% url 'jio_app:proveedor_create_json' %}">
+        {% csrf_token %}
+        <label>
+          Nombre *
+          <input type="text" name="nombre" required maxlength="100">
+        </label>
+        <label>
+          Tipo de proveedor *
+          <select name="tipo_proveedor" required>
+            <option value="">Seleccionar tipo</option>
+            {% for value, label in tipo_choices %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          RUT
+          <input type="text" name="rut" maxlength="12">
+        </label>
+        <label>
+          Nombre de contacto
+          <input type="text" name="contacto_nombre" maxlength="100">
+        </label>
+        <label>
+          Teléfono
+          <input type="text" name="telefono" maxlength="15">
+        </label>
+        <label>
+          Email
+          <input type="email" name="email" maxlength="254">
+        </label>
+        <label>
+          Dirección
+          <input type="text" name="direccion" maxlength="200">
+        </label>
+        <label>
+          Activo *
+          <select name="activo" required>
+            <option value="true" selected>Sí</option>
+            <option value="false">No</option>
+          </select>
+        </label>
+        <label style="grid-column: 1 / -1;">
+          Servicios ofrecidos
+          <textarea name="servicios_ofrecidos" rows="3"></textarea>
+        </label>
+        <label style="grid-column: 1 / -1;">
+          Observaciones
+          <textarea name="observaciones" rows="3"></textarea>
+        </label>
+        <div class="form-actions" style="grid-column: 1 / -1;">
+          <button type="button" class="btn btn-secondary" data-modal-close>Cancelar</button>
+          <button type="submit" class="btn btn-primary">Crear</button>
+        </div>
+      </form>
+    </div>
+    <div class="modal-backdrop" data-modal-close></div>
+  </div>
+  
+  {% block extra_scripts %}
+  <script src="{% static 'js/validaciones.js' %}"></script>
+  <script src="{% static 'js/proveedores_list.js' %}"></script>
+  {% endblock %}
+</div>
+{% endblock %}
+

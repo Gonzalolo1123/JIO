@@ -57,7 +57,6 @@
             const dimension_largo = form.querySelector('input[name="dimension_largo"]')?.value?.trim() || '';
             const dimension_ancho = form.querySelector('input[name="dimension_ancho"]')?.value?.trim() || '';
             const dimension_alto = form.querySelector('input[name="dimension_alto"]')?.value?.trim() || '';
-            const capacidad = form.querySelector('input[name="capacidad_personas"]')?.value || '';
             const peso = form.querySelector('input[name="peso_maximo"]')?.value || '';
             const precio = form.querySelector('input[name="precio_base"]')?.value || '';
             const estado = form.querySelector('select[name="estado"]')?.value || '';
@@ -76,7 +75,7 @@
             validaciones.push(() => validarNumeroDecimal(dimension_ancho, 'ancho', 1.0, 25.0, true, false));
             validaciones.push(() => validarNumeroDecimal(dimension_alto, 'alto', 1.0, 25.0, true, false));
             
-            validaciones.push(() => validarEnteroPositivo(capacidad, 'capacidad de personas', 100));
+            // La capacidad se asigna automáticamente según la categoría, no se valida aquí
             
             validaciones.push(() => validarEnteroPositivo(peso, 'peso máximo', 10000));
             
@@ -121,7 +120,7 @@
             document.getElementById('editJuegoDimensionLargo').value = juego.dimension_largo || '';
             document.getElementById('editJuegoDimensionAncho').value = juego.dimension_ancho || '';
             document.getElementById('editJuegoDimensionAlto').value = juego.dimension_alto || '';
-            document.getElementById('editJuegoCapacidad').value = juego.capacidad_personas;
+            // La capacidad se asigna automáticamente según la categoría, no se muestra en el formulario
             document.getElementById('editJuegoPeso').value = juego.peso_maximo;
             document.getElementById('editJuegoPrecio').value = juego.precio_base;
             // Resetear el flag de confirmación de peso excedido
@@ -275,11 +274,10 @@
             const prefix = tipo === 'create' ? 'createJuego' : 'editJuego';
             const edadMinInput = document.getElementById(`${prefix}EdadMinima`);
             const edadMaxInput = document.getElementById(`${prefix}EdadMaxima`);
-            const capacidadInput = document.getElementById(`${prefix}Capacidad`);
             
             if (edadMinInput) edadMinInput.value = limites.edad_minima;
             if (edadMaxInput) edadMaxInput.value = limites.edad_maxima;
-            if (capacidadInput) capacidadInput.value = limites.capacidad_maxima;
+            // La capacidad se asigna automáticamente en el backend según la categoría
         }
         
         // Event listeners para cambio de categoría

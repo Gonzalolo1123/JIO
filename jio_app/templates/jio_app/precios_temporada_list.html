@@ -1,0 +1,412 @@
+{% extends 'jio_app/base_admin.html' %}
+{% load static %}
+{% load jio_filters %}
+{% load humanize %}
+
+{% block title %}Precios por Temporada - JIO{% endblock %}
+
+{% block content %}
+<div class="panel-container">
+  <div class="panel-header">
+    <h1 class="panel-title">Precios por Temporada</h1>
+  </div>
+
+  <!-- Modal de edición -->
+  <div id="modalEditPrecioTemporada" class="modal" aria-hidden="true">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Editar precio por temporada</h2>
+        <button class="modal-close" data-modal-close>&times;</button>
+      </div>
+      <form id="formEditPrecioTemporada" class="form-grid" data-endpoint-base="/panel/precios-temporada/" style="grid-template-columns: 1fr 1fr;">
+        {% csrf_token %}
+        <input type="hidden" name="precio_id" id="editPrecioTemporadaId">
+        
+        <!-- Juego -->
+        <label style="grid-column: 1 / -1;">
+          Juego *
+          <select name="juego_id" id="editPrecioTemporadaJuego" required>
+            <option value="">Seleccionar juego</option>
+            {% for juego in juegos %}
+            <option value="{{ juego.id }}" data-precio="{{ juego.precio_base }}">{{ juego.nombre }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        
+        <!-- Precio Original (se muestra cuando se selecciona un juego) -->
+        <label id="editPrecioOriginalLabel" style="display: none; grid-column: 1 / -1; background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); padding: 1rem; border-radius: 6px; border-left: 4px solid #2196f3; margin: 0.5rem 0;">
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <div>
+              <strong style="color: #1565c0; font-size: 0.9rem; display: block; margin-bottom: 0.25rem;">Precio Original del Juego</strong>
+              <span id="editPrecioOriginalValue" style="color: #1976d2; font-size: 1.5rem; font-weight: bold;">$0</span>
+            </div>
+            <i class="fas fa-info-circle" style="color: #2196f3; font-size: 1.5rem;"></i>
+          </div>
+        </label>
+        
+        <!-- Temporada -->
+        <label>
+          Temporada *
+          <select name="temporada" id="editPrecioTemporadaTemporada" required>
+            <option value="">Seleccionar temporada</option>
+            {% for value, label in temporada_choices %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        
+        <!-- Mes inicio y Mes fin juntos -->
+        <label>
+          Mes inicio *
+          <select name="mes_inicio" id="editPrecioTemporadaMesInicio" required>
+            <option value="">Seleccionar mes</option>
+            {% for value, label in mes_choices %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Mes fin *
+          <select name="mes_fin" id="editPrecioTemporadaMesFin" required>
+            <option value="">Seleccionar mes</option>
+            {% for value, label in mes_choices %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        
+        <!-- Descuento -->
+        <label style="grid-column: 1 / -1;">
+          Descuento (%)
+          <input type="number" name="descuento_porcentaje" id="editPrecioTemporadaDescuento" min="0" max="100" step="1" value="0" style="max-width: 200px;">
+        </label>
+        
+        <!-- Precio Final (se muestra cuando se selecciona un juego) -->
+        <label id="editPrecioConDescuentoLabel" style="display: none; grid-column: 1 / -1; background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%); padding: 1.25rem; border-radius: 6px; border-left: 4px solid #4caf50; margin: 0.5rem 0;">
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <div>
+              <strong style="color: #2e7d32; font-size: 0.95rem; display: block; margin-bottom: 0.5rem;">Precio de Arriendo Final</strong>
+              <span id="editPrecioConDescuentoValue" style="color: #388e3c; font-size: 2rem; font-weight: bold;">$0</span>
+            </div>
+            <i class="fas fa-check-circle" style="color: #4caf50; font-size: 2rem;"></i>
+          </div>
+        </label>
+        
+        <!-- Campo hidden para enviar el precio -->
+        <input type="hidden" name="precio_arriendo" id="editPrecioTemporadaPrecio" required>
+        <div class="form-actions" style="grid-column: 1 / -1;">
+          <button type="button" class="btn btn-secondary" data-modal-close>Cancelar</button>
+          <button type="submit" class="btn btn-primary">Guardar</button>
+        </div>
+      </form>
+    </div>
+    <div class="modal-backdrop" data-modal-close></div>
+  </div>
+
+  <!-- Filtros de búsqueda -->
+  <div class="form-card" id="preciosTemporadaPage" data-precios-base="/panel/precios-temporada/">
+    <form method="get" class="form-grid" style="grid-template-columns: 1fr 1fr auto;align-items: end;gap:1rem;">
+      <input type="hidden" name="order_by" value="{{ order_by }}">
+      <input type="hidden" name="direction" value="{{ direction }}">
+      <label>Buscar
+        <input type="text" name="q" value="{{ query }}" placeholder="Nombre del juego">
+      </label>
+      <label>Temporada
+        <select name="temporada">
+          <option value="">Todas las temporadas</option>
+          {% for value, label in temporada_choices %}
+          <option value="{{ value }}" {% if temporada_filter == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button class="btn btn-secondary" type="submit">Filtrar</button>
+    </form>
+  </div>
+
+  <!-- Lista de precios -->
+  <div class="form-card" style="overflow:auto;">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:.75rem;">
+      <h2 class="panel-title" style="font-size:1.25rem; color:#2E7D32; margin:0;">Precios por Temporada</h2>
+      <div class="actions-wrap" style="gap:.5rem;">
+        <button type="button" id="btnOpenCreatePrecioTemporada" class="btn btn-primary"><i class="fas fa-plus"></i> Agregar Precio</button>
+      </div>
+    </div>
+    <table class="table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Juego</th>
+          <th>Temporada</th>
+          <th>Precio Arriendo</th>
+          <th>Descuento</th>
+          <th>Mes Inicio</th>
+          <th>Mes Fin</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for precio in precios_temporada %}
+        <tr>
+          <td>{{ precio.id }}</td>
+          <td><strong>{{ precio.juego.nombre }}</strong></td>
+          <td>{{ precio.get_temporada_display }}</td>
+          <td>{{ precio.precio_arriendo|precio_chileno }}</td>
+          <td>{% if precio.descuento_porcentaje > 0 %}{{ precio.descuento_porcentaje }}%{% else %}-{% endif %}</td>
+          <td>{{ precio.get_mes_inicio_display }}</td>
+          <td>{{ precio.get_mes_fin_display }}</td>
+          <td style="white-space:nowrap;">
+            <button class="btn btn-secondary" data-edit-precio-temporada="{{ precio.id }}">Editar</button>
+            <button class="btn btn-danger" data-delete-precio-temporada="{{ precio.id }}">Eliminar</button>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="8">No hay precios por temporada que coincidan con los filtros.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  
+  <!-- Modal de creación -->
+  <div id="modalCreatePrecioTemporada" class="modal" aria-hidden="true">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Nuevo precio por temporada</h2>
+        <button class="modal-close" data-modal-close>&times;</button>
+      </div>
+      <form id="formCreatePrecioTemporada" class="form-grid" data-endpoint="{% url 'jio_app:precio_temporada_create_json' %}" style="grid-template-columns: 1fr 1fr;">
+        {% csrf_token %}
+        
+        <!-- Juego -->
+        <label style="grid-column: 1 / -1;">
+          Juego *
+          <select name="juego_id" id="createPrecioTemporadaJuego" required>
+            <option value="">Seleccionar juego</option>
+            {% for juego in juegos %}
+            <option value="{{ juego.id }}" data-precio="{{ juego.precio_base }}">{{ juego.nombre }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        
+        <!-- Precio Original (se muestra cuando se selecciona un juego) -->
+        <label id="createPrecioOriginalLabel" style="display: none; grid-column: 1 / -1; background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); padding: 1rem; border-radius: 6px; border-left: 4px solid #2196f3; margin: 0.5rem 0;">
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <div>
+              <strong style="color: #1565c0; font-size: 0.9rem; display: block; margin-bottom: 0.25rem;">Precio Original del Juego</strong>
+              <span id="createPrecioOriginalValue" style="color: #1976d2; font-size: 1.5rem; font-weight: bold;">$0</span>
+            </div>
+            <i class="fas fa-info-circle" style="color: #2196f3; font-size: 1.5rem;"></i>
+          </div>
+        </label>
+        
+        <!-- Temporada -->
+        <label>
+          Temporada *
+          <select name="temporada" required>
+            <option value="">Seleccionar temporada</option>
+            {% for value, label in temporada_choices %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        
+        <!-- Mes inicio y Mes fin juntos -->
+        <label>
+          Mes inicio *
+          <select name="mes_inicio" required>
+            <option value="">Seleccionar mes</option>
+            {% for value, label in mes_choices %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Mes fin *
+          <select name="mes_fin" required>
+            <option value="">Seleccionar mes</option>
+            {% for value, label in mes_choices %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        
+        <!-- Descuento -->
+        <label style="grid-column: 1 / -1;">
+          Descuento (%)
+          <input type="number" name="descuento_porcentaje" id="createPrecioTemporadaDescuento" min="0" max="100" step="1" value="0" style="max-width: 200px;">
+        </label>
+        
+        <!-- Precio Final (se muestra cuando se selecciona un juego) -->
+        <label id="createPrecioConDescuentoLabel" style="display: none; grid-column: 1 / -1; background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%); padding: 1.25rem; border-radius: 6px; border-left: 4px solid #4caf50; margin: 0.5rem 0;">
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <div>
+              <strong style="color: #2e7d32; font-size: 0.95rem; display: block; margin-bottom: 0.5rem;">Precio de Arriendo Final</strong>
+              <span id="createPrecioConDescuentoValue" style="color: #388e3c; font-size: 2rem; font-weight: bold;">$0</span>
+            </div>
+            <i class="fas fa-check-circle" style="color: #4caf50; font-size: 2rem;"></i>
+          </div>
+        </label>
+        
+        <!-- Campo hidden para enviar el precio -->
+        <input type="hidden" name="precio_arriendo" id="createPrecioTemporadaPrecio" required>
+        <div class="form-actions" style="grid-column: 1 / -1;">
+          <button type="button" class="btn btn-secondary" data-modal-close>Cancelar</button>
+          <button type="submit" class="btn btn-primary">Crear</button>
+        </div>
+      </form>
+    </div>
+    <div class="modal-backdrop" data-modal-close></div>
+  </div>
+  
+  {% block extra_scripts %}
+  <script src="{% static 'js/validaciones.js' %}"></script>
+  <script src="{% static 'js/precios_temporada_list.js' %}"></script>
+  <script>
+    // Diccionario con los precios base de los juegos
+    const juegosPrecios = {{ juegos_precios_json }};
+    
+    // Función para formatear precio
+    function formatearPrecio(precio) {
+      return new Intl.NumberFormat('es-CL', {
+        style: 'currency',
+        currency: 'CLP',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+      }).format(precio);
+    }
+    
+    // Función para calcular precio con descuento
+    function calcularPrecioConDescuento(precioOriginal, descuentoPorcentaje) {
+      if (!precioOriginal || precioOriginal <= 0) return 0;
+      const descuento = (precioOriginal * descuentoPorcentaje) / 100;
+      return Math.round(precioOriginal - descuento);
+    }
+    
+    // Manejo del modal de creación
+    document.addEventListener('DOMContentLoaded', function() {
+      const createJuegoSelect = document.getElementById('createPrecioTemporadaJuego');
+      const createPrecioOriginalLabel = document.getElementById('createPrecioOriginalLabel');
+      const createPrecioOriginalValue = document.getElementById('createPrecioOriginalValue');
+      const createPrecioInput = document.getElementById('createPrecioTemporadaPrecio');
+      const createDescuentoInput = document.getElementById('createPrecioTemporadaDescuento');
+      const createPrecioConDescuentoLabel = document.getElementById('createPrecioConDescuentoLabel');
+      const createPrecioConDescuentoValue = document.getElementById('createPrecioConDescuentoValue');
+      
+      // Función para actualizar precio original y con descuento en modal de creación
+      function actualizarPreciosCreate() {
+        const juegoId = createJuegoSelect ? createJuegoSelect.value : null;
+        if (juegoId && juegosPrecios[juegoId]) {
+          const precioOriginal = juegosPrecios[juegoId];
+          createPrecioOriginalValue.textContent = formatearPrecio(precioOriginal);
+          createPrecioOriginalLabel.style.display = 'block';
+          
+          // Calcular precio final (con o sin descuento)
+          const descuento = parseFloat(createDescuentoInput.value) || 0;
+          let precioFinal = precioOriginal;
+          
+          if (descuento > 0) {
+            precioFinal = calcularPrecioConDescuento(precioOriginal, descuento);
+          }
+          
+          // Siempre mostrar el precio final
+          createPrecioConDescuentoValue.textContent = formatearPrecio(precioFinal);
+          createPrecioConDescuentoLabel.style.display = 'block';
+          
+          // Actualizar el campo hidden de precio de arriendo automáticamente
+          if (createPrecioInput) {
+            createPrecioInput.value = precioFinal;
+          }
+        } else {
+          createPrecioOriginalLabel.style.display = 'none';
+          createPrecioConDescuentoLabel.style.display = 'none';
+          if (createPrecioInput) {
+            createPrecioInput.value = '';
+          }
+        }
+      }
+      
+      // Cuando se selecciona un juego en el modal de creación
+      if (createJuegoSelect) {
+        createJuegoSelect.addEventListener('change', actualizarPreciosCreate);
+      }
+      
+      // Cuando se modifica el descuento en el modal de creación
+      if (createDescuentoInput) {
+        createDescuentoInput.addEventListener('input', actualizarPreciosCreate);
+      }
+      
+      // Manejo del modal de edición
+      const editJuegoSelect = document.getElementById('editPrecioTemporadaJuego');
+      const editPrecioOriginalLabel = document.getElementById('editPrecioOriginalLabel');
+      const editPrecioOriginalValue = document.getElementById('editPrecioOriginalValue');
+      const editPrecioInput = document.getElementById('editPrecioTemporadaPrecio');
+      const editDescuentoInput = document.getElementById('editPrecioTemporadaDescuento');
+      const editPrecioConDescuentoLabel = document.getElementById('editPrecioConDescuentoLabel');
+      const editPrecioConDescuentoValue = document.getElementById('editPrecioConDescuentoValue');
+      
+      // Función para actualizar precio original y con descuento en modal de edición
+      function actualizarPreciosEdit() {
+        const juegoId = editJuegoSelect ? editJuegoSelect.value : null;
+        if (juegoId && juegosPrecios[juegoId]) {
+          const precioOriginal = juegosPrecios[juegoId];
+          editPrecioOriginalValue.textContent = formatearPrecio(precioOriginal);
+          editPrecioOriginalLabel.style.display = 'block';
+          
+          // Calcular precio final (con o sin descuento)
+          const descuento = parseFloat(editDescuentoInput.value) || 0;
+          let precioFinal = precioOriginal;
+          
+          if (descuento > 0) {
+            precioFinal = calcularPrecioConDescuento(precioOriginal, descuento);
+          }
+          
+          // Siempre mostrar el precio final
+          editPrecioConDescuentoValue.textContent = formatearPrecio(precioFinal);
+          editPrecioConDescuentoLabel.style.display = 'block';
+          
+          // Actualizar el campo hidden de precio de arriendo automáticamente
+          if (editPrecioInput) {
+            editPrecioInput.value = precioFinal;
+          }
+        } else {
+          editPrecioOriginalLabel.style.display = 'none';
+          editPrecioConDescuentoLabel.style.display = 'none';
+          if (editPrecioInput) {
+            editPrecioInput.value = '';
+          }
+        }
+      }
+      
+      // Cuando se selecciona un juego en el modal de edición
+      if (editJuegoSelect) {
+        editJuegoSelect.addEventListener('change', actualizarPreciosEdit);
+        
+        // Observar cuando se abre el modal de edición para actualizar precios
+        const modalEdit = document.getElementById('modalEditPrecioTemporada');
+        if (modalEdit) {
+          const observer = new MutationObserver(function(mutations) {
+            mutations.forEach(function(mutation) {
+              if (mutation.type === 'attributes' && mutation.attributeName === 'aria-hidden') {
+                if (modalEdit.getAttribute('aria-hidden') === 'false') {
+                  // Modal abierto, actualizar precios
+                  setTimeout(actualizarPreciosEdit, 100);
+                }
+              }
+            });
+          });
+          observer.observe(modalEdit, { attributes: true });
+        }
+      }
+      
+      // Cuando se modifica el descuento en el modal de edición
+      if (editDescuentoInput) {
+        editDescuentoInput.addEventListener('input', actualizarPreciosEdit);
+      }
+      
+    });
+  </script>
+  {% endblock %}
+</div>
+{% endblock %}
+

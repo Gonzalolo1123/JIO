@@ -6,6 +6,46 @@
     if (parts.length === 2) return parts.pop().split(';').shift();
   }
 
+  // Función para prevenir espacios en inputs de contraseña
+  function prevenirEspaciosEnPasswordInputs() {
+    const passwordInputs = document.querySelectorAll('input[type="password"]');
+    passwordInputs.forEach(function(input) {
+      // Prevenir espacios al escribir
+      input.addEventListener('input', function(e) {
+        const valor = e.target.value;
+        if (valor !== valor.replace(/\s/g, '')) {
+          e.target.value = valor.replace(/\s/g, '');
+        }
+      });
+      
+      // Prevenir espacios al pegar
+      input.addEventListener('paste', function(e) {
+        e.preventDefault();
+        const textoPegado = (e.clipboardData || window.clipboardData).getData('text');
+        const textoSinEspacios = textoPegado.replace(/\s/g, '');
+        const valorActual = e.target.value;
+        const posicionInicio = e.target.selectionStart;
+        const posicionFin = e.target.selectionEnd;
+        e.target.value = valorActual.substring(0, posicionInicio) + textoSinEspacios + valorActual.substring(posicionFin);
+        e.target.setSelectionRange(posicionInicio + textoSinEspacios.length, posicionInicio + textoSinEspacios.length);
+      });
+      
+      // Prevenir espacios al presionar la barra espaciadora
+      input.addEventListener('keydown', function(e) {
+        if (e.key === ' ' || e.keyCode === 32) {
+          e.preventDefault();
+        }
+      });
+    });
+  }
+
+  // Ejecutar cuando el DOM esté listo
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', prevenirEspaciosEnPasswordInputs);
+  } else {
+    prevenirEspaciosEnPasswordInputs();
+  }
+
   async function onClickEdit(userId, endpoints){
     try {
       const detailRes = await fetch(`${endpoints.detail}${userId}/json/`);
@@ -261,7 +301,7 @@
         ()=> validarNombre(first_name, 'nombre', 2, 30),
         ()=> validarNombre(last_name, 'apellido', 2, 30),
         ()=> validarEmail(email, 'email', 100),
-        ()=> validarPassword(password, 'contraseña', 8, 128),
+        ()=> validarContrasena(password, 'contraseña', 8),
         ()=> (password !== password_confirm ? ['Las contraseñas no coinciden'] : [])
       ];
 
@@ -324,7 +364,7 @@
         ()=> validarNombre(first_name, 'nombre', 2, 30),
         ()=> validarNombre(last_name, 'apellido', 2, 30),
         ()=> validarEmail(email, 'email', 100),
-        ()=> validarPassword(password, 'contraseña', 8, 128),
+        ()=> validarContrasena(password, 'contraseña', 8),
         ()=> (password !== password_confirm ? ['Las contraseñas no coinciden'] : []),
         ()=> (telefono ? validarTelefonoChileno(telefono, 'teléfono', false) : [])
       ];

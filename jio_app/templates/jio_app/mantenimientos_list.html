@@ -1,0 +1,262 @@
+{% extends 'jio_app/base_admin.html' %}
+{% load static %}
+{% load jio_filters %}
+{% load humanize %}
+
+{% block title %}Mantenimientos de Vehículos - JIO{% endblock %}
+
+{% block content %}
+<div class="panel-container">
+  <div class="panel-header">
+    <h1 class="panel-title">Mantenimientos de Vehículos</h1>
+  </div>
+
+  <!-- Modal de edición -->
+  <div id="modalEditMantenimiento" class="modal" aria-hidden="true">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Editar mantenimiento</h2>
+        <button class="modal-close" data-modal-close>&times;</button>
+      </div>
+      <form id="formEditMantenimiento" class="form-grid" data-endpoint-base="/panel/mantenimientos/">
+        {% csrf_token %}
+        <input type="hidden" name="mantenimiento_id" id="editMantenimientoId">
+        <label>
+          Vehículo *
+          <select name="vehiculo_id" id="editMantenimientoVehiculo" required>
+            <option value="">Seleccionar vehículo</option>
+            {% for vehiculo in vehiculos %}
+            <option value="{{ vehiculo.id }}">{{ vehiculo.patente }} - {{ vehiculo.marca }} {{ vehiculo.modelo }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Tipo de mantenimiento *
+          <select name="tipo_mantenimiento" id="editMantenimientoTipo" required>
+            <option value="">Seleccionar tipo</option>
+            {% for value, label in tipo_choices %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Fecha programada *
+          <input type="date" name="fecha_programada" id="editMantenimientoFechaProg" required>
+        </label>
+        <label>
+          Fecha realizada
+          <input type="date" name="fecha_realizada" id="editMantenimientoFechaReal">
+        </label>
+        <label>
+          Kilometraje (km) *
+          <input type="number" name="kilometraje" id="editMantenimientoKilometraje" required min="0">
+        </label>
+        <label>
+          Costo ($)
+          <input type="number" name="costo" id="editMantenimientoCosto" min="0" step="0.01">
+        </label>
+        <label>
+          Proveedor
+          <select name="proveedor_id" id="editMantenimientoProveedor">
+            <option value="">Sin proveedor</option>
+            {% for proveedor in proveedores %}
+            <option value="{{ proveedor.id }}">{{ proveedor.nombre }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Estado *
+          <select name="estado" id="editMantenimientoEstado" required>
+            {% for value, label in estado_choices %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label style="grid-column: 1 / -1;">
+          Descripción *
+          <textarea name="descripcion" id="editMantenimientoDescripcion" required rows="4"></textarea>
+        </label>
+        <label style="grid-column: 1 / -1;">
+          Observaciones
+          <textarea name="observaciones" id="editMantenimientoObservaciones" rows="3"></textarea>
+        </label>
+        <div class="form-actions" style="grid-column: 1 / -1;">
+          <button type="button" class="btn btn-secondary" data-modal-close>Cancelar</button>
+          <button type="submit" class="btn btn-primary">Guardar</button>
+        </div>
+      </form>
+    </div>
+    <div class="modal-backdrop" data-modal-close></div>
+  </div>
+
+  <!-- Filtros de búsqueda -->
+  <div class="form-card" id="mantenimientosPage" data-mantenimientos-base="/panel/mantenimientos/">
+    <form method="get" class="form-grid" style="grid-template-columns: 1fr 1fr 1fr 1fr auto;align-items: end;gap:1rem;">
+      <input type="hidden" name="order_by" value="{{ order_by }}">
+      <input type="hidden" name="direction" value="{{ direction }}">
+      <label>Buscar
+        <input type="text" name="q" value="{{ query }}" placeholder="Descripción, observaciones o patente">
+      </label>
+      <label>Vehículo
+        <select name="vehiculo">
+          <option value="">Todos los vehículos</option>
+          {% for vehiculo in vehiculos %}
+          <option value="{{ vehiculo.id }}" {% if vehiculo_filter == vehiculo.id|stringformat:"s" %}selected{% endif %}>{{ vehiculo.patente }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Tipo
+        <select name="tipo">
+          <option value="">Todos los tipos</option>
+          {% for value, label in tipo_choices %}
+          <option value="{{ value }}" {% if tipo_filter == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Estado
+        <select name="estado">
+          <option value="">Todos los estados</option>
+          {% for value, label in estado_choices %}
+          <option value="{{ value }}" {% if estado_filter == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button class="btn btn-secondary" type="submit">Filtrar</button>
+    </form>
+  </div>
+
+  <!-- Lista de mantenimientos -->
+  <div class="form-card" style="overflow:auto;">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:.75rem;">
+      <h2 class="panel-title" style="font-size:1.25rem; color:#2E7D32; margin:0;">Historial de Mantenimientos</h2>
+      <div class="actions-wrap" style="gap:.5rem;">
+        <button type="button" id="btnOpenCreateMantenimiento" class="btn btn-primary"><i class="fas fa-plus"></i> Agregar Mantenimiento</button>
+      </div>
+    </div>
+    <table class="table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Vehículo</th>
+          <th>Tipo</th>
+          <th>Fecha Programada</th>
+          <th>Fecha Realizada</th>
+          <th>Kilometraje</th>
+          <th>Costo</th>
+          <th>Estado</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for mantenimiento in mantenimientos %}
+        <tr>
+          <td>{{ mantenimiento.id }}</td>
+          <td><strong>{{ mantenimiento.vehiculo.patente }}</strong></td>
+          <td>{{ mantenimiento.get_tipo_mantenimiento_display }}</td>
+          <td>{{ mantenimiento.fecha_programada|date:"d/m/Y" }}</td>
+          <td>{% if mantenimiento.fecha_realizada %}{{ mantenimiento.fecha_realizada|date:"d/m/Y" }}{% else %}-{% endif %}</td>
+          <td>{{ mantenimiento.kilometraje|intcomma }} km</td>
+          <td>${{ mantenimiento.costo|floatformat:0|intcomma }}</td>
+          <td>
+            <span class="status-badge status-{{ mantenimiento.estado }}">
+              {{ mantenimiento.get_estado_display }}
+            </span>
+          </td>
+          <td style="white-space:nowrap;">
+            <button class="btn btn-secondary" data-edit-mantenimiento="{{ mantenimiento.id }}">Editar</button>
+            <button class="btn btn-danger" data-delete-mantenimiento="{{ mantenimiento.id }}">Eliminar</button>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="9">No hay mantenimientos que coincidan con los filtros.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  
+  <!-- Modal de creación -->
+  <div id="modalCreateMantenimiento" class="modal" aria-hidden="true">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Nuevo mantenimiento</h2>
+        <button class="modal-close" data-modal-close>&times;</button>
+      </div>
+      <form id="formCreateMantenimiento" class="form-grid" data-endpoint="{% url 'jio_app:mantenimiento_create_json' %}">
+        {% csrf_token %}
+        <label>
+          Vehículo *
+          <select name="vehiculo_id" required>
+            <option value="">Seleccionar vehículo</option>
+            {% for vehiculo in vehiculos %}
+            <option value="{{ vehiculo.id }}">{{ vehiculo.patente }} - {{ vehiculo.marca }} {{ vehiculo.modelo }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Tipo de mantenimiento *
+          <select name="tipo_mantenimiento" required>
+            <option value="">Seleccionar tipo</option>
+            {% for value, label in tipo_choices %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Fecha programada *
+          <input type="date" name="fecha_programada" required>
+        </label>
+        <label>
+          Fecha realizada
+          <input type="date" name="fecha_realizada">
+        </label>
+        <label>
+          Kilometraje (km) *
+          <input type="number" name="kilometraje" required min="0" value="0">
+        </label>
+        <label>
+          Costo ($)
+          <input type="number" name="costo" min="0" step="0.01" value="0">
+        </label>
+        <label>
+          Proveedor
+          <select name="proveedor_id">
+            <option value="">Sin proveedor</option>
+            {% for proveedor in proveedores %}
+            <option value="{{ proveedor.id }}">{{ proveedor.nombre }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Estado *
+          <select name="estado" required>
+            {% for value, label in estado_choices %}
+            <option value="{{ value }}" {% if value == 'programado' %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label style="grid-column: 1 / -1;">
+          Descripción *
+          <textarea name="descripcion" required rows="4"></textarea>
+        </label>
+        <label style="grid-column: 1 / -1;">
+          Observaciones
+          <textarea name="observaciones" rows="3"></textarea>
+        </label>
+        <div class="form-actions" style="grid-column: 1 / -1;">
+          <button type="button" class="btn btn-secondary" data-modal-close>Cancelar</button>
+          <button type="submit" class="btn btn-primary">Crear</button>
+        </div>
+      </form>
+    </div>
+    <div class="modal-backdrop" data-modal-close></div>
+  </div>
+  
+  {% block extra_scripts %}
+  <script src="{% static 'js/validaciones.js' %}"></script>
+  <script src="{% static 'js/mantenimientos_list.js' %}"></script>
+  {% endblock %}
+</div>
+{% endblock %}
+

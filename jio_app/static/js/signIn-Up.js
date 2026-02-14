@@ -677,6 +677,35 @@ document.addEventListener("DOMContentLoaded", function () {
   const strengthFill = document.getElementById("password-strength-fill");
   const strengthText = document.getElementById("password-strength-text");
 
+  if (passwordInput) {
+    // Prevenir espacios al escribir
+    passwordInput.addEventListener("input", function () {
+      // Eliminar espacios si se ingresaron
+      if (/\s/.test(passwordInput.value)) {
+        passwordInput.value = passwordInput.value.replace(/\s/g, '');
+      }
+    });
+    
+    // Prevenir espacios al pegar
+    passwordInput.addEventListener("paste", function(e) {
+      e.preventDefault();
+      const textoPegado = (e.clipboardData || window.clipboardData).getData('text');
+      const textoSinEspacios = textoPegado.replace(/\s/g, '');
+      const valorActual = passwordInput.value;
+      const posicionInicio = passwordInput.selectionStart;
+      const posicionFin = passwordInput.selectionEnd;
+      passwordInput.value = valorActual.substring(0, posicionInicio) + textoSinEspacios + valorActual.substring(posicionFin);
+      passwordInput.setSelectionRange(posicionInicio + textoSinEspacios.length, posicionInicio + textoSinEspacios.length);
+    });
+    
+    // Prevenir espacios al presionar la barra espaciadora
+    passwordInput.addEventListener("keydown", function(e) {
+      if (e.key === ' ' || e.keyCode === 32) {
+        e.preventDefault();
+      }
+    });
+  }
+
   if (passwordInput && strengthFill && strengthText) {
     passwordInput.addEventListener("input", function () {
       const value = passwordInput.value;

@@ -67,6 +67,34 @@ document.addEventListener("DOMContentLoaded", function() {
     });
   }
   
+  // Prevenir espacios en el input de contraseña
+  const passwordInput = loginForm ? loginForm.querySelector('input[name="password"]') : null;
+  if (passwordInput) {
+    passwordInput.addEventListener('input', function(e) {
+      const valor = e.target.value;
+      if (valor !== valor.replace(/\s/g, '')) {
+        e.target.value = valor.replace(/\s/g, '');
+      }
+    });
+    
+    passwordInput.addEventListener('paste', function(e) {
+      e.preventDefault();
+      const textoPegado = (e.clipboardData || window.clipboardData).getData('text');
+      const textoSinEspacios = textoPegado.replace(/\s/g, '');
+      const valorActual = passwordInput.value;
+      const posicionInicio = passwordInput.selectionStart;
+      const posicionFin = passwordInput.selectionEnd;
+      passwordInput.value = valorActual.substring(0, posicionInicio) + textoSinEspacios + valorActual.substring(posicionFin);
+      passwordInput.setSelectionRange(posicionInicio + textoSinEspacios.length, posicionInicio + textoSinEspacios.length);
+    });
+    
+    passwordInput.addEventListener('keydown', function(e) {
+      if (e.key === ' ' || e.keyCode === 32) {
+        e.preventDefault();
+      }
+    });
+  }
+
   // Event listener para el formulario de login
   if (loginForm) {
     loginForm.addEventListener("submit", async function(e) {

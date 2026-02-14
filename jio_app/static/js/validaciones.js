@@ -466,6 +466,11 @@ function validarContrasena(contrasena, campo = 'contraseña', minLength = 8, mos
   if (!contrasena) {
     errores.push(`La ${campo} es obligatoria`);
   } else {
+    // Validar que no contenga espacios
+    if (/\s/.test(contrasena)) {
+      errores.push(`La ${campo} no puede contener espacios`);
+    }
+    
     if (contrasena.length < minLength) {
       errores.push(`La ${campo} debe tener al menos ${minLength} caracteres`);
     }
@@ -542,6 +547,47 @@ function validarFormulario(validaciones, titulo = 'Errores en el Formulario') {
   
   return true;
 }
+
+// Función para prevenir espacios en inputs de contraseña
+function prevenirEspaciosEnPassword() {
+  document.addEventListener('DOMContentLoaded', function() {
+    // Seleccionar todos los inputs de tipo password
+    const passwordInputs = document.querySelectorAll('input[type="password"]');
+    
+    passwordInputs.forEach(function(input) {
+      // Prevenir espacios al escribir
+      input.addEventListener('input', function(e) {
+        const valor = e.target.value;
+        // Eliminar espacios del valor
+        if (valor !== valor.replace(/\s/g, '')) {
+          e.target.value = valor.replace(/\s/g, '');
+        }
+      });
+      
+      // Prevenir espacios al pegar
+      input.addEventListener('paste', function(e) {
+        e.preventDefault();
+        const textoPegado = (e.clipboardData || window.clipboardData).getData('text');
+        const textoSinEspacios = textoPegado.replace(/\s/g, '');
+        const valorActual = e.target.value;
+        const posicionInicio = e.target.selectionStart;
+        const posicionFin = e.target.selectionEnd;
+        e.target.value = valorActual.substring(0, posicionInicio) + textoSinEspacios + valorActual.substring(posicionFin);
+        e.target.setSelectionRange(posicionInicio + textoSinEspacios.length, posicionInicio + textoSinEspacios.length);
+      });
+      
+      // Prevenir espacios al presionar la barra espaciadora
+      input.addEventListener('keydown', function(e) {
+        if (e.key === ' ' || e.keyCode === 32) {
+          e.preventDefault();
+        }
+      });
+    });
+  });
+}
+
+// Ejecutar automáticamente cuando se carga el script
+prevenirEspaciosEnPassword();
 
 // Función para validar que la hora de retiro sea posterior a la hora de instalación
 function validarHorarioRetiroPosterior(horaInstalacion, horaRetiro, mostrarAlerta = false) {

@@ -1,0 +1,662 @@
+{% extends 'jio_app/base_admin.html' %}
+{% load static %}
+{% load jio_filters %}
+{% load humanize %}
+
+{% block title %}Materiales/Inventario - JIO{% endblock %}
+
+{% block content %}
+<div class="panel-container">
+  <div class="panel-header">
+    <h1 class="panel-title">Materiales / Inventario</h1>
+  </div>
+
+  <!-- Modal de edición -->
+  <div id="modalEditMaterial" class="modal" aria-hidden="true">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Editar material</h2>
+        <button class="modal-close" data-modal-close>&times;</button>
+      </div>
+      <form id="formEditMaterial" class="form-grid" data-endpoint-base="/panel/materiales/">
+        {% csrf_token %}
+        <input type="hidden" name="material_id" id="editMaterialId">
+        <label>
+          Nombre *
+          <input type="text" name="nombre" id="editMaterialNombre" required maxlength="100">
+        </label>
+        <label>
+          Categoría *
+          <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <select name="categoria" id="editMaterialCategoria" required style="flex: 1;">
+              <option value="">Seleccionar categoría</option>
+              {% for value, label in categoria_choices %}
+              <option value="{{ value }}">{{ label }}</option>
+              {% endfor %}
+            </select>
+            <button type="button" class="btn btn-secondary" id="btnAddCategoriaEdit" style="padding: 0.5rem; min-width: auto;" title="Añadir nueva categoría">
+              <i class="fas fa-plus"></i>
+            </button>
+          </div>
+        </label>
+        <label>
+          Stock actual
+          <input type="number" name="stock_actual" id="editMaterialStockActual" min="1" required>
+          <small style="color:#666;">Mínimo 1 unidad (no se permite 0)</small>
+        </label>
+        <label>
+          Stock mínimo
+          <input type="number" name="stock_minimo" id="editMaterialStockMinimo" min="2" value="2">
+          <small style="color:#666;">Mínimo 2 unidades</small>
+        </label>
+        <label>
+          Unidad de medida
+          <select name="unidad_medida" id="editMaterialUnidad" required>
+            {% for value, label in unidad_medida_choices %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Precio unitario ($)
+          <input type="number" name="precio_unitario" id="editMaterialPrecio" min="1" step="1" required>
+          <small style="color:#666;">Mínimo $1 (no se permite 0)</small>
+          <small style="color:#666;">Solo valores enteros (sin decimales)</small>
+        </label>
+        <label>
+          Estado *
+          <select name="estado" id="editMaterialEstado" required>
+            {% for value, label in estado_choices %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Ubicación
+          <input type="text" name="ubicacion" id="editMaterialUbicacion" maxlength="100">
+        </label>
+        <label>
+          Proveedor
+          <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <select name="proveedor_id" id="editMaterialProveedor" style="flex: 1;">
+              <option value="">Sin proveedor</option>
+              {% for proveedor in proveedores %}
+              <option value="{{ proveedor.id }}">{{ proveedor.nombre }}</option>
+              {% endfor %}
+            </select>
+            <button type="button" class="btn btn-secondary" id="btnAddProveedorEdit" style="padding: 0.5rem; min-width: auto;" title="Añadir nuevo proveedor">
+              <i class="fas fa-plus"></i>
+            </button>
+          </div>
+        </label>
+        <label>
+          Fecha última compra
+          <input type="date" name="fecha_ultima_compra" id="editMaterialFechaCompra">
+        </label>
+        <label style="grid-column: 1 / -1;">
+          Descripción
+          <textarea name="descripcion" id="editMaterialDescripcion" rows="3"></textarea>
+        </label>
+        <label style="grid-column: 1 / -1;">
+          Observaciones
+          <textarea name="observaciones" id="editMaterialObservaciones" rows="3"></textarea>
+        </label>
+        <div class="form-actions" style="grid-column: 1 / -1;">
+          <button type="button" class="btn btn-secondary" data-modal-close>Cancelar</button>
+          <button type="submit" class="btn btn-primary">Guardar</button>
+        </div>
+      </form>
+    </div>
+    <div class="modal-backdrop" data-modal-close></div>
+  </div>
+
+  <!-- Filtros de búsqueda -->
+  <div class="form-card" id="materialesPage" data-materiales-base="/panel/materiales/">
+    <form method="get" class="form-grid" style="grid-template-columns: 1fr 1fr 1fr auto;align-items: end;gap:1rem;">
+      <input type="hidden" name="order_by" value="{{ order_by }}">
+      <input type="hidden" name="direction" value="{{ direction }}">
+      <label>Buscar
+        <input type="text" name="q" value="{{ query }}" placeholder="Nombre o descripción">
+      </label>
+      <label>Categoría
+        <select name="categoria">
+          <option value="">Todas las categorías</option>
+          {% for value, label in categoria_choices %}
+          <option value="{{ value }}" {% if categoria_filter == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Estado
+        <select name="estado">
+          <option value="">Todos los estados</option>
+          {% for value, label in estado_choices %}
+          <option value="{{ value }}" {% if estado_filter == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button class="btn btn-secondary" type="submit">Filtrar</button>
+    </form>
+  </div>
+
+  <!-- Lista de materiales -->
+  <div class="form-card" style="overflow:auto;">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:.75rem;">
+      <h2 class="panel-title" style="font-size:1.25rem; color:#2E7D32; margin:0;">Inventario de Materiales</h2>
+      <div class="actions-wrap" style="gap:.5rem;">
+        <button type="button" id="btnOpenCreateMaterial" class="btn btn-primary"><i class="fas fa-plus"></i> Agregar Material</button>
+      </div>
+    </div>
+    <table class="table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Nombre</th>
+          <th>Categoría</th>
+          <th>Stock Actual</th>
+          <th>Stock Mínimo</th>
+          <th>Unidad</th>
+          <th>Precio Unitario</th>
+          <th>Estado</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for material in materiales %}
+        <tr>
+          <td>{{ material.id }}</td>
+          <td><strong>{{ material.nombre }}</strong></td>
+          <td>{{ material.get_categoria_display }}</td>
+          <td>
+            <span {% if material.stock_bajo %}style="color: red; font-weight: bold;"{% endif %}>
+              {{ material.stock_actual|intcomma }}
+            </span>
+          </td>
+          <td>{{ material.stock_minimo|intcomma }}</td>
+          <td>{{ material.unidad_medida }}</td>
+          <td>{{ material.precio_unitario|precio_chileno }}</td>
+          <td>
+            <span class="status-badge status-{{ material.estado }}">
+              {{ material.get_estado_display }}
+            </span>
+          </td>
+          <td style="white-space:nowrap;">
+            <button class="btn btn-secondary" data-edit-material="{{ material.id }}">Editar</button>
+            <button class="btn btn-danger" data-delete-material="{{ material.id }}">Eliminar</button>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="9">No hay materiales que coincidan con los filtros.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  
+  <!-- Modal de creación -->
+  <div id="modalCreateMaterial" class="modal" aria-hidden="true">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Nuevo material</h2>
+        <button class="modal-close" data-modal-close>&times;</button>
+      </div>
+      <form id="formCreateMaterial" class="form-grid" data-endpoint="{% url 'jio_app:material_create_json' %}">
+        {% csrf_token %}
+        <label>
+          Nombre *
+          <input type="text" name="nombre" required maxlength="100">
+        </label>
+        <label>
+          Categoría *
+          <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <select name="categoria" id="createMaterialCategoria" required style="flex: 1;">
+              <option value="">Seleccionar categoría</option>
+              {% for value, label in categoria_choices %}
+              <option value="{{ value }}">{{ label }}</option>
+              {% endfor %}
+            </select>
+            <button type="button" class="btn btn-secondary" id="btnAddCategoriaCreate" style="padding: 0.5rem; min-width: auto;" title="Añadir nueva categoría">
+              <i class="fas fa-plus"></i>
+            </button>
+          </div>
+        </label>
+        <label>
+          Stock actual *
+          <input type="number" name="stock_actual" min="1" required>
+          <small style="color:#666;">Mínimo 1 unidad (no se permite 0)</small>
+        </label>
+        <label>
+          Stock mínimo
+          <input type="number" name="stock_minimo" min="2" value="2">
+          <small style="color:#666;">Mínimo 2 unidades</small>
+        </label>
+        <label>
+          Unidad de medida
+          <select name="unidad_medida" required>
+            {% for value, label in unidad_medida_choices %}
+            <option value="{{ value }}" {% if value == 'unidad' %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Precio unitario ($)
+          <input type="number" name="precio_unitario" min="1" step="1" required>
+          <small style="color:#666;">Mínimo $1 (no se permite 0)</small>
+          <small style="color:#666;">Solo valores enteros (sin decimales)</small>
+        </label>
+        <label>
+          Estado *
+          <select name="estado" required>
+            {% for value, label in estado_choices %}
+            <option value="{{ value }}" {% if value == 'disponible' %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Ubicación
+          <input type="text" name="ubicacion" maxlength="100">
+        </label>
+        <label>
+          Proveedor
+          <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <select name="proveedor_id" id="createMaterialProveedor" style="flex: 1;">
+              <option value="">Sin proveedor</option>
+              {% for proveedor in proveedores %}
+              <option value="{{ proveedor.id }}">{{ proveedor.nombre }}</option>
+              {% endfor %}
+            </select>
+            <button type="button" class="btn btn-secondary" id="btnAddProveedorCreate" style="padding: 0.5rem; min-width: auto;" title="Añadir nuevo proveedor">
+              <i class="fas fa-plus"></i>
+            </button>
+          </div>
+        </label>
+        <label>
+          Fecha última compra
+          <input type="date" name="fecha_ultima_compra">
+        </label>
+        <label style="grid-column: 1 / -1;">
+          Descripción
+          <textarea name="descripcion" rows="3"></textarea>
+        </label>
+        <label style="grid-column: 1 / -1;">
+          Observaciones
+          <textarea name="observaciones" rows="3"></textarea>
+        </label>
+        <div class="form-actions" style="grid-column: 1 / -1;">
+          <button type="button" class="btn btn-secondary" data-modal-close>Cancelar</button>
+          <button type="submit" class="btn btn-primary">Crear</button>
+        </div>
+      </form>
+    </div>
+    <div class="modal-backdrop" data-modal-close></div>
+  </div>
+  
+  <!-- Modal para crear proveedor rápido -->
+  <div id="modalCreateProveedorQuick" class="modal" aria-hidden="true">
+    <div class="modal-content" style="max-width: 550px; width: 90%;">
+      <div class="modal-header">
+        <h2 style="margin: 0; font-size: 1.5rem;">Nuevo Proveedor</h2>
+        <button class="modal-close" data-modal-close style="font-size: 1.5rem; padding: 0.25rem 0.5rem;">&times;</button>
+      </div>
+      <form id="formCreateProveedorQuick" class="form-grid" style="padding: 1.5rem; gap: 1rem;">
+        {% csrf_token %}
+        <input type="hidden" name="tipo_proveedor" value="materiales">
+        <input type="hidden" name="activo" value="true">
+        <label style="grid-column: 1 / -1;">
+          <strong>Nombre *</strong>
+          <input type="text" name="nombre" id="quickProveedorNombre" required minlength="2" maxlength="100" pattern="[a-zA-Z0-9áéíóúÁÉÍÓÚñÑüÜ\s\-.,()&]+" title="Solo se permiten letras, números y algunos caracteres especiales" placeholder="Nombre del proveedor" style="margin-top: 0.5rem; width: 100%; padding: 0.75rem; font-size: 1rem;">
+        </label>
+        <label>
+          <strong>Teléfono</strong>
+          <input type="text" name="telefono" id="quickProveedorTelefono" maxlength="15" pattern="[\d\s\-\+\(\)]+" title="Solo números, espacios, guiones, paréntesis y +" placeholder="Ej: +56 9 1234 5678" style="margin-top: 0.5rem; width: 100%; padding: 0.75rem; font-size: 1rem;">
+          <small style="color: #666; margin-top: 0.25rem; display: block; font-size: 0.875rem;">Al menos teléfono o email es requerido</small>
+        </label>
+        <label>
+          <strong>Email</strong>
+          <input type="email" name="email" id="quickProveedorEmail" maxlength="254" placeholder="correo@ejemplo.com" style="margin-top: 0.5rem; width: 100%; padding: 0.75rem; font-size: 1rem;">
+          <small style="color: #666; margin-top: 0.25rem; display: block; font-size: 0.875rem;">Al menos teléfono o email es requerido</small>
+        </label>
+        <label style="grid-column: 1 / -1;">
+          <strong>Observaciones</strong>
+          <textarea name="observaciones" rows="2" placeholder="Información adicional (opcional)" style="margin-top: 0.5rem; width: 100%; padding: 0.75rem; font-size: 1rem; resize: vertical;"></textarea>
+        </label>
+        <div class="form-actions" style="grid-column: 1 / -1; display: flex; gap: 0.75rem; justify-content: flex-end; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e0e0e0;">
+          <button type="button" class="btn btn-secondary" data-modal-close style="min-width: 100px; padding: 0.75rem 1.5rem;">Cancelar</button>
+          <button type="submit" class="btn btn-primary" style="min-width: 140px; padding: 0.75rem 1.5rem; white-space: nowrap;">Crear Proveedor</button>
+        </div>
+      </form>
+    </div>
+    <div class="modal-backdrop" data-modal-close></div>
+  </div>
+
+  <!-- Modal para crear categoría rápida -->
+  <div id="modalCreateCategoriaQuick" class="modal" aria-hidden="true">
+    <div class="modal-content" style="max-width: 500px; width: 90%;">
+      <div class="modal-header">
+        <h2 style="margin: 0; font-size: 1.5rem;">Nueva Categoría</h2>
+        <button class="modal-close" data-modal-close style="font-size: 1.5rem; padding: 0.25rem 0.5rem;">&times;</button>
+      </div>
+      <form id="formCreateCategoriaQuick" class="form-grid" style="padding: 1.5rem; gap: 1rem;">
+        {% csrf_token %}
+        <label style="grid-column: 1 / -1;">
+          <strong>Nombre de la categoría *</strong>
+          <input type="text" name="nombre_categoria" id="quickCategoriaNombre" required maxlength="50" placeholder="Ej: Equipos de Seguridad" style="margin-top: 0.5rem; width: 100%; padding: 0.75rem; font-size: 1rem;">
+          <small style="color: #666; margin-top: 0.5rem; display: block; font-size: 0.875rem;">
+            <i class="fas fa-info-circle"></i> La categoría se añadirá a la lista disponible
+          </small>
+        </label>
+        <div class="form-actions" style="grid-column: 1 / -1; display: flex; gap: 0.75rem; justify-content: flex-end; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e0e0e0;">
+          <button type="button" class="btn btn-secondary" data-modal-close style="min-width: 100px; padding: 0.75rem 1.5rem;">Cancelar</button>
+          <button type="submit" class="btn btn-primary" style="min-width: 140px; padding: 0.75rem 1.5rem; white-space: nowrap;">Crear Categoría</button>
+        </div>
+      </form>
+    </div>
+    <div class="modal-backdrop" data-modal-close></div>
+  </div>
+
+  {% block extra_scripts %}
+  <script src="{% static 'js/validaciones.js' %}"></script>
+  <script src="{% static 'js/materiales_list.js' %}"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const modalProveedorQuick = document.getElementById('modalCreateProveedorQuick');
+      const modalCategoriaQuick = document.getElementById('modalCreateCategoriaQuick');
+      const formProveedorQuick = document.getElementById('formCreateProveedorQuick');
+      const formCategoriaQuick = document.getElementById('formCreateCategoriaQuick');
+      
+      // Referencias a los selects
+      const createProveedorSelect = document.getElementById('createMaterialProveedor');
+      const editProveedorSelect = document.getElementById('editMaterialProveedor');
+      const createCategoriaSelect = document.getElementById('createMaterialCategoria');
+      const editCategoriaSelect = document.getElementById('editMaterialCategoria');
+      
+      // Variables de estado para prevenir múltiples envíos
+      let isSubmittingCategoria = false;
+      let isSubmittingProveedor = false;
+      
+      // Función para abrir/cerrar modales
+      function openModal(modal) {
+        if (!modal) return;
+        modal.setAttribute('aria-hidden', 'false');
+        modal.style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+      }
+      
+      function closeModal(modal) {
+        if (!modal) return;
+        modal.setAttribute('aria-hidden', 'true');
+        modal.style.display = 'none';
+        document.body.style.overflow = '';
+      }
+      
+      // Botones para abrir modales de creación rápida
+      document.getElementById('btnAddProveedorCreate')?.addEventListener('click', () => {
+        resetProveedorModalState();
+        openModal(modalProveedorQuick);
+      });
+      
+      document.getElementById('btnAddProveedorEdit')?.addEventListener('click', () => {
+        resetProveedorModalState();
+        openModal(modalProveedorQuick);
+      });
+      
+      // Función para resetear el estado del modal de categoría
+      function resetCategoriaModalState() {
+        isSubmittingCategoria = false;
+        if (formCategoriaQuick) {
+          const submitBtn = formCategoriaQuick.querySelector('button[type="submit"]');
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Crear Categoría';
+          }
+          formCategoriaQuick.reset();
+        }
+      }
+      
+      // Función para resetear el estado del modal de proveedor
+      function resetProveedorModalState() {
+        isSubmittingProveedor = false;
+        if (formProveedorQuick) {
+          const submitBtn = formProveedorQuick.querySelector('button[type="submit"]');
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Crear Proveedor';
+          }
+          formProveedorQuick.reset();
+        }
+      }
+      
+      document.getElementById('btnAddCategoriaCreate')?.addEventListener('click', () => {
+        resetCategoriaModalState();
+        openModal(modalCategoriaQuick);
+      });
+      
+      document.getElementById('btnAddCategoriaEdit')?.addEventListener('click', () => {
+        resetCategoriaModalState();
+        openModal(modalCategoriaQuick);
+      });
+      
+      // Cerrar modales
+      document.querySelectorAll('[data-modal-close]').forEach(btn => {
+        btn.addEventListener('click', function(e) {
+          e.stopPropagation();
+          const modal = this.closest('.modal');
+          if (modal) {
+            // Solo resetear el formulario si es el modal de categoría o proveedor rápido
+            // NO resetear el formulario principal de material
+            if (modal === modalCategoriaQuick) {
+              resetCategoriaModalState();
+            } else if (modal === modalProveedorQuick) {
+              resetProveedorModalState();
+            } else if (modal === document.getElementById('modalCreateMaterial') || modal === document.getElementById('modalEditMaterial')) {
+              // Si se cierra el modal de material, también resetear el estado de categoría y proveedor si estaban abiertos
+              if (modalCategoriaQuick && modalCategoriaQuick.getAttribute('aria-hidden') === 'false') {
+                resetCategoriaModalState();
+                closeModal(modalCategoriaQuick);
+              }
+              if (modalProveedorQuick && modalProveedorQuick.getAttribute('aria-hidden') === 'false') {
+                resetProveedorModalState();
+                closeModal(modalProveedorQuick);
+              }
+            }
+            closeModal(modal);
+          }
+        });
+      });
+      
+      // Función para añadir proveedor al select
+      function addProveedorToSelect(proveedorId, proveedorNombre) {
+        // Añadir al select de creación
+        if (createProveedorSelect) {
+          const option = document.createElement('option');
+          option.value = proveedorId;
+          option.textContent = proveedorNombre;
+          createProveedorSelect.appendChild(option);
+          createProveedorSelect.value = proveedorId;
+        }
+        
+        // Añadir al select de edición
+        if (editProveedorSelect) {
+          const option = document.createElement('option');
+          option.value = proveedorId;
+          option.textContent = proveedorNombre;
+          editProveedorSelect.appendChild(option);
+          editProveedorSelect.value = proveedorId;
+        }
+      }
+      
+      // Función para añadir categoría al select
+      function addCategoriaToSelect(categoriaValue, categoriaLabel) {
+        // Añadir al select de creación
+        if (createCategoriaSelect) {
+          const option = document.createElement('option');
+          option.value = categoriaValue;
+          option.textContent = categoriaLabel;
+          createCategoriaSelect.appendChild(option);
+          createCategoriaSelect.value = categoriaValue;
+        }
+        
+        // Añadir al select de edición
+        if (editCategoriaSelect) {
+          const option = document.createElement('option');
+          option.value = categoriaValue;
+          option.textContent = categoriaLabel;
+          editCategoriaSelect.appendChild(option);
+          editCategoriaSelect.value = categoriaValue;
+        }
+      }
+      
+      // Envío del formulario de proveedor rápido
+      if (formProveedorQuick && !formProveedorQuick.dataset.listenerAttached) {
+        formProveedorQuick.dataset.listenerAttached = 'true';
+        formProveedorQuick.addEventListener('submit', async function(e) {
+          e.preventDefault();
+          
+          // Prevenir múltiples envíos
+          if (isSubmittingProveedor) {
+            return;
+          }
+          
+          // Validar que al menos email o teléfono esté presente
+          const telefono = document.getElementById('quickProveedorTelefono')?.value.trim();
+          const email = document.getElementById('quickProveedorEmail')?.value.trim();
+          
+          if (!telefono && !email) {
+            mostrarErroresValidacion(['Debe proporcionar al menos un teléfono o un email de contacto'], 'Error de Validación');
+            return;
+          }
+          
+          isSubmittingProveedor = true;
+          const submitBtn = this.querySelector('button[type="submit"]');
+          const originalText = submitBtn?.textContent;
+          if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Creando...';
+          }
+          
+          const formData = new FormData(this);
+          const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value;
+          
+          try {
+            const response = await fetch('{% url "jio_app:proveedor_create_json" %}', {
+              method: 'POST',
+              body: formData,
+              headers: {
+                'X-CSRFToken': csrfToken
+              }
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+              // Mostrar mensaje de éxito sin recargar la página
+              if (typeof Swal !== 'undefined' && Swal.fire) {
+                Swal.fire({
+                  title: '¡Proveedor Creado!',
+                  text: data.message,
+                  icon: 'success',
+                  confirmButtonColor: '#28a745',
+                  confirmButtonText: 'Aceptar',
+                  timer: 2000,
+                  timerProgressBar: true
+                });
+              }
+              addProveedorToSelect(data.proveedor_id, formData.get('nombre'));
+              // Resetear estado y cerrar modal
+              resetProveedorModalState();
+              closeModal(modalProveedorQuick);
+            } else {
+              mostrarErroresValidacion(data.errors || ['Error al crear el proveedor'], 'Error al Crear Proveedor');
+              isSubmittingProveedor = false;
+              if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.textContent = originalText;
+              }
+            }
+          } catch (error) {
+            console.error('Error:', error);
+            mostrarErroresValidacion(['Error de conexión'], 'Error de Conexión');
+            isSubmittingProveedor = false;
+            if (submitBtn) {
+              submitBtn.disabled = false;
+              submitBtn.textContent = originalText;
+            }
+          }
+        });
+      }
+      
+      // Envío del formulario de categoría rápida
+      if (formCategoriaQuick && !formCategoriaQuick.dataset.listenerAttached) {
+        formCategoriaQuick.dataset.listenerAttached = 'true';
+        formCategoriaQuick.addEventListener('submit', async function(e) {
+          e.preventDefault();
+          
+          // Prevenir múltiples envíos
+          if (isSubmittingCategoria) {
+            return;
+          }
+          
+          isSubmittingCategoria = true;
+          const submitBtn = this.querySelector('button[type="submit"]');
+          const originalText = submitBtn?.textContent;
+          if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Creando...';
+          }
+          
+          const formData = new FormData(this);
+          const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value;
+          
+          try {
+            const response = await fetch('{% url "jio_app:categoria_material_create_json" %}', {
+              method: 'POST',
+              body: formData,
+              headers: {
+                'X-CSRFToken': csrfToken
+              }
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+              // Mostrar mensaje de éxito sin recargar la página
+              if (typeof Swal !== 'undefined' && Swal.fire) {
+                Swal.fire({
+                  title: '¡Categoría Creada!',
+                  text: data.message,
+                  icon: 'success',
+                  confirmButtonColor: '#28a745',
+                  confirmButtonText: 'Aceptar',
+                  timer: 2000,
+                  timerProgressBar: true
+                });
+              }
+              addCategoriaToSelect(data.categoria_value, data.categoria_label);
+              // Resetear estado y cerrar modal
+              resetCategoriaModalState();
+              closeModal(modalCategoriaQuick);
+            } else {
+              mostrarErroresValidacion(data.errors || ['Error al crear la categoría'], 'Error al Crear Categoría');
+              isSubmittingCategoria = false;
+              if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.textContent = originalText;
+              }
+            }
+          } catch (error) {
+            console.error('Error:', error);
+            mostrarErroresValidacion(['Error de conexión'], 'Error de Conexión');
+            isSubmittingCategoria = false;
+            if (submitBtn) {
+              submitBtn.disabled = false;
+              submitBtn.textContent = originalText;
+            }
+          }
+        });
+      }
+    });
+  </script>
+  {% endblock %}
+</div>
+{% endblock %}
+
